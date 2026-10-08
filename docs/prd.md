@@ -217,7 +217,7 @@ flowchart TB
 - Hosting: Next.js (standalone output) built as a container image in ECR and run on Lambda with the AWS Lambda Web Adapter, behind CloudFront via a Lambda Function URL; static assets are served from S3 through CloudFront. It scales to zero; the same image can move to ECS Fargate if Lambda limits on time or size become a problem.
 - Provider adapter interface: `generate(request)`, `edit(request)` and `capabilities()`, returning a common result (PNG bytes, seed, cost, provider request ID). Each provider is its own module.
 - The worker Lambda timeout is set to 3 minutes; SQS visibility timeout is above that; failed messages go to a dead-letter queue with an alarm.
-- Images are stored as `s3://<bucket>/users/<userId>/<imageId>/v<n>.png`, with metadata in DynamoDB. Content goes through CloudFront with signed URLs.
+- Images are stored as `s3://<bucket>/users/<userId>/<imageId>/v<n>.png`, with metadata in DynamoDB. The browser loads and downloads them through short-lived S3 presigned URLs (15 minutes); uploads use S3 presigned POST.
 - Infrastructure as code with AWS CDK (TypeScript), with separate dev and prod stacks.
 - P1 Bedrock calls use the worker's IAM role, with no API keys.
 
