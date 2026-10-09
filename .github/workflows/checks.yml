@@ -1,0 +1,59 @@
+name: Checks
+
+# One definition of lint, typecheck, tests, build and synth, used by pr.yml and deploy.yml (CI/CD design 4.1).
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    services:
+      dynamodb:
+        image: amazon/dynamodb-local
+        ports:
+          - 8000:8000
+    env:
+      DYNAMODB_ENDPOINT: http://localhost:8000
+      # Placeholder digests and SHA so the stages synthesise without built images.
+      DUMMY_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      GIT_SHA: 0000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Runs Vitest in every workspace, including the CDK assertion tests in infra.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The CLI synthesises every stack; it ignores --all for synth.
+      - name: CDK synth
+        working-directory: infra
+        run: npx cdk synth --quiet -c "appImageDigest=$DUMMY_IMAGE_DIGEST" -c "workerImageDigest=$DUMMY_IMAGE_DIGEST" -c "gitSha=$GIT_SHA"
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
