@@ -17,7 +17,7 @@ These apply to every session, local or cloud.
 - One branch per issue, created from the latest `main` before writing any code: `<issue-number>-<short-slug>`, for example `16-job-api`. Never combine issues on one branch.
 - Implement the full scope of the issue. No minimal implementations and no placeholder `TODO`s in committed code.
 - A sub-feature that is out of scope shows a toast saying "<Feature> coming soon", and must have an open GitHub issue.
-- Write the tests the issue lists, plus any others the change needs (unit, component, CDK assertions). All checks must pass before work is called done: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx cdk synth --all` in `infra/` (run whichever exist at the time).
+- Write the tests the issue lists, plus any others the change needs (unit, component, CDK assertions). All checks must pass before work is called done: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx cdk synth` in `infra/` (it synthesises every stack; the CLI ignores `--all` for synth) (run whichever exist at the time).
 - Leave no lint, type or build warnings.
 - Naming: `snake_case` file names and `PascalCase` classes and React components. Framework-mandated file names (`page.tsx`, `layout.tsx`, `route.ts`, `middleware.ts`, config files) are the exception.
 - Never commit secrets, AWS account IDs or API keys; the repo is public. Account-specific values come from GitHub variables or CDK context at deploy time.
@@ -42,7 +42,7 @@ closes #issue-number
 
 - Rakesh tests, approves and merges PRs. Never merge a PR, and never push to `main`.
 - Local sessions: do not push or open PRs unless asked.
-- The daily routine (below) is explicitly allowed to push its issue branches and open **draft** PRs.
+- The daily routine (below) is explicitly allowed to push its issue branches and open PRs (ready for review, not drafts).
 
 ## Daily routine procedure
 
@@ -56,9 +56,11 @@ This section applies when the session was started by the Pictora daily build rou
 - Read an issue: `gh api repos/rakeshsasidharan/pictora/issues/<n>`
 - Add a label: `gh api repos/rakeshsasidharan/pictora/issues/<n>/labels -f 'labels[]=agent-in-progress'`
 - Remove a label: `gh api -X DELETE repos/rakeshsasidharan/pictora/issues/<n>/labels/agent-in-progress`
-- Comment: `gh api repos/rakeshsasidharan/pictora/issues/<n>/comments -f body=@/tmp/comment.md` (write the comment to a file first)
+- Comment: `gh api repos/rakeshsasidharan/pictora/issues/<n>/comments -F body=@/tmp/comment.md` (write the comment to a file first)
 - Open PRs from a branch: `gh api 'repos/rakeshsasidharan/pictora/pulls?state=open&head=rakeshsasidharan:<branch>'`
-- Create a draft PR: `gh api repos/rakeshsasidharan/pictora/pulls -f title=... -f head=<branch> -f base=main -F draft=true -f body=@/tmp/pr_body.md`
+- Create a PR: `gh api repos/rakeshsasidharan/pictora/pulls -f title=... -f head=<branch> -f base=main -F draft=false -F body=@/tmp/pr_body.md`
+
+Use **`-F`** (capital) for any value read from a file: `-F body=@file` sends the file's contents. Lowercase `-f` always sends the literal string, so `-f body=@file` posts the file path. After creating a PR or comment, check that the returned `body` starts with your text, not `@/`.
 
 ### 1. Choose issues
 
@@ -91,7 +93,7 @@ Add the `agent-in-progress` label, then comment on the issue that the routine ha
 When the work is complete and every check passes:
 
 1. Commit using the commit message format, then push the branch.
-2. Open a **draft** PR to `main`. The title is the issue title without `[FEATURE] `. The body includes:
+2. Open a PR to `main`, ready for review (not a draft). The title is the issue title without `[FEATURE] `. The body includes:
    - `closes #<n>`
    - a short summary of what changed
    - the checks run, with their results
