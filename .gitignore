@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# CDK
+cdk.out/
+cdk.context.json
+cdk-outputs.json
+
+# Tests
+coverage/
+playwright-report/
+test-results/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS files
+npm-debug.log*
+.DS_Store

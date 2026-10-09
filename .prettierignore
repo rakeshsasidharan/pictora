@@ -1,0 +1,8 @@
+package-lock.json
+cdk.out/
+dist/
+.next/
+coverage/
+
+# Hand-written docs keep their compact table layout
+*.md
