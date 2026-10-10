@@ -127,7 +127,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 
 Points are integers, and 1 point is $0.01 of provider list price.
 
-- **Estimate:** `points = registry.costPoints[quality][sizeTier] × imageCount`.
+- **Estimate:** `points = model.qualities[quality].costPoints × count` (`estimatePoints` in `packages/core`). Each quality fixes the output size tier (Gemini `imageSize` 1K, 2K or 4K; OpenAI quality at 1024²), so its cost is the price of one image at that size; the aspect ratio doesn't change it.
 - **Reserve** (in the create-job API), as one `TransactWriteItems` call:
   1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? DEFAULT_DAILY_POINTS` (25).
   2. Update `PROFILE`: `ADD activeJobs :1`, on condition `activeJobs < :2` and `status = active` and no cooldown in force (LIM-3).

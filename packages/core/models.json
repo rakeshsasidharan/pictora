@@ -1,0 +1,199 @@
+[
+  {
+    "id": "gpt-image-2",
+    "provider": "openai",
+    "providerModelId": "gpt-image-2",
+    "displayName": "GPT Image 2",
+    "strengths": [
+      "Follows prompts closely",
+      "Readable text in images",
+      "Transparent backgrounds",
+      "Precise edits"
+    ],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": true,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "draft": {
+        "providerParams": {
+          "quality": "low"
+        },
+        "costPoints": 1
+      },
+      "standard": {
+        "providerParams": {
+          "quality": "medium"
+        },
+        "costPoints": 6
+      },
+      "high": {
+        "providerParams": {
+          "quality": "high"
+        },
+        "costPoints": 22
+      }
+    },
+    "defaultFor": ["line-art", "none"]
+  },
+  {
+    "id": "gpt-image-1-mini",
+    "provider": "openai",
+    "providerModelId": "gpt-image-1-mini",
+    "displayName": "GPT Image 1 Mini",
+    "strengths": ["Very cheap drafts", "Quick previews", "Transparent backgrounds"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": true,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "draft": {
+        "providerParams": {
+          "quality": "low"
+        },
+        "costPoints": 1
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "gemini-3.1-flash-image",
+    "provider": "gemini",
+    "providerModelId": "gemini-3.1-flash-image",
+    "displayName": "Gemini 3.1 Flash Image",
+    "strengths": ["Fast", "Conversational editing", "Consistent characters", "Artistic styles"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "standard": {
+        "providerParams": {
+          "imageSize": "1K"
+        },
+        "costPoints": 7
+      },
+      "high": {
+        "providerParams": {
+          "imageSize": "2K"
+        },
+        "costPoints": 11
+      }
+    },
+    "defaultFor": ["digital-art", "anime", "watercolour", "oil-painting", "3d-render"]
+  },
+  {
+    "id": "gemini-3.1-flash-lite-image",
+    "provider": "gemini",
+    "providerModelId": "gemini-3.1-flash-lite-image",
+    "displayName": "Gemini 3.1 Flash Lite Image",
+    "strengths": ["Cheapest Gemini option", "Budget generation"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "draft": {
+        "providerParams": {
+          "imageSize": "1K"
+        },
+        "costPoints": 4
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "gemini-3-pro-image",
+    "provider": "gemini",
+    "providerModelId": "gemini-3-pro-image",
+    "displayName": "Gemini 3 Pro Image",
+    "strengths": ["Highest-fidelity Gemini", "Photorealism", "Complex scenes", "Up to 4K"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "standard": {
+        "providerParams": {
+          "imageSize": "2K"
+        },
+        "costPoints": 14
+      },
+      "high": {
+        "providerParams": {
+          "imageSize": "4K"
+        },
+        "costPoints": 24
+      }
+    },
+    "defaultFor": ["photorealistic", "cinematic"]
+  },
+  {
+    "id": "mock",
+    "provider": "mock",
+    "providerModelId": "mock",
+    "displayName": "Mock (dev only)",
+    "strengths": ["No provider spend", "For tests"],
+    "enabled": true,
+    "environments": ["dev"],
+    "capabilities": {
+      "generate": true,
+      "edit": true,
+      "transparentBackground": true,
+      "negativePrompt": true,
+      "seed": true,
+      "referenceImages": 3,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "draft": {
+        "providerParams": {},
+        "costPoints": 1
+      },
+      "standard": {
+        "providerParams": {},
+        "costPoints": 2
+      },
+      "high": {
+        "providerParams": {},
+        "costPoints": 3
+      }
+    },
+    "defaultFor": []
+  }
+]
