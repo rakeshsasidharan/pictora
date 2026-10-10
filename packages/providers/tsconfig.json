@@ -1,7 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    // Type-check against core's source, so checks don't need core built first. The build uses core's dist.
+    "paths": { "@pictora/core": ["../core/src/index.ts"] }
   },
   "include": ["src", "test", "vitest.config.ts"]
 }

@@ -270,14 +270,14 @@ export interface ImageProvider {
 }
 ```
 
-Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `ProviderTimeoutError`, `ProviderError`), which the worker maps to job states. Every adapter returns PNG: if a provider sends another format, `sharp` converts it losslessly to PNG and leaves provenance metadata in place.
+Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `ProviderTimeoutError`, `ProviderError`), which the worker maps to job states. The worker gets adapters from `createProviderFactory`, which picks one by `ModelConfig.provider` and wraps it, so every call gets the one retry and anything an adapter or SDK throws comes out as one of the four typed errors. Every adapter returns PNG: if a provider sends another format, `sharp` converts it losslessly to PNG and leaves provenance metadata in place.
 
 | Adapter | SDK | Generate | Edit | Notes |
 | --- | --- | --- | --- | --- |
 | OpenAI | `openai` | `images.generate` with `output_format: 'png'`, `quality`, `size`, `background` | `images.edit` with the parent image (+ references) | Sizes: 1024×1024, 1536×1024, 1024×1536; other aspects are generated at the nearest size and centre-cropped |
 | Gemini | `@google/genai` | `models.generateContent` with an image response and an aspect-ratio config | Same call, with the parent image as inline data + the instruction | The same SDK works with the Gemini API (API key) or Vertex AI (`vertexai: true`), so the open Vertex question changes only config |
 | Bedrock (P1) | `@aws-sdk/client-bedrock-runtime` | `InvokeModel` with Stability request bodies | Stability edit models through `us.` inference profiles | IAM role auth; no key |
-| Mock (dev/test) | none | Returns a generated placeholder PNG after a configurable delay, or an error when the prompt contains a test keyword | Same | Lets CI and end-to-end tests run with no provider spend |
+| Mock (dev/test) | none | Returns a placeholder PNG at the mapped size showing the prompt, after a delay (`MOCK_PROVIDER_DELAY_MS`, default 1 s); `__fail__`, `__block__` and `__timeout__` in the prompt raise the matching error | Same, over the input image | Lets CI and end-to-end tests run with no provider spend. Reports the model's list price as its cost, so points behave as with a real provider |
 
 ### 6.3 Prompt enhancer and moderation
 
