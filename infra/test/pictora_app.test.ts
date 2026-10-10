@@ -1,27 +1,38 @@
 import { Stage } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { createPictoraApp, PRIMARY_REGION } from '../lib/pictora_app.js';
+import { PRIMARY_REGION } from '../lib/pictora_app.js';
 import { PictoraStage } from '../lib/pictora_stage.js';
+import { testApp } from './helpers.js';
 
 function pictoraStages(): PictoraStage[] {
-  const app = createPictoraApp();
-  return app.node.children.filter((child): child is PictoraStage => Stage.isStage(child));
+  return testApp().node.children.filter((child): child is PictoraStage => Stage.isStage(child));
 }
 
 describe('Pictora CDK app', () => {
-  it('synthesises the dev and prod stages', () => {
-    const assembly = createPictoraApp().synth();
+  it('synthesises the dev and prod stages with no AWS account or credentials', () => {
+    const assembly = testApp().synth();
 
     expect(assembly.nestedAssemblies.map((nested) => nested.id)).toEqual([
       'assembly-PictoraDev',
       'assembly-PictoraProd',
     ]);
-    for (const nested of assembly.nestedAssemblies) {
-      expect(nested.nestedAssembly.stacks.map((stack) => stack.stackName)).toEqual([
-        `${nested.id.replace('assembly-', '')}-Data`,
-      ]);
-    }
+    const stackNames = (id: string) =>
+      assembly.nestedAssemblies
+        .find((nested) => nested.id === id)
+        ?.nestedAssembly.stacks.map((stack) => stack.stackName)
+        .sort();
+    expect(stackNames('assembly-PictoraDev')).toEqual([
+      'PictoraDev-Certificate',
+      'PictoraDev-Data',
+      'PictoraDev-Monitoring',
+      'PictoraDev-Web',
+    ]);
+    // Prod has no domain yet, so it has no certificate.
+    expect(stackNames('assembly-PictoraProd')).toEqual([
+      'PictoraProd-Data',
+      'PictoraProd-Monitoring',
+      'PictoraProd-Web',
+    ]);
   });
 
   it('pins both stages to the primary region and their environment name', () => {
@@ -31,10 +42,15 @@ describe('Pictora CDK app', () => {
     ]);
   });
 
-  it('starts each stage with a Data stack that has no resources yet', () => {
-    for (const stage of pictoraStages()) {
-      const template = Template.fromStack(stage.data);
-      expect(Object.keys(template.toJSON().Resources ?? {})).toEqual([]);
-    }
+  it('reads the per-environment settings from cdk.json', () => {
+    const [dev, prod] = pictoraStages();
+    expect(dev?.config).toMatchObject({
+      domain: 'pictora.rpillai.dev',
+      dailyPoints: 1000,
+      spendCapUsd: 20,
+      queueConcurrency: 5,
+    });
+    expect(prod?.config).toMatchObject({ dailyPoints: 25, spendCapUsd: 100, queueConcurrency: 5 });
+    expect(prod?.config.domain).toBeUndefined();
   });
 });

@@ -1,0 +1,15 @@
+# Keep the build context small and free of local state; images install their own dependencies.
+**/node_modules
+**/.next
+**/dist
+**/cdk.out
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+.git
+.github
+.claude
+docs
+e2e/playwright-report
+e2e/test-results
