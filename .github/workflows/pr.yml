@@ -44,9 +44,10 @@ jobs:
       contents: read
     uses: ./.github/workflows/checks.yml
 
-  image-check:
+  image-build:
     needs: changes
     if: needs.changes.outputs.app == 'true' || needs.changes.outputs.worker == 'true' || needs.changes.outputs.packages == 'true'
+    name: image-build (${{ matrix.image }})
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:
@@ -74,6 +75,24 @@ jobs:
       - name: Build the image (arm64, no push)
         if: steps.dockerfile.outputs.exists == 'true'
         run: docker buildx build --platform linux/arm64 --file "${{ matrix.image }}/Dockerfile" .
+
+  # The required status check for the main ruleset. It always runs, so a PR whose image builds were skipped
+  # (docs or infra only) still reports it, and it fails if either image build failed or was cancelled.
+  image-check:
+    needs: image-build
+    if: always()
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check the image builds
+        env:
+          RESULT: ${{ needs.image-build.result }}
+        run: |
+          echo "image-build: $RESULT"
+          if [ "$RESULT" != "success" ] && [ "$RESULT" != "skipped" ]; then
+            exit 1
+          fi
 
   cdk-diff:
     needs: [changes, checks]
