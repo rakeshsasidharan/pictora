@@ -1,0 +1,158 @@
+name: PR
+
+# Pull request gate (CI/CD design 4.2). Never use pull_request_target: fork PRs must not reach AWS or secrets.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      worker: ${{ steps.filter.outputs.worker }}
+      packages: ${{ steps.filter.outputs.packages }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app/**'
+            worker:
+              - 'worker/**'
+            packages:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+            infra:
+              - 'infra/**'
+
+  checks:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/checks.yml
+
+  image-check:
+    needs: changes
+    if: needs.changes.outputs.app == 'true' || needs.changes.outputs.worker == 'true' || needs.changes.outputs.packages == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [app, worker]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Check for a Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f "${{ matrix.image }}/Dockerfile" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ matrix.image }}/Dockerfile does not exist yet; skipping the image build."
+          fi
+
+      # The build context is the repository root, so the image can use the npm workspaces.
+      - name: Build the image (arm64, no push)
+        if: steps.dockerfile.outputs.exists == 'true'
+        run: docker buildx build --platform linux/arm64 --file "${{ matrix.image }}/Dockerfile" .
+
+  cdk-diff:
+    needs: [changes, checks]
+    # Same-repo PRs only: fork PRs get no OIDC token.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (needs.changes.outputs.infra == 'true' || needs.changes.outputs.packages == 'true')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    env:
+      # Placeholder digests so the stages synthesise without built images.
+      DUMMY_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      GIT_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DIFF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: pictora-pr-${{ github.event.pull_request.number }}
+
+      # The diff role can assume only the read-only CDK lookup role, so compare templates
+      # rather than creating change sets.
+      - name: CDK diff
+        working-directory: infra
+        run: |
+          set -o pipefail
+          npx cdk diff 'PictoraDev/*' 'PictoraProd/*' --method=template --no-color \
+            -c "appImageDigest=$DUMMY_IMAGE_DIGEST" -c "workerImageDigest=$DUMMY_IMAGE_DIGEST" -c "gitSha=$GIT_SHA" 2>&1 | tee cdk-diff.txt
+
+      - name: Post or update the CDK Diff comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const heading = '## CDK Diff';
+            const limit = 60000;
+            let diff = fs.readFileSync('infra/cdk-diff.txt', 'utf8').trim();
+            if (diff.length > limit) {
+              diff = `${diff.slice(0, limit)}\n… truncated; see the workflow log for the full diff.`;
+            }
+            const body = [
+              heading,
+              '',
+              `Commit ${context.payload.pull_request.head.sha}`,
+              '',
+              '```',
+              diff,
+              '```',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.startsWith(heading),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

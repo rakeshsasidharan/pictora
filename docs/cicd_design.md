@@ -70,8 +70,8 @@ Runs on `ubuntu-24.04-arm` with Node 22 and the npm cache.
 2. `npm run lint` (ESLint across workspaces) and `npm run format:check` (Prettier).
 3. `npm run typecheck` (`tsc --noEmit` per workspace).
 4. `npm test`, which runs Vitest in every workspace. DynamoDB Local runs as a job service container (`amazon/dynamodb-local`) for the API and worker tests.
-5. `npm run build -w app` (Next.js build; catches build-only errors).
-6. `npx cdk synth --all` with dummy image digests and `npm test -w infra` (CDK assertions).
+5. `npm run build`, which builds every workspace in dependency order, including the Next.js build of `app` (catches build-only errors).
+6. `npx cdk synth` with dummy image digests (the CLI synthesises every stack and ignores `--all` for synth). The CDK assertion tests run in step 4.
 7. `npm audit --omit=dev --audit-level=high`, which fails the build on high or critical issues in runtime dependencies.
 
 Target: under 6 minutes.
