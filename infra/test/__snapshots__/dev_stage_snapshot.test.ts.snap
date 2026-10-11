@@ -751,6 +751,10 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         "Ref": "AppFunction05AF654E",
       },
     },
+    "SiteUrl": {
+      "Description": "Site URL: the custom domain, or the CloudFront domain when there is none",
+      "Value": "https://pictora.rpillai.dev",
+    },
   },
   "Parameters": {
     "BootstrapVersion": {

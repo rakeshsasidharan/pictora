@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import type { ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import {
   AllowedMethods,
@@ -164,6 +164,14 @@ export class WebStack extends Stack {
     });
 
     this.deployAssets(config);
+
+    // The deploy pipeline reads this from the outputs file for the smoke test and e2e (CI/CD design 4.3).
+    new CfnOutput(this, 'SiteUrl', {
+      description: 'Site URL: the custom domain, or the CloudFront domain when there is none',
+      value: config.domain
+        ? `https://${config.domain}`
+        : `https://${this.distribution.distributionDomainName}`,
+    });
 
     if (config.domain) {
       const zone = HostedZone.fromHostedZoneAttributes(this, 'Zone', {

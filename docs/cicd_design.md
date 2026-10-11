@@ -57,7 +57,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `.github/workflows/checks.yml` | `workflow_call` (reusable) | `checks` | One definition of lint, typecheck, tests, build and synth, used by both pipelines |
 | `.github/workflows/pr.yml` | `pull_request` → `main` | `changes`, `checks`, `image-build`, `image-check`, `cdk-diff` | PR gate |
-| `.github/workflows/deploy.yml` | `push` → `main`; `workflow_dispatch` (environment, commit SHA) | `checks`, `build-images`, `deploy-dev`, `e2e-dev`, `deploy-prod`, `smoke-prod` | Build once, deploy dev, promote to prod; also used for redeploys and rollbacks |
+| `.github/workflows/deploy.yml` | `push` → `main`; `workflow_dispatch` (environment, commit SHA) | `checks`, `build-images`, `resolve`, `deploy-dev`, `e2e-dev`, `deploy-prod`, `smoke-prod` | Build once, deploy dev, promote to prod; also used for redeploys and rollbacks |
 | `.github/dependabot.yml` | Weekly | — | npm (grouped minor and patch), GitHub Actions, Docker base images |
 
 Docs-only changes (`docs/**`, `**/*.md`) skip `deploy.yml` through `paths-ignore`. On PRs, the `changes` job uses `dorny/paths-filter` to skip the image check when only docs or infra changed.
@@ -113,13 +113,15 @@ jobs:
   checks:            # push only
   build-images:      # push only; matrix [app, worker]; runs-on ubuntu-24.04-arm
                      # OIDC → pictora-gh-build → ECR login → buildx --platform linux/arm64
-                     # tags <sha>; outputs app_digest, worker_digest
-  deploy-dev:        # environment: dev; needs build-images
+                     # tags <sha>; the digests go to the job summary
+  resolve:           # push (after build-images) and manual runs: reads the digests of the
+                     # images tagged <sha> from ECR; outputs sha, app_digest, worker_digest
+  deploy-dev:        # environment: dev; needs resolve
                      # OIDC → pictora-gh-deploy → cdk deploy 'PictoraDev/*'
                      #   -c appImageDigest=… -c workerImageDigest=… -c gitSha=…
   e2e-dev:           # environment: dev; Playwright against the dev URL
   deploy-prod:       # environment: production (required reviewer); needs e2e-dev
-                     # same digests from build-images outputs
+                     # same digests from resolve outputs
   smoke-prod:        # curl https://<prod>/api/health and check that sha == github.sha
 ```
 
@@ -128,7 +130,9 @@ jobs:
 - **Images:** two ECR repositories, `pictora-app` and `pictora-worker`, with **immutable tags** and scan on push. Tag = full commit SHA. CDK references images **by digest** (`DockerImageCode.fromEcr(repo, { tagOrDigest: digest })`), so a deploy is reproducible.
 - **Build cache:** `docker/build-push-action` with `cache-from/cache-to: type=gha,scope=<image>`, which keeps rebuilds to about 1–2 minutes.
 - **CDK:** stages `PictoraDev` and `PictoraProd`. Deploy command: `npx cdk deploy '<Stage>/*' --require-approval never --concurrency 3 --outputs-file cdk-outputs.json`. The outputs file gives `e2e-dev` the site URL.
-- **Promotion:** `deploy-prod` uses `needs.build-images.outputs`. Nothing is rebuilt, so prod runs exactly what passed e2e in dev.
+- **Promotion:** `deploy-prod` uses `needs.resolve.outputs`. Tags are immutable, so the digests `resolve` reads for the commit are exactly the images `build-images` pushed, and one lookup serves both the pipeline and manual runs (a matrix job can't reliably output a value per leg). Nothing is rebuilt, so prod runs exactly what passed e2e in dev.
+- **Scripts:** `.github/scripts/resolve_images.sh` (digest lookup), `deploy_stage.sh` (extract static files from the app image, `cdk deploy`, read `SiteUrl` from the outputs) and `smoke_test.sh` (`/api/health` returns `status: ok` and the expected `sha`, with retries). Deploy jobs check out the commit being deployed, and take the scripts from the workflow's own commit.
+- **e2e:** `e2e-dev` runs `npm run e2e --workspace=@pictora/e2e` with `E2E_BASE_URL`, `E2E_USER_EMAIL` and `E2E_USER_PASSWORD`, and uploads `e2e/test-results` and `e2e/playwright-report` on failure. It skips with a notice while the workspace has no `e2e` script. `deploy-dev` also runs the smoke test, so a dev rollback is checked even without e2e.
 - **Approval:** the `production` environment has you as the required reviewer. The run pauses with a "Review deployments" button. Prod waits until you approve, and an unapproved run expires after 30 days.
 - **Version check:** CDK passes `GIT_SHA` to the app Lambda. `/api/health` returns `{ status: 'ok', sha }`, and the smoke test checks it.
 - **Run time:** checks 6 min + build 3 min + dev deploy 5 min + e2e 4 min ≈ **18 minutes to dev**; prod adds about 6 minutes after approval.
@@ -137,7 +141,7 @@ jobs:
 
 Run **Deploy → Run workflow**, pick `environment` and `sha`.
 
-1. The `resolve` job checks that both images exist in ECR with that tag (`aws ecr describe-images`) and reads their digests. If they're missing, it fails with a message to build that commit first.
+1. The `resolve` job checks that both images exist in ECR with that tag (`aws ecr describe-images`) and reads their digests; the worker image is required only if that commit has `worker/Dockerfile`. If they're missing, it fails with a message to build that commit first. It uses the build role, which can read ECR from `main`.
 2. It checks out **that SHA**, so infrastructure rolls back too, then deploys only the chosen environment.
 3. It runs the smoke test (prod) or e2e (dev).
 
@@ -155,9 +159,9 @@ Run **Deploy → Run workflow**, pick `environment` and `sha`.
 | Environment | Protection | Deployment branches | Variables | Secrets |
 | --- | --- | --- | --- | --- |
 | `dev` | None | `main` only | `SITE_URL` (`https://pictora.rpillai.dev`) | `E2E_USER_PASSWORD` (Cognito test user) |
-| `production` | Required reviewer: `rakeshsasidharan` (self-review allowed) | `main` only | `SITE_URL` | None |
+| `production` | Required reviewer: `rakeshsasidharan` (self-review allowed) | `main` only | None (the smoke test reads the site URL from the stack outputs) | None |
 
-Repository variables (not secrets; kept out of code so the public repo holds no account details): `AWS_ACCOUNT_ID`, `AWS_REGION` (`us-west-2`), `AWS_BUILD_ROLE_ARN`, `AWS_DEPLOY_ROLE_ARN`, `AWS_DIFF_ROLE_ARN`, `E2E_USER_EMAIL`.
+Repository variables (not secrets; kept out of code so the public repo holds no account details): `AWS_ACCOUNT_ID`, `AWS_REGION` (`us-west-2`), `AWS_BUILD_ROLE_ARN`, `AWS_DEPLOY_ROLE_ARN`, `AWS_DIFF_ROLE_ARN`, `HOSTED_ZONE_ID` (Route 53 zone of `rpillai.dev`), `ALERT_EMAIL` (SNS alarm and budget alerts), `E2E_USER_EMAIL`.
 
 Per-environment app settings (daily points, spend cap, queue concurrency, domain) live in CDK context in `infra/cdk.json`. A domain name is public anyway, so it can live there once chosen.
 

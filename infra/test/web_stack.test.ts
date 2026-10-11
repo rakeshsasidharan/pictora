@@ -71,6 +71,20 @@ describe('Web stack: app Lambda', () => {
   });
 });
 
+describe('Web stack: outputs', () => {
+  it('outputs the site URL for the deploy pipeline', () => {
+    dev.hasOutput('SiteUrl', { Value: 'https://pictora.rpillai.dev' });
+    prod.hasOutput('SiteUrl', {
+      Value: {
+        'Fn::Join': [
+          '',
+          ['https://', { 'Fn::GetAtt': [Match.stringLikeRegexp('^Distribution'), 'DomainName'] }],
+        ],
+      },
+    });
+  });
+});
+
 describe('Web stack: CloudFront', () => {
   it('sends everything else to the Function URL with the origin verify header and no caching', () => {
     const config = distributionConfig(dev);
