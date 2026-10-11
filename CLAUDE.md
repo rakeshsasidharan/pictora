@@ -82,10 +82,10 @@ Add the `agent-in-progress` label, then comment on the issue that the routine ha
 ### 3. Build
 
 1. `git checkout main`, `git pull`, then `git checkout -b <n>-<slug>`.
-2. Read the issue body, the docs sections it references, and the existing code it builds on.
+2. Read the issue body, its comments by `rakeshsasidharan`, the docs sections it references, and the existing code it builds on.
 3. Implement the scope and the tests listed in the issue, following the workflow rules above.
 4. Run every check that exists (lint, typecheck, test, build, synth) and fix failures. DynamoDB Local runs through Docker (`amazon/dynamodb-local`).
-5. Work that needs live AWS, live provider APIs or a deployed environment (deploys, "on dev" checks, recording live fixtures) is out of reach. Build everything around it, and list it as a manual step for Rakesh.
+5. Work that needs live AWS, live provider APIs or a deployed environment (deploys, "on dev" checks, recording live fixtures) is out of reach. Build everything around it. If the deploy pipeline will cover it later, leave it out of the PR.
 6. Issues labelled `human-step`: build all the code parts, then list the manual steps from the issue as a checklist in the PR body.
 
 ### 4. Hand over
@@ -97,8 +97,10 @@ When the work is complete and every check passes:
    - `closes #<n>`
    - a short summary of what changed
    - the checks run, with their results
-   - acceptance criteria that can only be checked after deploying
-   - any manual steps
+   - a `Before merge` checklist, only if Rakesh must act before merging (for example a decision on a value). Omit it otherwise.
+   - an `After deploy` checklist, only for steps nothing automated can do (a console click, confirming an email). Omit it otherwise.
+
+   Don't list optional steps, checks the deploy pipeline or its tests already cover, or checks already passed in the PR run. Work that a later issue needs goes into a comment on that issue, not the PR body.
 3. Comment on the issue with a link to the PR. Leave `agent-in-progress` in place; the issue closes when Rakesh merges.
 
 When the work can't be completed (a blocker, an unclear requirement, a check that still fails after reasonable effort):
