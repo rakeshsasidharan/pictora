@@ -3,7 +3,7 @@
 # Build from the repository root on arm64, so the npm workspaces resolve:
 #   docker buildx build --platform linux/arm64 --file app/Dockerfile .
 
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /repo
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -29,7 +29,7 @@ RUN mkdir -p app/public \
   && cp -r app/.next/static app/.next/standalone/app/.next/static \
   && cp -r app/public app/.next/standalone/app/public
 
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
 
 ENV NODE_ENV=production \
