@@ -139,7 +139,7 @@ jobs:
             -c "appImageDigest=$DUMMY_IMAGE_DIGEST" -c "workerImageDigest=$DUMMY_IMAGE_DIGEST" -c "gitSha=$GIT_SHA" 2>&1 | tee cdk-diff.txt
 
       - name: Post or update the CDK Diff comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('node:fs');
