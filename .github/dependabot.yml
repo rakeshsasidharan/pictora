@@ -10,6 +10,13 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    # Node types follow the runtime major, and TypeScript majors wait for typescript-eslint support.
+    # Both are upgraded by hand.
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
@@ -23,3 +30,7 @@ updates:
       - /worker
     schedule:
       interval: monthly
+    # The Node major moves to a new LTS by hand, together with CI and @types/node.
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
