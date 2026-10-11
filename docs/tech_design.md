@@ -79,8 +79,8 @@ flowchart LR
 - **Build:** `next build` with `output: 'standalone'`. The Docker image copies `.next/standalone` and runs `node server.js` on port 3000. The Lambda Web Adapter extension is copied into `/opt/extensions/`.
 - **Adapter settings:** `AWS_LWA_PORT=3000`, `AWS_LWA_READINESS_CHECK_PATH=/api/health`, `AWS_LWA_INVOKE_MODE=response_stream`. The Function URL invoke mode is `RESPONSE_STREAM`.
 - **Lambda settings:** arm64, 1024 MB, 30 s timeout, reserved concurrency 20 in prod (cost guard).
-- **Static assets:** `.next/static` and `public/` are uploaded to an S3 assets bucket by CDK `BucketDeployment`. CloudFront serves them through Origin Access Control with a long cache time. Next.js hashes the file names, so no invalidation is needed.
-- **Function URL protection:** the URL uses auth type `NONE`. CloudFront adds a secret `X-Origin-Verify` header, and Next.js middleware rejects requests without it (403). The secret lives in Secrets Manager and is rotated by redeploying.
+- **Static assets:** `.next/static` and `public/static/` are uploaded to an S3 assets bucket by CDK `BucketDeployment`, from the files inside the app image (`infra/scripts/extract_app_static.sh`), so they match the server exactly. CloudFront serves them through Origin Access Control with a long cache time. Next.js hashes the file names, so no invalidation is needed. Other files in `public/` are served by the app.
+- **Function URL protection:** the URL uses auth type `NONE`. CloudFront adds a secret `X-Origin-Verify` header, and the Next.js proxy (`app/src/proxy.ts`; Next.js 16 renamed the middleware file convention to proxy) rejects requests without it (403). The secret lives in Secrets Manager and is rotated by redeploying.
   Why not Origin Access Control for Lambda: with it, POST bodies need a client-computed `x-amz-content-sha256` header, which browsers don't send.
 - **CloudFront:** the default behaviour uses `CachingDisabled` and the `AllViewerExceptHostHeader` origin request policy. A Function URL rejects a forwarded `Host` header.
 
@@ -322,8 +322,8 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 
 | Bucket | Contents | Settings |
 | --- | --- | --- |
-| `pictora-<env>-images` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain, versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
-| `pictora-<env>-assets` | Next.js static files | Block public access; read only through CloudFront Origin Access Control |
+| `pictora-<env>-images-<account-id>` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain, versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
+| `pictora-<env>-assets-<account-id>` | Next.js static files | Block public access; read only through CloudFront Origin Access Control |
 
 - Thumbnails (512 px WebP) are made by the worker with `sharp`, for fast gallery loads. Downloads always serve the original PNG (GEN-7).
 - Presigned GET URLs last 15 minutes.
@@ -375,7 +375,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | | dev | prod |
 | --- | --- | --- |
 | Stacks | `PictoraDev-*` | `PictoraProd-*` |
-| Domain | `pictora.rpillai.dev` (Route 53 zone `rpillai.dev`, ACM DNS validation) | Open question |
+| Domain | `pictora.rpillai.dev` (Route 53 zone `rpillai.dev`, ACM DNS validation) | Open question; until it is set, prod has no `Certificate` stack and is served on its CloudFront domain |
 | Models | All, plus `mock` | Real models only |
 | Daily points | 1,000 (for testing) | 25 |
 | Spend cap | $20/month | $100/month |

@@ -92,6 +92,22 @@
     "@aws-cdk/custom-resources:logApiResponseDataPropertyTrueDefault": false,
     "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
     "@aws-cdk/s3-notifications:addS3TrustKeyPolicyForSnsSubscriptions": true,
-    "@aws-cdk/aws-cloudfront:defaultViewerProtocolPolicyRedirectToHttps": true
+    "@aws-cdk/aws-cloudfront:defaultViewerProtocolPolicyRedirectToHttps": true,
+    "environments": {
+      "dev": {
+        "domain": "pictora.rpillai.dev",
+        "dailyPoints": 1000,
+        "spendCapUsd": 20,
+        "queueConcurrency": 5,
+        "budgetUsd": 15
+      },
+      "prod": {
+        "dailyPoints": 25,
+        "spendCapUsd": 100,
+        "queueConcurrency": 5,
+        "budgetUsd": 25,
+        "appReservedConcurrency": 20
+      }
+    }
   }
 }

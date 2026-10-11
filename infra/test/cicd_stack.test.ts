@@ -2,7 +2,8 @@ import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CicdStack } from '../lib/cicd_stack.js';
-import { createPictoraApp, PRIMARY_REGION } from '../lib/pictora_app.js';
+import { PRIMARY_REGION } from '../lib/pictora_app.js';
+import { testApp } from './helpers.js';
 
 /** A placeholder account, so ARNs render as strings the assertions can read. */
 const ACCOUNT = '111111111111';
@@ -83,7 +84,7 @@ function bootstrapRoleArns(types: string[]): string[] {
 
 describe('PictoraCicd stack', () => {
   it('is part of the CDK app, in the primary region', () => {
-    const cicd = createPictoraApp().node.findChild('PictoraCicd') as CicdStack;
+    const cicd = testApp().node.findChild('PictoraCicd') as CicdStack;
     expect(cicd).toBeInstanceOf(CicdStack);
     expect(cicd.region).toBe(PRIMARY_REGION);
   });
