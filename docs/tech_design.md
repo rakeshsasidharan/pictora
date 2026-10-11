@@ -106,7 +106,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, width, height, parentVersion, prompt, enhancedPrompt, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage, category | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, pointsCharged, providerCostCents, error, startedAt, finishedAt, attempts | 30 days |
-| Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1) | — |
+| Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
 | Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents, capCents | — |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
 | Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | userId, stage, category, promptExcerpt, provider | 90 days |
@@ -119,6 +119,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Image detail + versions (GAL-2) | Query `PK=USER#<sub>`, `SK begins_with VER#<imageId>#` |
 | Job status poll | GetItem `JOB#<jobId>`, checking that userId matches the caller |
 | Today's usage | GetItem `USAGE#<today>` |
+| Whole model registry (seed, loader) | Query GSI1 `GSI1PK=REGISTRY` |
 | Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending |
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
 | Account deletion (AUTH-3) | Query all items under `USER#<sub>` and delete them in batches; delete the S3 prefix `users/<sub>/` |
@@ -237,9 +238,18 @@ export interface ModelConfig {
 }
 ```
 
-- `packages/core/models.json` is the source of truth. A CDK custom resource writes it to DynamoDB on every deploy, with an upsert that **keeps** the `enabled` field already in DynamoDB, so a kill switch flipped by hand survives deploys.
-- The app and the worker cache the registry in memory for 60 s, so a kill switch takes effect within 1 minute (ADM-2).
-- The UI gets models only from `GET /api/models`, filtered by `enabled` and environment.
+- `packages/core/models.json` is the source of truth. A CDK custom resource in the `Data` stack (`infra/lambda/registry_seed_handler.ts`) writes it to DynamoDB on every deploy, with an upsert that **keeps** the `enabled` field already in DynamoDB, so a kill switch flipped by hand survives deploys and rollbacks. New models take `enabled` from the seed. Models removed from the seed are marked `enabled: false`, never deleted.
+- The app and the worker cache the registry in memory for 60 s, so a kill switch takes effect within 1 minute (ADM-2). The loader (`@pictora/core/registry-store`) filters by environment, and never offers a `mock` model in prod.
+- The UI gets models only from `GET /api/models`, filtered by `enabled` and environment: display name, strengths, capabilities, point cost per quality, and the style presets with their suggested model. Provider settings stay on the server.
+
+**Kill switch (ADM-2).** To switch a model off, set `enabled` to false on its registry item; it disappears from `/api/models` within 60 s and stays off after later deploys. Set it back to true to switch the model on again.
+
+```sh
+aws dynamodb update-item --region us-west-2 --table-name pictora-prod \
+  --key '{"PK": {"S": "MODEL#gpt-image-2"}, "SK": {"S": "CONFIG"}}' \
+  --update-expression 'SET enabled = :off' \
+  --expression-attribute-values '{":off": {"BOOL": false}}'
+```
 
 ### 6.2 Adapter interface
 
