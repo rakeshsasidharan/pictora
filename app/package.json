@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1149.0",
+    "@aws-sdk/client-ssm": "^3.1149.0",
+    "aws-jwt-verify": "^5.2.1",
     "next": "^16.4.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

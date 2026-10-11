@@ -41,7 +41,9 @@ describe('Web stack: app Lambda', () => {
       PICTORA_ENV: 'dev',
       DAILY_POINTS: '1000',
       SPEND_CAP_CENTS: '2000',
-      SITE_URL: 'https://pictora.rpillai.dev',
+      APP_CONFIG_PARAMETER: '/pictora/dev/app-config',
+      COGNITO_USER_POOL_ID: expect.anything(),
+      COGNITO_DOMAIN: expect.anything(),
       ORIGIN_VERIFY_SECRET_ARN: { Ref: expect.stringMatching(/^OriginVerifySecret/) },
     });
   });
@@ -67,6 +69,80 @@ describe('Web stack: app Lambda', () => {
     dev.hasResourceProperties('AWS::SecretsManager::Secret', {
       Name: 'pictora/dev/origin-verify',
       GenerateSecretString: Match.objectLike({ PasswordLength: 48 }),
+    });
+  });
+});
+
+function appClient(template: Template) {
+  const [client] = Object.values(template.findResources('AWS::Cognito::UserPoolClient'));
+  return client?.Properties;
+}
+
+describe('Web stack: Cognito app client', () => {
+  it('uses the authorization code flow with no client secret and the agreed token lifetimes', () => {
+    expect(appClient(dev)).toMatchObject({
+      ClientName: 'pictora-dev-web',
+      GenerateSecret: false,
+      AllowedOAuthFlows: ['code'],
+      AllowedOAuthFlowsUserPoolClient: true,
+      AllowedOAuthScopes: ['openid', 'email', 'profile'],
+      SupportedIdentityProviders: ['COGNITO', 'Google'],
+      AccessTokenValidity: 60,
+      IdTokenValidity: 60,
+      RefreshTokenValidity: 30 * 24 * 60,
+      TokenValidityUnits: { AccessToken: 'minutes', IdToken: 'minutes', RefreshToken: 'minutes' },
+      PreventUserExistenceErrors: 'ENABLED',
+      EnableTokenRevocation: true,
+    });
+  });
+
+  it('calls back to the dev domain, and to local next dev', () => {
+    expect(appClient(dev)).toMatchObject({
+      CallbackURLs: [
+        'https://pictora.rpillai.dev/auth/callback',
+        'http://localhost:3000/auth/callback',
+      ],
+      LogoutURLs: ['https://pictora.rpillai.dev/', 'http://localhost:3000/'],
+    });
+  });
+
+  it('calls back to the CloudFront domain in prod, which has no custom domain yet', () => {
+    const domain = { 'Fn::GetAtt': [expect.stringMatching(/^Distribution/), 'DomainName'] };
+    expect(appClient(prod)).toMatchObject({
+      CallbackURLs: [{ 'Fn::Join': ['', ['https://', domain, '/auth/callback']] }],
+      LogoutURLs: [{ 'Fn::Join': ['', ['https://', domain, '/']] }],
+    });
+  });
+
+  it('is deployed after the Auth stack, which holds the pool and the Google provider', () => {
+    expect(devStage.web.dependencies).toContain(devStage.auth);
+  });
+
+  it('publishes the site URL and client ID to the app config parameter, readable by the app', () => {
+    dev.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: '/pictora/dev/app-config',
+      Value: {
+        'Fn::Join': [
+          '',
+          [
+            '{"siteUrl":"https://pictora.rpillai.dev","cognitoClientId":"',
+            { Ref: Match.stringLikeRegexp('^AppClient') },
+            '"}',
+          ],
+        ],
+      },
+    });
+    dev.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: 'ssm:GetParameter',
+            Resource: {
+              'Fn::Join': ['', Match.arrayWith([':parameter/pictora/dev/app-config'])],
+            },
+          }),
+        ]),
+      },
     });
   });
 });

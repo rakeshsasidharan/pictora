@@ -12,12 +12,13 @@ AWS CDK app for Pictora. It holds the `PictoraDev` and `PictoraProd` stages, and
 | ------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
 | `Certificate` | us-east-1 | ACM certificate for the site domain, DNS-validated in the `rpillai.dev` zone. Only when a domain is set     |
 | `Data`        | us-west-2 | DynamoDB table `pictora-<env>` and the images bucket                                                        |
-| `Web`         | us-west-2 | App Lambda (image by digest) with a streaming Function URL, assets bucket, CloudFront, origin verify secret, DNS records |
+| `Auth`        | us-west-2 | Cognito user pool (email username, Google provider), managed login domain and the `admins` group             |
+| `Web`         | us-west-2 | App Lambda (image by digest) with a streaming Function URL, assets bucket, CloudFront, origin verify secret, DNS records, Cognito app client and the `/pictora/<env>/app-config` parameter |
 | `Monitoring`  | us-west-2 | SNS alert topic, app 5xx alarm and the AWS budget                                                           |
 
 ### Settings
 
-Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `dailyPoints`, `spendCapUsd`, `queueConcurrency`, `budgetUsd` and `appReservedConcurrency`.
+Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `authDomainPrefix` (the Cognito managed login domain, `<prefix>.auth.us-west-2.amazoncognito.com`), `dailyPoints`, `spendCapUsd`, `queueConcurrency`, `budgetUsd` and `appReservedConcurrency`.
 
 Account-specific and per-deploy values are passed with `-c` and have placeholders, so synth works without them:
 
@@ -31,6 +32,17 @@ Account-specific and per-deploy values are passed with `-c` and have placeholder
 | `alertEmail`     | Email subscribed to the alert topic (kept out of the repo) | No subscription                |
 
 With a real `appImageDigest`, synth fails unless `appStaticDir` exists, so a deploy never ships the app without its static files.
+
+### Google sign-in
+
+The `Auth` stack reads the Google OAuth client from Secrets Manager, so create the secret once per environment before its first deploy:
+
+```sh
+aws secretsmanager create-secret --region us-west-2 --name pictora/dev/google-oauth \
+  --secret-string '{"clientId":"<client id>","clientSecret":"<client secret>"}'
+```
+
+In the Google Cloud console, the OAuth client (type Web application) needs the authorised redirect URI `https://<authDomainPrefix>.auth.us-west-2.amazoncognito.com/oauth2/idpresponse` and the JavaScript origin `https://<authDomainPrefix>.auth.us-west-2.amazoncognito.com`.
 
 ### Deploying a stage from a laptop
 
