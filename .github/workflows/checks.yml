@@ -22,7 +22,7 @@ jobs:
       DUMMY_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
       GIT_SHA: 0000000000000000000000000000000000000000
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
