@@ -100,13 +100,13 @@ describe('PictoraCicd stack', () => {
   });
 
   it.each([
-    ['pictora-gh-diff', 'repo:rakeshsasidharan/pictora:pull_request'],
-    ['pictora-gh-build', 'repo:rakeshsasidharan/pictora:ref:refs/heads/main'],
+    ['pictora-gh-diff', 'repo:rakeshsasidharan@16108001/pictora@1409752771:pull_request'],
+    ['pictora-gh-build', 'repo:rakeshsasidharan@16108001/pictora@1409752771:ref:refs/heads/main'],
     [
       'pictora-gh-deploy',
       [
-        'repo:rakeshsasidharan/pictora:environment:dev',
-        'repo:rakeshsasidharan/pictora:environment:production',
+        'repo:rakeshsasidharan@16108001/pictora@1409752771:environment:dev',
+        'repo:rakeshsasidharan@16108001/pictora@1409752771:environment:production',
       ],
     ],
   ])('trusts %s only for the expected sub and aud', (roleName, sub) => {
