@@ -57,7 +57,7 @@ jobs:
       matrix:
         image: [app, worker]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -111,7 +111,7 @@ jobs:
       DUMMY_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
       GIT_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
