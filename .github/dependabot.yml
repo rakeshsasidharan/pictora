@@ -1,0 +1,25 @@
+# Dependency updates (CI/CD design 4 and 7).
+version: 2
+updates:
+  # One root lockfile covers every npm workspace. Minor and patch updates come as one grouped PR a week;
+  # major updates stay separate, since they need a closer look.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  # Base images and the Lambda Web Adapter in the app and worker Dockerfiles.
+  - package-ecosystem: docker
+    directories:
+      - /app
+      - /worker
+    schedule:
+      interval: monthly

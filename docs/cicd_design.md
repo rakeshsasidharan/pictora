@@ -56,7 +56,7 @@ flowchart LR
 | File | Trigger | Jobs | Purpose |
 | --- | --- | --- | --- |
 | `.github/workflows/checks.yml` | `workflow_call` (reusable) | `checks` | One definition of lint, typecheck, tests, build and synth, used by both pipelines |
-| `.github/workflows/pr.yml` | `pull_request` → `main` | `changes`, `checks`, `image-check`, `cdk-diff` | PR gate |
+| `.github/workflows/pr.yml` | `pull_request` → `main` | `changes`, `checks`, `image-build`, `image-check`, `cdk-diff` | PR gate |
 | `.github/workflows/deploy.yml` | `push` → `main`; `workflow_dispatch` (environment, commit SHA) | `checks`, `build-images`, `deploy-dev`, `e2e-dev`, `deploy-prod`, `smoke-prod` | Build once, deploy dev, promote to prod; also used for redeploys and rollbacks |
 | `.github/dependabot.yml` | Weekly | — | npm (grouped minor and patch), GitHub Actions, Docker base images |
 
@@ -82,7 +82,8 @@ Target: under 6 minutes.
 | --- | --- | --- |
 | `changes` | Always | Outputs `app`, `worker`, `packages`, `infra` flags |
 | `checks` | Always | Calls `checks.yml` |
-| `image-check` | app, worker or packages changed | `docker buildx build` of both images on arm64, no push. Catches Dockerfile breaks before merge |
+| `image-build` | app, worker or packages changed | `docker buildx build` of both images on arm64, no push (matrix: `app`, `worker`). Catches Dockerfile breaks before merge |
+| `image-check` | Always | Passes when `image-build` passed or was skipped. A skipped matrix job doesn't report its per-image check names, so this job gives the ruleset one check that is always present |
 | `cdk-diff` | infra or packages changed, **and the PR is from this repo, not a fork** | OIDC → `pictora-gh-diff` role → `cdk diff 'PictoraDev/*' 'PictoraProd/*'`. Posts or updates one PR comment headed `## CDK Diff` |
 
 Guard for fork PRs: `if: github.event.pull_request.head.repo.full_name == github.repository`. Never use `pull_request_target`.
@@ -189,13 +190,60 @@ The stack also creates the two ECR repositories: immutable tags, scan on push, a
 
 | Setting | Value |
 | --- | --- |
-| Ruleset on `main` | Require a pull request (0 approvals; you are the only maintainer); require status checks `checks` and `image-check`; block force pushes and deletion |
+| Ruleset on `main` | Require a pull request (0 approvals; you are the only maintainer); require status checks `checks / checks` and `image-check` from GitHub Actions; block force pushes and deletion; **empty bypass list**, so nobody (including the Claude Code routine, which pushes as a repo admin) can push to `main` directly |
 | Actions → Fork PR workflows | Require approval for all outside contributors |
 | Actions → Workflow permissions | Read-only `GITHUB_TOKEN` by default; workflows ask for more per job |
 | Secret scanning + push protection | On (free for public repos) |
 | CodeQL | Default setup on, for JavaScript/TypeScript (free for public repos) |
 | Dependabot alerts + security updates | On |
 | Action pinning | Major versions (`@v4`), kept current by Dependabot; third-party actions (`dorny/paths-filter`) pinned to a commit SHA |
+
+### 7.1 Applying the settings
+
+The settings are applied with `gh api` (as a repo admin) and can be re-run at any time; each command sets the full state. The ruleset itself is kept in [`.github/rulesets/protect_main.json`](../.github/rulesets/protect_main.json). `15368` is the GitHub Actions app ID, so only check runs from Actions can satisfy the required checks.
+
+```sh
+REPO=rakeshsasidharan/pictora
+
+# Ruleset on main: update the existing "Protect main" ruleset, or create it if it doesn't exist yet.
+RULESET_ID=$(gh api "repos/$REPO/rulesets" --jq '.[] | select(.name == "Protect main") | .id')
+if [ -n "$RULESET_ID" ]; then
+  gh api -X PUT "repos/$REPO/rulesets/$RULESET_ID" --input .github/rulesets/protect_main.json
+else
+  gh api -X POST "repos/$REPO/rulesets" --input .github/rulesets/protect_main.json
+fi
+
+# Actions: approval for every outside contributor's fork PR runs; read-only GITHUB_TOKEN by default.
+gh api -X PUT "repos/$REPO/actions/permissions/fork-pr-contributor-approval" \
+  -f approval_policy=all_external_contributors
+gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+
+# Secret scanning with push protection.
+gh api -X PATCH "repos/$REPO" --input - <<'JSON'
+{"security_and_analysis": {"secret_scanning": {"status": "enabled"}, "secret_scanning_push_protection": {"status": "enabled"}}}
+JSON
+
+# Dependabot alerts and security updates.
+gh api -X PUT "repos/$REPO/vulnerability-alerts"
+gh api -X PUT "repos/$REPO/automated-security-fixes"
+
+# CodeQL default setup for JavaScript/TypeScript.
+gh api -X PATCH "repos/$REPO/code-scanning/default-setup" \
+  -f state=configured -f query_suite=default -f 'languages[]=javascript-typescript'
+```
+
+To check the result:
+
+```sh
+gh api "repos/$REPO/rulesets/$RULESET_ID" --jq '{bypass_actors, rules: [.rules[].type]}'
+gh api "repos/$REPO/actions/permissions/workflow"
+gh api "repos/$REPO/actions/permissions/fork-pr-contributor-approval"
+gh api "repos/$REPO" --jq '.security_and_analysis'
+gh api "repos/$REPO/vulnerability-alerts" --silent && echo 'Dependabot alerts on'
+gh api "repos/$REPO/automated-security-fixes"
+gh api "repos/$REPO/code-scanning/default-setup"
+```
 
 ## 8. Risks and trade-offs
 
