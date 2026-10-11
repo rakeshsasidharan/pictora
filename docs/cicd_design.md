@@ -175,9 +175,11 @@ A small CDK stack, `PictoraCicd`, holds everything CI needs. **You deploy it onc
 
 | Role | Trusted when the token `sub` is | Can do |
 | --- | --- | --- |
-| `pictora-gh-diff` | `repo:rakeshsasidharan/pictora:pull_request` | Assume the CDK bootstrap **lookup** role (read-only), for `cdk diff` |
-| `pictora-gh-build` | `repo:rakeshsasidharan/pictora:ref:refs/heads/main` | Push and read on `pictora-app` and `pictora-worker` ECR repos only |
-| `pictora-gh-deploy` | `repo:rakeshsasidharan/pictora:environment:dev` or `…:environment:production` | Assume the CDK bootstrap deploy, file-publishing, image-publishing and lookup roles in us-west-2 and us-east-1; read ECR images |
+| `pictora-gh-diff` | `repo:rakeshsasidharan@16108001/pictora@1409752771:pull_request` | Assume the CDK bootstrap **lookup** role (read-only), for `cdk diff` |
+| `pictora-gh-build` | `repo:rakeshsasidharan@16108001/pictora@1409752771:ref:refs/heads/main` | Push and read on `pictora-app` and `pictora-worker` ECR repos only |
+| `pictora-gh-deploy` | `repo:rakeshsasidharan@16108001/pictora@1409752771:environment:dev` or `…:environment:production` | Assume the CDK bootstrap deploy, file-publishing, image-publishing and lookup roles in us-west-2 and us-east-1; read ECR images |
+
+The repository uses GitHub's immutable OIDC subjects, so `sub` names the owner and repository by their numeric IDs (`owner@id/repo@id`). A renamed or re-created repository with the same name can't assume the roles.
 
 All roles require `aud = sts.amazonaws.com`, a 1-hour maximum session, and no inline admin rights. The deploy role is trusted **only from GitHub environments**, and environments accept only `main`, so a feature branch can never deploy.
 

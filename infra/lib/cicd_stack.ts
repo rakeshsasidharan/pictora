@@ -10,7 +10,11 @@ import {
 } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 
-export const GITHUB_REPOSITORY = 'rakeshsasidharan/pictora';
+/**
+ * The repo uses GitHub's immutable OIDC subjects, which name the owner and repository with their
+ * numeric IDs (`owner@id/repo@id`), so the roles stay bound to this repository even if it is renamed.
+ */
+export const GITHUB_OIDC_SUBJECT_PREFIX = 'repo:rakeshsasidharan@16108001/pictora@1409752771';
 export const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
 export const GITHUB_OIDC_AUDIENCE = 'sts.amazonaws.com';
 
@@ -123,7 +127,7 @@ export class CicdStack extends Stack {
     roleName: string,
     subjects: string[],
   ): Role {
-    const sub = subjects.map((subject) => `repo:${GITHUB_REPOSITORY}:${subject}`);
+    const sub = subjects.map((subject) => `${GITHUB_OIDC_SUBJECT_PREFIX}:${subject}`);
     return new Role(this, id, {
       roleName,
       maxSessionDuration: Duration.hours(1),
