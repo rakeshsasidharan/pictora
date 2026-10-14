@@ -7,6 +7,8 @@ import {
 } from '../lib/stage_config.js';
 import { cdkJsonContext, TEST_IMAGE_DIGEST } from './helpers.js';
 
+const WORKER_DIGEST = `sha256:${'b'.repeat(64)}`;
+
 const devSettings = {
   domain: 'pictora.rpillai.dev',
   authDomainPrefix: 'pictora-test-dev',
@@ -26,6 +28,7 @@ describe('stageConfig', () => {
     expect(config.hostedZoneId).toBe(PLACEHOLDER_HOSTED_ZONE_ID);
     expect(config.appImageDigest).toBe(PLACEHOLDER_IMAGE_DIGEST);
     expect(config.placeholderImage).toBe(true);
+    expect(config.workerImageDigest).toBe(PLACEHOLDER_IMAGE_DIGEST);
     expect(config.gitSha).toBe('local');
     expect(config.alertEmail).toBeUndefined();
   });
@@ -35,6 +38,7 @@ describe('stageConfig', () => {
       environments: { dev: devSettings },
       hostedZoneId: 'ZREALZONE',
       appImageDigest: TEST_IMAGE_DIGEST,
+      workerImageDigest: WORKER_DIGEST,
       appStaticDir: '.',
       gitSha: 'abc123',
       alertEmail: 'alerts@example.com',
@@ -43,6 +47,7 @@ describe('stageConfig', () => {
       hostedZoneId: 'ZREALZONE',
       appImageDigest: TEST_IMAGE_DIGEST,
       placeholderImage: false,
+      workerImageDigest: WORKER_DIGEST,
       gitSha: 'abc123',
       alertEmail: 'alerts@example.com',
     });
@@ -53,15 +58,15 @@ describe('stageConfig', () => {
       environments: { dev: devSettings },
       hostedZoneId: '',
       alertEmail: '',
+      workerImageDigest: '',
     });
     expect(config.hostedZoneId).toBe(PLACEHOLDER_HOSTED_ZONE_ID);
+    expect(config.workerImageDigest).toBe(PLACEHOLDER_IMAGE_DIGEST);
     expect(config.alertEmail).toBeUndefined();
   });
 
-  it('rejects a malformed image digest', () => {
-    expect(() =>
-      configFor({ environments: { dev: devSettings }, appImageDigest: 'latest' }),
-    ).toThrow(/appImageDigest/);
+  it.each(['appImageDigest', 'workerImageDigest'])('rejects a malformed %s', (key) => {
+    expect(() => configFor({ environments: { dev: devSettings }, [key]: 'latest' })).toThrow(key);
   });
 
   it('refuses a real image without its static files', () => {
@@ -72,6 +77,16 @@ describe('stageConfig', () => {
         appStaticDir: '/does/not/exist',
       }),
     ).toThrow(/static files not found/);
+  });
+
+  it('refuses a real app image without the worker image', () => {
+    expect(() =>
+      configFor({
+        environments: { dev: devSettings },
+        appImageDigest: TEST_IMAGE_DIGEST,
+        appStaticDir: '.',
+      }),
+    ).toThrow(/workerImageDigest is required/);
   });
 
   it('rejects a domain outside the hosted zone', () => {

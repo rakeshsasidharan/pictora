@@ -13,8 +13,9 @@ AWS CDK app for Pictora. It holds the `PictoraDev` and `PictoraProd` stages, and
 | `Certificate` | us-east-1 | ACM certificate for the site domain, DNS-validated in the `rpillai.dev` zone. Only when a domain is set     |
 | `Data`        | us-west-2 | DynamoDB table `pictora-<env>` and the images bucket                                                        |
 | `Auth`        | us-west-2 | Cognito user pool (email username, Google provider), managed login domain and the `admins` group             |
+| `Jobs`        | us-west-2 | SQS queues `pictora-<env>-openai` and `pictora-<env>-gemini`, the shared dead-letter queue `pictora-<env>-dlq`, and the worker Lambda (image by digest) that consumes both queues |
 | `Web`         | us-west-2 | App Lambda (image by digest) with a streaming Function URL, assets bucket, CloudFront, origin verify secret, DNS records, Cognito app client and the `/pictora/<env>/app-config` parameter |
-| `Monitoring`  | us-west-2 | SNS alert topic, app 5xx alarm and the AWS budget                                                           |
+| `Monitoring`  | us-west-2 | SNS alert topic, app 5xx and dead-letter queue alarms, and the AWS budget                                   |
 
 ### Settings
 
@@ -26,12 +27,13 @@ Account-specific and per-deploy values are passed with `-c` and have placeholder
 | ---------------- | ---------------------------------------------------------- | ------------------------------ |
 | `hostedZoneId`   | Route 53 zone ID of `rpillai.dev` (`vars.HOSTED_ZONE_ID`)  | `Z0000000000PLACEHOLDER`       |
 | `appImageDigest` | Digest of the pushed `pictora-app` image                   | `sha256:000…`                  |
+| `workerImageDigest` | Digest of the pushed `pictora-worker` image             | `sha256:000…`                  |
 | `gitSha`         | Commit SHA, returned by `/api/health`                      | `local`                        |
 | `appStaticDir`   | Next.js `.next/static` files from that image               | `app/.next/static`             |
 | `appPublicDir`   | Next.js `public` folder from that image                    | `app/public`                   |
 | `alertEmail`     | Email subscribed to the alert topic (kept out of the repo) | No subscription                |
 
-With a real `appImageDigest`, synth fails unless `appStaticDir` exists, so a deploy never ships the app without its static files.
+With a real `appImageDigest`, synth fails unless `appStaticDir` exists and `workerImageDigest` is given, so a deploy never ships the app without its static files or the worker.
 
 ### Google sign-in
 
@@ -44,13 +46,22 @@ aws secretsmanager create-secret --region us-west-2 --name pictora/dev/google-oa
 
 In the Google Cloud console, the OAuth client (type Web application) needs the authorised redirect URI `https://<authDomainPrefix>.auth.us-west-2.amazoncognito.com/oauth2/idpresponse` and the JavaScript origin `https://<authDomainPrefix>.auth.us-west-2.amazoncognito.com`.
 
+### Provider keys
+
+The worker reads the provider API keys from Secrets Manager secrets `pictora/<env>/openai` and `pictora/<env>/gemini`, which are created by hand once per environment (tech design section 10). Its IAM policy names exactly these two secrets. The stack deploys without them, but jobs for a provider fail until its secret exists:
+
+```sh
+aws secretsmanager create-secret --region us-west-2 --name pictora/dev/openai --secret-string '<api key>'
+```
+
 ### Deploying a stage from a laptop
 
 ```sh
 cd infra
 scripts/extract_app_static.sh <account>.dkr.ecr.us-west-2.amazonaws.com/pictora-app@<digest> /tmp/pictora-static
 npx cdk deploy 'PictoraDev/*' \
-  -c hostedZoneId=<zone id> -c appImageDigest=<digest> -c gitSha=<sha> -c alertEmail=<email> \
+  -c hostedZoneId=<zone id> -c appImageDigest=<digest> -c workerImageDigest=<worker digest> \
+  -c gitSha=<sha> -c alertEmail=<email> \
   -c appStaticDir=/tmp/pictora-static/static -c appPublicDir=/tmp/pictora-static/public
 ```
 

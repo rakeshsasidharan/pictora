@@ -41,6 +41,23 @@ describe('Monitoring stack', () => {
     });
   });
 
+  it('alarms as soon as any message is in the dead-letter queue', () => {
+    dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'pictora-dev-dlq',
+      Namespace: 'AWS/SQS',
+      MetricName: 'ApproximateNumberOfMessagesVisible',
+      Dimensions: [{ Name: 'QueueName', Value: Match.anyValue() }],
+      Statistic: 'Maximum',
+      Period: 300,
+      Threshold: 0,
+      ComparisonOperator: 'GreaterThanThreshold',
+      EvaluationPeriods: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: Match.stringLikeRegexp('^AlertTopic') }],
+      OKActions: [{ Ref: Match.stringLikeRegexp('^AlertTopic') }],
+    });
+  });
+
   it('budgets the environment with alerts at 50%, 80% and 100% to the alert topic', () => {
     const [budget] = Object.values(dev.findResources('AWS::Budgets::Budget'));
     expect(budget?.Properties.Budget).toMatchObject({

@@ -10,7 +10,10 @@ export const HOSTED_ZONE_NAME = 'rpillai.dev';
 /** Used when no `hostedZoneId` context is given, so synth works without AWS access. Deploys pass the real ID. */
 export const PLACEHOLDER_HOSTED_ZONE_ID = 'Z0000000000PLACEHOLDER';
 
-/** Used when no `appImageDigest` context is given (tests, PR checks). Deploys pass the pushed image's digest. */
+/**
+ * Used when no `appImageDigest` or `workerImageDigest` context is given (tests, PR checks). Deploys pass the
+ * pushed images' digests.
+ */
 export const PLACEHOLDER_IMAGE_DIGEST = `sha256:${'0'.repeat(64)}`;
 
 /** Where the app build leaves its static files, relative to this file. */
@@ -45,6 +48,8 @@ export interface DeploySettings {
   readonly appImageDigest: string;
   /** True when no real image digest was given, so the stage can't be deployed as is. */
   readonly placeholderImage: boolean;
+  /** Digest of the `pictora-worker` image the worker Lambda runs. */
+  readonly workerImageDigest: string;
   readonly gitSha: string;
   /** Email for the alert topic. Kept out of the repo; without it the topic has no subscription. */
   readonly alertEmail?: string;
@@ -102,13 +107,7 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
 }
 
 function deploySettings(node: Node): DeploySettings {
-  const digest = contextString(node, 'appImageDigest');
-  if (digest !== undefined && !IMAGE_DIGEST_PATTERN.test(digest)) {
-    throw new Error(
-      `CDK context appImageDigest must look like sha256:<64 hex characters>: ${digest}`,
-    );
-  }
-  const appImageDigest = digest ?? PLACEHOLDER_IMAGE_DIGEST;
+  const appImageDigest = imageDigest(node, 'appImageDigest');
   const placeholderImage = appImageDigest === PLACEHOLDER_IMAGE_DIGEST;
 
   const appStaticDir = contextString(node, 'appStaticDir') ?? DEFAULT_APP_STATIC_DIR;
@@ -118,15 +117,33 @@ function deploySettings(node: Node): DeploySettings {
     );
   }
 
+  // A deploy passes both images. Catching a missing worker digest here beats a failed Lambda update later.
+  const workerImageDigest = imageDigest(node, 'workerImageDigest');
+  if (!placeholderImage && workerImageDigest === PLACEHOLDER_IMAGE_DIGEST) {
+    throw new Error(
+      'CDK context workerImageDigest is required with a real appImageDigest: pass the pushed pictora-worker image digest.',
+    );
+  }
+
   return {
     hostedZoneId: contextString(node, 'hostedZoneId') ?? PLACEHOLDER_HOSTED_ZONE_ID,
     appImageDigest,
     placeholderImage,
+    workerImageDigest,
     gitSha: contextString(node, 'gitSha') ?? 'local',
     alertEmail: contextString(node, 'alertEmail'),
     appStaticDir,
     appPublicDir: contextString(node, 'appPublicDir') ?? DEFAULT_APP_PUBLIC_DIR,
   };
+}
+
+/** An image digest from context, or the placeholder when it isn't given. */
+function imageDigest(node: Node, key: string): string {
+  const digest = contextString(node, key);
+  if (digest !== undefined && !IMAGE_DIGEST_PATTERN.test(digest)) {
+    throw new Error(`CDK context ${key} must look like sha256:<64 hex characters>: ${digest}`);
+  }
+  return digest ?? PLACEHOLDER_IMAGE_DIGEST;
 }
 
 /** A context value given with `-c`, treating an empty string as unset. */

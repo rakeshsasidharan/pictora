@@ -12,6 +12,7 @@ import { PolicyStatement, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
 import type { IFunction } from 'aws-cdk-lib/aws-lambda';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import type { IQueue } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
 import type { StageConfig } from './stage_config.js';
 
@@ -27,12 +28,18 @@ export const ENVIRONMENT_TAG = 'environment';
 export interface MonitoringStackProps extends StackProps {
   readonly config: StageConfig;
   readonly appFunction: IFunction;
+  /** The `Jobs` stack's shared dead-letter queue. */
+  readonly deadLetterQueue: IQueue;
 }
 
-/** Alert topic, app alarms and the AWS budget (tech design 11). The dashboard and job alarms come later. */
+/**
+ * Alert topic, the app 5xx and dead-letter queue alarms, and the AWS budget (tech design 11). The dashboard and
+ * the other job alarms come later.
+ */
 export class MonitoringStack extends Stack {
   readonly alertTopic: Topic;
   readonly app5xxAlarm: Alarm;
+  readonly deadLetterAlarm: Alarm;
 
   constructor(scope: Construct, id: string, props: MonitoringStackProps) {
     super(scope, id, props);
@@ -72,6 +79,22 @@ export class MonitoringStack extends Stack {
     });
     this.app5xxAlarm.addAlarmAction(new SnsAction(this.alertTopic));
     this.app5xxAlarm.addOkAction(new SnsAction(this.alertTopic));
+
+    // A message lands here after failing 3 receives; any at all needs a look.
+    this.deadLetterAlarm = new Alarm(this, 'DeadLetterAlarm', {
+      alarmName: `pictora-${config.envName}-dlq`,
+      alarmDescription: 'Job messages are in the dead-letter queue',
+      metric: props.deadLetterQueue.metricApproximateNumberOfMessagesVisible({
+        statistic: 'Maximum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 0,
+      comparisonOperator: ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: TreatMissingData.NOT_BREACHING,
+    });
+    this.deadLetterAlarm.addAlarmAction(new SnsAction(this.alertTopic));
+    this.deadLetterAlarm.addOkAction(new SnsAction(this.alertTopic));
 
     this.alertTopic.addToResourcePolicy(
       new PolicyStatement({

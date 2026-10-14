@@ -3,6 +3,7 @@ import type { Construct } from 'constructs';
 import { AuthStack } from './auth_stack.js';
 import { CERTIFICATE_REGION, CertificateStack } from './certificate_stack.js';
 import { DataStack } from './data_stack.js';
+import { JobsStack } from './jobs_stack.js';
 import { ENVIRONMENT_TAG, MonitoringStack } from './monitoring_stack.js';
 import { stageConfig, type EnvName, type StageConfig } from './stage_config.js';
 import { WebStack } from './web_stack.js';
@@ -23,6 +24,7 @@ export class PictoraStage extends Stage {
   readonly certificate?: CertificateStack;
   readonly data: DataStack;
   readonly auth: AuthStack;
+  readonly jobs: JobsStack;
   readonly web: WebStack;
   readonly monitoring: MonitoringStack;
 
@@ -45,6 +47,11 @@ export class PictoraStage extends Stage {
     }
     this.data = new DataStack(this, 'Data', { config });
     this.auth = new AuthStack(this, 'Auth', { config });
+    this.jobs = new JobsStack(this, 'Jobs', {
+      config,
+      table: this.data.table,
+      imagesBucket: this.data.imagesBucket,
+    });
     this.web = new WebStack(this, 'Web', {
       crossRegionReferences: config.domain !== undefined,
       config,
@@ -56,6 +63,7 @@ export class PictoraStage extends Stage {
     this.monitoring = new MonitoringStack(this, 'Monitoring', {
       config,
       appFunction: this.web.appFunction,
+      deadLetterQueue: this.jobs.deadLetterQueue,
     });
   }
 }

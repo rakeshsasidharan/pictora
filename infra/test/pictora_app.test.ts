@@ -25,6 +25,7 @@ describe('Pictora CDK app', () => {
       'PictoraDev-Auth',
       'PictoraDev-Certificate',
       'PictoraDev-Data',
+      'PictoraDev-Jobs',
       'PictoraDev-Monitoring',
       'PictoraDev-Web',
     ]);
@@ -32,6 +33,7 @@ describe('Pictora CDK app', () => {
     expect(stackNames('assembly-PictoraProd')).toEqual([
       'PictoraProd-Auth',
       'PictoraProd-Data',
+      'PictoraProd-Jobs',
       'PictoraProd-Monitoring',
       'PictoraProd-Web',
     ]);
