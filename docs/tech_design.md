@@ -380,7 +380,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | Worker | Vitest + DynamoDB Local + mock provider | Full job lifecycle, idempotency on redelivery, sweeper | CI |
 | UI components | Vitest + React Testing Library | Prompt form, model picker, points display, gallery, edit panel | CI |
 | Infra | CDK assertions | Resource settings (encryption, public access blocks, alarms, IAM scope) and snapshot | CI |
-| End to end | Playwright | Sign in (Cognito test user), generate with the mock provider, edit, gallery, delete | After each dev deploy |
+| End to end | Playwright (`e2e/`, Chromium) | Health, sign in and out (Cognito test user), landing page, generate with the mock provider, edit, gallery, delete; refuses to run against prod | After each dev deploy |
 | Live provider check | Script | One draft image per enabled model | Manual before a prod release |
 
 ## 14. Environments

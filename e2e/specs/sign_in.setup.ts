@@ -1,0 +1,22 @@
+import { expect, test as setup } from '@playwright/test';
+import { e2eConfig, requireCredentials } from '../src/config.js';
+import { submitManagedLogin } from '../src/managed_login.js';
+import { SESSION_STATE_PATH } from '../src/session_state.js';
+
+/** Signs the Cognito test user in once and saves the session for every test that needs one. */
+setup('sign in as the test user', async ({ page }) => {
+  const config = e2eConfig();
+  const credentials = requireCredentials(config);
+
+  await page.goto('/');
+  await page.getByRole('banner').getByRole('link', { name: 'Sign in' }).click();
+  await submitManagedLogin(page, credentials);
+
+  // The callback sets the session cookies and returns to the site.
+  await page.waitForURL(
+    (url) => url.origin === config.baseUrl && !url.pathname.startsWith('/auth/'),
+  );
+  await expect(page.getByRole('banner').getByText(credentials.email)).toBeVisible();
+
+  await page.context().storageState({ path: SESSION_STATE_PATH });
+});
