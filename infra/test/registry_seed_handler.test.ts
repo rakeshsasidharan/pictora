@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
+import { BatchWriteCommand, DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  BatchWriteCommand,
-  QueryCommand,
-  type DynamoDBDocumentClient,
-} from '@aws-sdk/lib-dynamodb';
-import { describe, expect, it, vi } from 'vitest';
-import { handler, type RegistrySeedEvent } from '../lambda/registry_seed_handler.js';
+  handler,
+  seedRegistryHandler,
+  type RegistrySeedEvent,
+} from '../lambda/registry_seed_handler.js';
 import { MODELS_JSON_PATH } from '../lib/data_stack.js';
 
 const seedJson = readFileSync(MODELS_JSON_PATH, 'utf8');
@@ -36,7 +36,7 @@ function event(requestType: RegistrySeedEvent['RequestType'], seed = seedJson): 
 describe('registry seed handler', () => {
   it('writes every seed model on create and reports what it added', async () => {
     const { client, writes } = fakeClient();
-    const response = await handler(event('Create'), client);
+    const response = await seedRegistryHandler(event('Create'), client);
     expect(writes.map((item) => item.GSI1SK)).toEqual(seedIds);
     expect(response).toEqual({
       PhysicalResourceId: 'registry-seed-pictora-dev',
@@ -49,14 +49,14 @@ describe('registry seed handler', () => {
       { PK: 'MODEL#gpt-image-2', SK: 'CONFIG', GSI1SK: 'gpt-image-2', enabled: false },
     ];
     const { client, writes } = fakeClient(stored);
-    const response = await handler(event('Update'), client);
+    const response = await seedRegistryHandler(event('Update'), client);
     expect(writes.find((item) => item.id === 'gpt-image-2')).toMatchObject({ enabled: false });
     expect(response.Data?.kept).toBe('gpt-image-2');
   });
 
   it('writes nothing on delete, so the registry stays', async () => {
     const { client, send } = fakeClient();
-    const response = await handler(
+    const response = await seedRegistryHandler(
       { ...event('Delete'), PhysicalResourceId: 'existing-id' },
       client,
     );
@@ -66,9 +66,45 @@ describe('registry seed handler', () => {
 
   it('refuses an invalid seed before writing anything', async () => {
     const { client, send } = fakeClient();
-    await expect(handler(event('Update', '[{"id":"broken"}]'), client)).rejects.toThrow(
+    await expect(seedRegistryHandler(event('Update', '[{"id":"broken"}]'), client)).rejects.toThrow(
       /Invalid model registry/,
     );
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('registry seed Lambda entry point', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses its own document client, not the Lambda context Lambda passes second', async () => {
+    const writes: Record<string, unknown>[] = [];
+    const send = vi
+      .spyOn(DynamoDBDocumentClient.prototype, 'send')
+      .mockImplementation(async (command: unknown) => {
+        if (command instanceof QueryCommand) return { Items: [] };
+        if (command instanceof BatchWriteCommand) {
+          const requests = command.input.RequestItems?.['pictora-dev'] ?? [];
+          writes.push(...requests.map((request) => request.PutRequest?.Item ?? {}));
+          return {};
+        }
+        throw new Error('unexpected command');
+      });
+    const lambdaContext = {
+      functionName: 'PictoraDev-Data-RegistrySeedHandler',
+      awsRequestId: 'request-id',
+      getRemainingTimeInMillis: () => 120_000,
+    };
+    const lambdaHandler = handler as (
+      event: RegistrySeedEvent,
+      context: unknown,
+    ) => ReturnType<typeof handler>;
+
+    const response = await lambdaHandler(event('Create'), lambdaContext);
+
+    expect(send).toHaveBeenCalled();
+    expect(writes.map((item) => item.GSI1SK)).toEqual(seedIds);
+    expect(response.PhysicalResourceId).toBe('registry-seed-pictora-dev');
   });
 });
