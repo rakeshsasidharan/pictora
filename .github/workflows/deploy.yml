@@ -1,0 +1,336 @@
+name: Deploy
+
+# Build once, deploy dev, run e2e, then promote the same images to prod after approval (CI/CD design 4.3).
+# A manual run redeploys or rolls back one environment to a commit that was already built (CI/CD design 4.4).
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        options: [dev, production]
+        required: true
+      sha:
+        description: Full commit SHA to deploy (already built by a push to main)
+        type: string
+        required: true
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'pipeline' }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+
+jobs:
+  checks:
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/checks.yml
+
+  build-images:
+    needs: checks
+    if: github.event_name == 'push'
+    name: build-images (${{ matrix.image }})
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        image: [app, worker]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check for a Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f "${{ matrix.image }}/Dockerfile" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ matrix.image }}/Dockerfile does not exist yet; skipping the ${{ matrix.image }} image."
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        if: steps.dockerfile.outputs.exists == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: pictora-build-${{ matrix.image }}-${{ github.run_id }}
+
+      - name: Log in to ECR
+        if: steps.dockerfile.outputs.exists == 'true'
+        run: aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.dockerfile.outputs.exists == 'true'
+
+      # Tags are immutable, so the SHA tag always names this build. Lambda needs a plain image manifest, so no
+      # provenance or SBOM attestations.
+      - name: Build and push (arm64)
+        id: build
+        if: steps.dockerfile.outputs.exists == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.image }}/Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ env.REGISTRY }}/pictora-${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Report the digest
+        if: steps.dockerfile.outputs.exists == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "pictora-${{ matrix.image }}@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  # Reads the digests of the images tagged with the commit, for both the pipeline and manual runs. Tags are
+  # immutable, so these are exactly the images build-images pushed, and prod gets the same digests as dev.
+  resolve:
+    needs: build-images
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || needs.build-images.result == 'success')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      app_digest: ${{ steps.images.outputs.app_digest }}
+      worker_digest: ${{ steps.images.outputs.worker_digest }}
+    steps:
+      - name: Pick the commit
+        id: sha
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          sha="${INPUT_SHA:-$GITHUB_SHA}"
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character lowercase commit SHA: $sha"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # The workflow's own commit, with history, so the lookup can inspect the commit being deployed.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: pictora-resolve-${{ github.run_id }}
+
+      - name: Look up the image digests
+        id: images
+        run: .github/scripts/resolve_images.sh "${{ steps.sha.outputs.sha }}"
+
+  deploy-dev:
+    needs: resolve
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' &&
+      (github.event_name == 'push' || inputs.environment == 'dev')
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    environment:
+      name: dev
+      url: ${{ steps.deploy.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      site_url: ${{ steps.deploy.outputs.site_url }}
+    steps:
+      # The commit being deployed, so a rollback rolls back the infrastructure too.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The pipeline scripts come from the workflow's own commit, which may be newer than the one deployed.
+      - uses: actions/checkout@v7
+        with:
+          path: pipeline
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: pictora-deploy-dev-${{ github.run_id }}
+
+      - name: Deploy PictoraDev
+        id: deploy
+        env:
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+        run: >-
+          pipeline/.github/scripts/deploy_stage.sh PictoraDev "${{ needs.resolve.outputs.sha }}"
+          "${{ needs.resolve.outputs.app_digest }}" "${{ needs.resolve.outputs.worker_digest }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cdk-outputs-dev
+          path: cdk-outputs-PictoraDev.json
+
+      - name: Check the deployed version
+        run: pipeline/.github/scripts/smoke_test.sh "${{ steps.deploy.outputs.site_url }}" "${{ needs.resolve.outputs.sha }}"
+
+  e2e-dev:
+    needs: [resolve, deploy-dev]
+    if: "!cancelled() && needs.deploy-dev.result == 'success'"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      contents: read
+    env:
+      E2E_BASE_URL: ${{ vars.SITE_URL || needs.deploy-dev.outputs.site_url }}
+      E2E_USER_EMAIL: ${{ vars.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+
+      # The suite runs through the e2e workspace's `e2e` script. Until it exists, there is nothing to run.
+      - name: Check for the e2e suite
+        id: suite
+        run: |
+          if jq -e '.scripts.e2e' e2e/package.json > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::The e2e workspace has no e2e script yet; skipping the end-to-end tests."
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.suite.outputs.exists == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.suite.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Install Chromium
+        if: steps.suite.outputs.exists == 'true'
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the e2e suite against dev
+        if: steps.suite.outputs.exists == 'true'
+        run: npm run e2e --workspace=@pictora/e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure() && steps.suite.outputs.exists == 'true'
+        with:
+          name: e2e-results
+          path: |
+            e2e/test-results
+            e2e/playwright-report
+          if-no-files-found: ignore
+
+  deploy-prod:
+    needs: [resolve, e2e-dev]
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' &&
+      ((github.event_name == 'push' && needs.e2e-dev.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production'))
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.site_url }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      site_url: ${{ steps.deploy.outputs.site_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The pipeline scripts come from the workflow's own commit, which may be newer than the one deployed.
+      - uses: actions/checkout@v7
+        with:
+          path: pipeline
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: pictora-deploy-prod-${{ github.run_id }}
+
+      # The same digests dev ran; nothing is rebuilt.
+      - name: Deploy PictoraProd
+        id: deploy
+        env:
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+        run: >-
+          pipeline/.github/scripts/deploy_stage.sh PictoraProd "${{ needs.resolve.outputs.sha }}"
+          "${{ needs.resolve.outputs.app_digest }}" "${{ needs.resolve.outputs.worker_digest }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cdk-outputs-prod
+          path: cdk-outputs-PictoraProd.json
+
+  smoke-prod:
+    needs: [resolve, deploy-prod]
+    if: "!cancelled() && needs.deploy-prod.result == 'success'"
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Check prod health and version
+        run: .github/scripts/smoke_test.sh "${{ needs.deploy-prod.outputs.site_url }}" "${{ needs.resolve.outputs.sha }}"

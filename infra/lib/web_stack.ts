@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import type { ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { OAuthScope, UserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import {
@@ -216,6 +216,12 @@ export class WebStack extends Stack {
         siteUrl: this.siteUrl,
         cognitoClientId: this.userPoolClient.userPoolClientId,
       }),
+    });
+
+    // The deploy pipeline reads this from the outputs file for the smoke test and e2e (CI/CD design 4.3).
+    new CfnOutput(this, 'SiteUrl', {
+      description: 'Site URL: the custom domain, or the CloudFront domain when there is none',
+      value: this.siteUrl,
     });
 
     if (config.domain) {
