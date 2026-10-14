@@ -1,5 +1,7 @@
-import { Template } from 'aws-cdk-lib/assertions';
+import { readFileSync } from 'node:fs';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
+import { MODELS_JSON_PATH } from '../lib/data_stack.js';
 import { testStage } from './helpers.js';
 
 const dev = Template.fromStack(testStage('PictoraDev').data);
@@ -102,5 +104,57 @@ describe('Data stack per environment', () => {
         ],
       },
     });
+  });
+});
+
+describe('Data stack: model registry seed', () => {
+  const template = Template.fromStack(testStage('PictoraDev', { gitSha: 'abc123' }).data);
+  const seed = JSON.parse(readFileSync(MODELS_JSON_PATH, 'utf8'));
+
+  it('runs a custom resource with the whole seed on every deploy', () => {
+    const resources = Object.values(template.findResources('Custom::PictoraRegistrySeed'));
+    expect(resources).toHaveLength(1);
+    const props = resources[0]?.Properties;
+    expect(props.TableName).toEqual({ Ref: expect.stringMatching(/^Table/) });
+    expect(JSON.parse(props.Seed)).toEqual(seed);
+    expect(props.GitSha).toBe('abc123');
+    expect(props.ServiceToken).toEqual({
+      'Fn::GetAtt': [expect.stringMatching(/ProviderframeworkonEvent/), 'Arn'],
+    });
+  });
+
+  it('runs the handler on arm64 Node.js 22', () => {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Runtime: 'nodejs22.x',
+      Architectures: ['arm64'],
+      Handler: 'index.handler',
+      Timeout: 120,
+    });
+  });
+
+  it('lets the handler query the registry index and write items, and nothing more', () => {
+    const policies = template.findResources('AWS::IAM::Policy', {
+      Properties: { PolicyName: Match.stringLikeRegexp('^RegistrySeedHandler') },
+    });
+    const statements = Object.values(policies).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement,
+    );
+    expect(statements).toEqual([
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:Query',
+        Resource: {
+          'Fn::Join': [
+            '',
+            [{ 'Fn::GetAtt': [expect.stringMatching(/^Table/), 'Arn'] }, '/index/GSI1'],
+          ],
+        },
+      },
+      {
+        Effect: 'Allow',
+        Action: 'dynamodb:BatchWriteItem',
+        Resource: { 'Fn::GetAtt': [expect.stringMatching(/^Table/), 'Arn'] },
+      },
+    ]);
   });
 });

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["bin", "lib", "test", "vitest.config.ts"]
+  "include": ["bin", "lib", "lambda", "test", "vitest.config.ts"]
 }
