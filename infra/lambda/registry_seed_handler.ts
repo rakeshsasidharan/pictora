@@ -26,15 +26,22 @@ export interface RegistrySeedResponse {
 let client: DynamoDBDocumentClient | undefined;
 
 /**
+ * The Lambda entry point. Lambda calls it as `handler(event, context)`, so the document client can't be an
+ * optional second parameter: the context would take its place.
+ */
+export async function handler(event: RegistrySeedEvent): Promise<RegistrySeedResponse> {
+  client ??= DynamoDBDocumentClient.from(new DynamoDBClient({}));
+  return seedRegistryHandler(event, client);
+}
+
+/**
  * Seeds the model registry on every deploy (tech design 6.1): upserts every `models.json` entry into
  * `MODEL#<id>/CONFIG`, keeping the `enabled` value already in DynamoDB, and switches off models removed from the
  * seed. Deleting the resource leaves the registry in place.
  */
-export async function handler(
+export async function seedRegistryHandler(
   event: RegistrySeedEvent,
-  documentClient: DynamoDBDocumentClient = (client ??= DynamoDBDocumentClient.from(
-    new DynamoDBClient({}),
-  )),
+  documentClient: DynamoDBDocumentClient,
 ): Promise<RegistrySeedResponse> {
   const { TableName, Seed } = event.ResourceProperties;
   const physicalResourceId = event.PhysicalResourceId ?? `registry-seed-${TableName}`;
