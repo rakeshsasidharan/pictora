@@ -1,5 +1,173 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
+{
+  "Outputs": {
+    "PublishOutputRefUserPool6BA7E5F24B752AC8": {
+      "Value": {
+        "Ref": "UserPool6BA7E5F2",
+      },
+    },
+    "PublishOutputRefUserPoolDomainD0EA232AF0DE8E71": {
+      "Value": {
+        "Ref": "UserPoolDomainD0EA232A",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "AdminsGroup06B46644": {
+      "Properties": {
+        "Description": "Pictora administrators",
+        "GroupName": "admins",
+        "UserPoolId": {
+          "Ref": "UserPool6BA7E5F2",
+        },
+      },
+      "Type": "AWS::Cognito::UserPoolGroup",
+    },
+    "GoogleAF1E99FA": {
+      "Properties": {
+        "AttributeMapping": {
+          "email": "email",
+          "email_verified": "email_verified",
+        },
+        "ProviderDetails": {
+          "authorize_scopes": "openid email profile",
+          "client_id": {
+            "Fn::Join": [
+              "",
+              [
+                "{{resolve:secretsmanager:arn:aws:secretsmanager:us-west-2:",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":secret:pictora/dev/google-oauth:SecretString:clientId::}}",
+              ],
+            ],
+          },
+          "client_secret": {
+            "Fn::Join": [
+              "",
+              [
+                "{{resolve:secretsmanager:arn:aws:secretsmanager:us-west-2:",
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ":secret:pictora/dev/google-oauth:SecretString:clientSecret::}}",
+              ],
+            ],
+          },
+        },
+        "ProviderName": "Google",
+        "ProviderType": "Google",
+        "UserPoolId": {
+          "Ref": "UserPool6BA7E5F2",
+        },
+      },
+      "Type": "AWS::Cognito::UserPoolIdentityProvider",
+    },
+    "UserPool6BA7E5F2": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "AccountRecoverySetting": {
+          "RecoveryMechanisms": [
+            {
+              "Name": "verified_email",
+              "Priority": 1,
+            },
+          ],
+        },
+        "AdminCreateUserConfig": {
+          "AllowAdminCreateUserOnly": false,
+        },
+        "AutoVerifiedAttributes": [
+          "email",
+        ],
+        "DeletionProtection": "INACTIVE",
+        "EmailVerificationMessage": "The verification code to your new account is {####}",
+        "EmailVerificationSubject": "Verify your new account",
+        "Schema": [
+          {
+            "Mutable": true,
+            "Name": "email",
+            "Required": true,
+          },
+        ],
+        "SmsVerificationMessage": "The verification code to your new account is {####}",
+        "UserAttributeUpdateSettings": {
+          "AttributesRequireVerificationBeforeUpdate": [
+            "email",
+          ],
+        },
+        "UserPoolName": "pictora-dev",
+        "UserPoolTags": {
+          "environment": "dev",
+          "project": "pictora",
+        },
+        "UserPoolTier": "ESSENTIALS",
+        "UsernameAttributes": [
+          "email",
+        ],
+        "UsernameConfiguration": {
+          "CaseSensitive": false,
+        },
+        "VerificationMessageTemplate": {
+          "DefaultEmailOption": "CONFIRM_WITH_CODE",
+          "EmailMessage": "The verification code to your new account is {####}",
+          "EmailSubject": "Verify your new account",
+          "SmsMessage": "The verification code to your new account is {####}",
+        },
+      },
+      "Type": "AWS::Cognito::UserPool",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "UserPoolDomainD0EA232A": {
+      "Properties": {
+        "Domain": "pictora-rpillai-dev",
+        "UserPoolId": {
+          "Ref": "UserPool6BA7E5F2",
+        },
+      },
+      "Type": "AWS::Cognito::UserPoolDomain",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
 exports[`PictoraDev stage > matches the snapshot > PictoraDev-Certificate 1`] = `
 {
   "Outputs": {
@@ -1087,6 +1255,75 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
     },
   },
   "Resources": {
+    "AppClient4AE61178": {
+      "Properties": {
+        "AccessTokenValidity": 60,
+        "AllowedOAuthFlows": [
+          "code",
+        ],
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "AllowedOAuthScopes": [
+          "openid",
+          "email",
+          "profile",
+        ],
+        "CallbackURLs": [
+          "https://pictora.rpillai.dev/auth/callback",
+          "http://localhost:3000/auth/callback",
+        ],
+        "ClientName": "pictora-dev-web",
+        "EnableTokenRevocation": true,
+        "GenerateSecret": false,
+        "IdTokenValidity": 60,
+        "LogoutURLs": [
+          "https://pictora.rpillai.dev/",
+          "http://localhost:3000/",
+        ],
+        "PreventUserExistenceErrors": "ENABLED",
+        "RefreshTokenValidity": 43200,
+        "SupportedIdentityProviders": [
+          "COGNITO",
+          "Google",
+        ],
+        "TokenValidityUnits": {
+          "AccessToken": "minutes",
+          "IdToken": "minutes",
+          "RefreshToken": "minutes",
+        },
+        "UserPoolId": {
+          "Fn::GetStackOutput": {
+            "OutputName": "PublishOutputRefUserPool6BA7E5F24B752AC8",
+            "Region": "us-west-2",
+            "StackName": "PictoraDev-Auth",
+          },
+        },
+      },
+      "Type": "AWS::Cognito::UserPoolClient",
+    },
+    "AppConfigParameterC8B187CD": {
+      "Properties": {
+        "Description": "Pictora app runtime config: site URL and Cognito app client ID",
+        "Name": "/pictora/dev/app-config",
+        "Tags": {
+          "environment": "dev",
+          "project": "pictora",
+        },
+        "Type": "String",
+        "Value": {
+          "Fn::Join": [
+            "",
+            [
+              "{"siteUrl":"https://pictora.rpillai.dev","cognitoClientId":"",
+              {
+                "Ref": "AppClient4AE61178",
+              },
+              ""}",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
     "AppFunction05AF654E": {
       "DependsOn": [
         "AppFunctionServiceRoleDefaultPolicyA9F99800",
@@ -1115,6 +1352,30 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         },
         "Environment": {
           "Variables": {
+            "APP_CONFIG_PARAMETER": "/pictora/dev/app-config",
+            "COGNITO_DOMAIN": {
+              "Fn::Join": [
+                "",
+                [
+                  "https://",
+                  {
+                    "Fn::GetStackOutput": {
+                      "OutputName": "PublishOutputRefUserPoolDomainD0EA232AF0DE8E71",
+                      "Region": "us-west-2",
+                      "StackName": "PictoraDev-Auth",
+                    },
+                  },
+                  ".auth.us-west-2.amazoncognito.com",
+                ],
+              ],
+            },
+            "COGNITO_USER_POOL_ID": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefUserPool6BA7E5F24B752AC8",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Auth",
+              },
+            },
             "DAILY_POINTS": "1000",
             "GIT_SHA": "local",
             "IMAGES_BUCKET": {
@@ -1128,7 +1389,6 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
               "Ref": "OriginVerifySecret1DED2FB3",
             },
             "PICTORA_ENV": "dev",
-            "SITE_URL": "https://pictora.rpillai.dev",
             "SPEND_CAP_CENTS": "2000",
             "TABLE_NAME": {
               "Fn::GetStackOutput": {
@@ -1224,6 +1484,22 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
       "Properties": {
         "PolicyDocument": {
           "Statement": [
+            {
+              "Action": "ssm:GetParameter",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:ssm:us-west-2:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":parameter/pictora/dev/app-config",
+                  ],
+                ],
+              },
+            },
             {
               "Action": [
                 "secretsmanager:DescribeSecret",

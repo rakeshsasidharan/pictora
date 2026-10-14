@@ -22,6 +22,7 @@ describe('Pictora CDK app', () => {
         ?.nestedAssembly.stacks.map((stack) => stack.stackName)
         .sort();
     expect(stackNames('assembly-PictoraDev')).toEqual([
+      'PictoraDev-Auth',
       'PictoraDev-Certificate',
       'PictoraDev-Data',
       'PictoraDev-Monitoring',
@@ -29,6 +30,7 @@ describe('Pictora CDK app', () => {
     ]);
     // Prod has no domain yet, so it has no certificate.
     expect(stackNames('assembly-PictoraProd')).toEqual([
+      'PictoraProd-Auth',
       'PictoraProd-Data',
       'PictoraProd-Monitoring',
       'PictoraProd-Web',

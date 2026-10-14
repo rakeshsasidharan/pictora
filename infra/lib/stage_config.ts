@@ -17,12 +17,16 @@ export const PLACEHOLDER_IMAGE_DIGEST = `sha256:${'0'.repeat(64)}`;
 const DEFAULT_APP_STATIC_DIR = fileURLToPath(new URL('../../app/.next/static', import.meta.url));
 const DEFAULT_APP_PUBLIC_DIR = fileURLToPath(new URL('../../app/public', import.meta.url));
 
+const AUTH_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
 const IMAGE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 /** Per-environment settings from the `environments` context in `infra/cdk.json` (tech design 10 and 14). */
 export interface EnvironmentSettings {
   /** Site domain under `rpillai.dev`. Without one, the site is served on the CloudFront domain. */
   readonly domain?: string;
+  /** Prefix of the Cognito managed login domain, `<prefix>.auth.<region>.amazoncognito.com`; unique per region. */
+  readonly authDomainPrefix: string;
   /** Points each user gets per UTC day, unless their profile overrides it. */
   readonly dailyPoints: number;
   /** Monthly platform cap on provider spend, in US dollars. */
@@ -72,8 +76,20 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     throw new Error(`${where}.domain must be a subdomain of ${HOSTED_ZONE_NAME}: ${domain}`);
   }
 
+  const authDomainPrefix = optionalString(raw, 'authDomainPrefix', where);
+  if (
+    authDomainPrefix === undefined ||
+    !AUTH_DOMAIN_PREFIX_PATTERN.test(authDomainPrefix) ||
+    /aws|amazon|cognito/.test(authDomainPrefix)
+  ) {
+    throw new Error(
+      `${where}.authDomainPrefix must be lowercase letters, digits and hyphens, without aws, amazon or cognito: ${authDomainPrefix ?? '(missing)'}`,
+    );
+  }
+
   return {
     domain,
+    authDomainPrefix,
     dailyPoints: positiveInteger(raw, 'dailyPoints', where),
     spendCapUsd: positiveInteger(raw, 'spendCapUsd', where),
     queueConcurrency: positiveInteger(raw, 'queueConcurrency', where),

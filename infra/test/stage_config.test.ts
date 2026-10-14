@@ -9,6 +9,7 @@ import { cdkJsonContext, TEST_IMAGE_DIGEST } from './helpers.js';
 
 const devSettings = {
   domain: 'pictora.rpillai.dev',
+  authDomainPrefix: 'pictora-test-dev',
   dailyPoints: 1000,
   spendCapUsd: 20,
   queueConcurrency: 5,
@@ -78,6 +79,15 @@ describe('stageConfig', () => {
       configFor({ environments: { dev: { ...devSettings, domain: 'pictora.example.com' } } }),
     ).toThrow(/subdomain of rpillai.dev/);
   });
+
+  it.each([undefined, 'Pictora', 'pictora-', 'pictora-aws-dev', 'my-cognito', 'a_b'])(
+    'rejects the auth domain prefix %s',
+    (authDomainPrefix) => {
+      expect(() =>
+        configFor({ environments: { dev: { ...devSettings, authDomainPrefix } } }),
+      ).toThrow(/authDomainPrefix/);
+    },
+  );
 
   it.each(['dailyPoints', 'spendCapUsd', 'queueConcurrency', 'budgetUsd'])(
     'requires %s to be a positive integer',

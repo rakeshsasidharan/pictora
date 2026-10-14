@@ -96,12 +96,14 @@
     "environments": {
       "dev": {
         "domain": "pictora.rpillai.dev",
+        "authDomainPrefix": "pictora-rpillai-dev",
         "dailyPoints": 1000,
         "spendCapUsd": 20,
         "queueConcurrency": 5,
         "budgetUsd": 15
       },
       "prod": {
+        "authDomainPrefix": "pictora-rpillai-prod",
         "dailyPoints": 25,
         "spendCapUsd": 100,
         "queueConcurrency": 5,
