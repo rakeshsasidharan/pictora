@@ -1,5 +1,6 @@
 import { Stage, Tags, type StageProps } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
+import { AuthStack } from './auth_stack.js';
 import { CERTIFICATE_REGION, CertificateStack } from './certificate_stack.js';
 import { DataStack } from './data_stack.js';
 import { ENVIRONMENT_TAG, MonitoringStack } from './monitoring_stack.js';
@@ -21,6 +22,7 @@ export class PictoraStage extends Stage {
   readonly config: StageConfig;
   readonly certificate?: CertificateStack;
   readonly data: DataStack;
+  readonly auth: AuthStack;
   readonly web: WebStack;
   readonly monitoring: MonitoringStack;
 
@@ -42,11 +44,13 @@ export class PictoraStage extends Stage {
       });
     }
     this.data = new DataStack(this, 'Data', { config });
+    this.auth = new AuthStack(this, 'Auth', { config });
     this.web = new WebStack(this, 'Web', {
       crossRegionReferences: config.domain !== undefined,
       config,
       table: this.data.table,
       imagesBucket: this.data.imagesBucket,
+      auth: this.auth,
       certificate: this.certificate?.certificate,
     });
     this.monitoring = new MonitoringStack(this, 'Monitoring', {

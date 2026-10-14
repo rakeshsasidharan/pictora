@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import type { ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { OAuthScope, UserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import {
   AllowedMethods,
   CachePolicy,
@@ -16,6 +17,7 @@ import {
 import { FunctionUrlOrigin, S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Repository } from 'aws-cdk-lib/aws-ecr';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import {
   Architecture,
   DockerImageCode,
@@ -36,7 +38,14 @@ import {
 } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, CacheControl, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
+import {
+  ACCESS_TOKEN_VALIDITY,
+  OAUTH_SCOPES,
+  REFRESH_TOKEN_VALIDITY,
+  type AuthStack,
+} from './auth_stack.js';
 import { HOSTED_ZONE_NAME, type StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the app image to (`PictoraCicd` stack). */
@@ -52,10 +61,23 @@ export const ASSET_PATH_PATTERNS = ['/_next/static/*', '/static/*'] as const;
 export const APP_MEMORY_MB = 1024;
 export const APP_TIMEOUT_SECONDS = 30;
 
+/** Sign-in callback and sign-out landing paths in the app. */
+export const AUTH_CALLBACK_PATH = '/auth/callback';
+export const SIGNED_OUT_PATH = '/';
+
+/** Local `next dev`, allowed as a callback in dev only. */
+export const LOCAL_DEV_URL = 'http://localhost:3000';
+
+/** SSM parameter with the app's runtime config: `{ siteUrl, cognitoClientId }`. */
+export function appConfigParameterName(envName: string): string {
+  return `/pictora/${envName}/app-config`;
+}
+
 export interface WebStackProps extends StackProps {
   readonly config: StageConfig;
   readonly table: Table;
   readonly imagesBucket: IBucket;
+  readonly auth: AuthStack;
   /** Required when the stage has a domain. */
   readonly certificate?: ICertificate;
 }
@@ -70,6 +92,8 @@ export class WebStack extends Stack {
   readonly assetsBucket: Bucket;
   readonly distribution: Distribution;
   readonly originVerifySecret: Secret;
+  readonly userPoolClient: UserPoolClient;
+  readonly siteUrl: string;
 
   constructor(scope: Construct, id: string, props: WebStackProps) {
     super(scope, id, props);
@@ -83,7 +107,7 @@ export class WebStack extends Stack {
       generateSecretString: { passwordLength: 48, excludePunctuation: true },
     });
 
-    const siteUrl = config.domain ? `https://${config.domain}` : undefined;
+    const appConfigParameter = appConfigParameterName(config.envName);
     const repository = Repository.fromRepositoryName(this, 'AppRepository', APP_REPOSITORY_NAME);
     this.appFunction = new DockerImageFunction(this, 'AppFunction', {
       code: DockerImageCode.fromEcr(repository, { tagOrDigest: config.appImageDigest }),
@@ -103,9 +127,25 @@ export class WebStack extends Stack {
         IMAGES_BUCKET: props.imagesBucket.bucketName,
         DAILY_POINTS: String(config.dailyPoints),
         SPEND_CAP_CENTS: String(config.spendCapUsd * 100),
-        ...(siteUrl ? { SITE_URL: siteUrl } : {}),
+        COGNITO_USER_POOL_ID: props.auth.userPool.userPoolId,
+        COGNITO_DOMAIN: props.auth.domainBaseUrl,
+        APP_CONFIG_PARAMETER: appConfigParameter,
       },
     });
+    // Built from the name, not the parameter: the parameter depends on the distribution, which depends on
+    // this function, so referencing it here would be a dependency cycle.
+    this.appFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['ssm:GetParameter'],
+        resources: [
+          this.formatArn({
+            service: 'ssm',
+            resource: 'parameter',
+            resourceName: appConfigParameter.slice(1),
+          }),
+        ],
+      }),
+    );
     this.originVerifySecret.grantRead(this.appFunction);
     props.table.grantReadWriteData(this.appFunction);
     props.imagesBucket.grantReadWrite(this.appFunction);
@@ -165,12 +205,23 @@ export class WebStack extends Stack {
 
     this.deployAssets(config);
 
+    this.siteUrl = config.domain
+      ? `https://${config.domain}`
+      : `https://${this.distribution.distributionDomainName}`;
+    this.userPoolClient = this.createUserPoolClient(props, this.siteUrl);
+    new StringParameter(this, 'AppConfigParameter', {
+      parameterName: appConfigParameter,
+      description: 'Pictora app runtime config: site URL and Cognito app client ID',
+      stringValue: Stack.of(this).toJsonString({
+        siteUrl: this.siteUrl,
+        cognitoClientId: this.userPoolClient.userPoolClientId,
+      }),
+    });
+
     // The deploy pipeline reads this from the outputs file for the smoke test and e2e (CI/CD design 4.3).
     new CfnOutput(this, 'SiteUrl', {
       description: 'Site URL: the custom domain, or the CloudFront domain when there is none',
-      value: config.domain
-        ? `https://${config.domain}`
-        : `https://${this.distribution.distributionDomainName}`,
+      value: this.siteUrl,
     });
 
     if (config.domain) {
@@ -182,6 +233,37 @@ export class WebStack extends Stack {
       new ARecord(this, 'SiteRecord', { zone, recordName: config.domain, target });
       new AaaaRecord(this, 'SiteRecordIpv6', { zone, recordName: config.domain, target });
     }
+  }
+
+  /**
+   * The Cognito app client (tech design 8): authorization code flow with PKCE and no client secret, since the
+   * code is exchanged by the app's server with a one-time PKCE verifier. Dev also allows local `next dev`.
+   */
+  private createUserPoolClient(props: WebStackProps, siteUrl: string): UserPoolClient {
+    const { config, auth } = props;
+    const baseUrls = config.envName === 'dev' ? [siteUrl, LOCAL_DEV_URL] : [siteUrl];
+    // Created in this stack, not with userPool.addClient, which would put it in the Auth stack.
+    const client = new UserPoolClient(this, 'AppClient', {
+      userPool: auth.userPool,
+      userPoolClientName: `pictora-${config.envName}-web`,
+      generateSecret: false,
+      authFlows: {},
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: OAUTH_SCOPES.map((scope) => OAuthScope.custom(scope)),
+        callbackUrls: baseUrls.map((url) => `${url}${AUTH_CALLBACK_PATH}`),
+        logoutUrls: baseUrls.map((url) => `${url}${SIGNED_OUT_PATH}`),
+      },
+      supportedIdentityProviders: auth.identityProviders,
+      accessTokenValidity: ACCESS_TOKEN_VALIDITY,
+      idTokenValidity: ACCESS_TOKEN_VALIDITY,
+      refreshTokenValidity: REFRESH_TOKEN_VALIDITY,
+      preventUserExistenceErrors: true,
+      enableTokenRevocation: true,
+    });
+    // The client can only name Google once the provider exists.
+    client.node.addDependency(auth.googleProvider);
+    return client;
   }
 
   /**
