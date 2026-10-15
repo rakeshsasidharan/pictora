@@ -1,3 +1,4 @@
+export { TOS_VERSION } from './legal.js';
 export {
   CENTS_PER_POINT,
   DEFAULT_DAILY_POINTS,

@@ -32,6 +32,8 @@ pictora/
 ├── app/                    Next.js web app (UI + API route handlers)
 │   ├── src/app/            App Router pages and /api routes
 │   ├── src/lib/            auth, db, s3, rate limits, API helpers
+│   ├── content/legal/      terms, content policy and privacy policy in Markdown
+│   ├── public/static/      landing page sample images (served from the assets bucket)
 │   └── Dockerfile          standalone build + Lambda Web Adapter
 ├── worker/                 Lambda handlers (container image)
 │   ├── src/generate.ts     SQS consumer: moderate → generate/edit → store → settle
@@ -99,7 +101,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 
 | Entity | PK | SK | Key attributes | TTL |
 | --- | --- | --- | --- | --- |
-| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil, abuseFlag | — |
+| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil, abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
 | Image | `USER#<sub>` | `IMG#<imageId>` | title, latestVersion, versionCount, style, modelId, createdAt, thumbnail key | — |
@@ -325,7 +327,8 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 - **App client:** a public client (no secret) with the authorization code flow and PKCE, in the `Web` stack rather than `Auth`: its callback URL is the site URL, which is the CloudFront domain while an environment has no custom domain, and the distribution depends on the app Lambda. For the same reason, the app reads the client ID and site URL at runtime from the SSM parameter `/pictora/<env>/app-config` (`{ siteUrl, cognitoClientId }`, cached 5 minutes) instead of Lambda environment variables. Dev also allows `http://localhost:3000` for local `next dev`.
 - **Flow:** `/auth/login` → Cognito authorize (code + PKCE; `?provider=google` goes straight to Google) → `/auth/callback` checks `state`, exchanges the code on the server → tokens go into `httpOnly`, `Secure`, `SameSite=Lax` cookies (access and ID tokens 1 h, refresh token 30 days). `POST /auth/logout` clears the cookies and calls Cognito logout.
 - **Verification:** the Next.js proxy (`app/src/proxy.ts`) checks the access token (and the ID token, which carries the email) with `aws-jwt-verify` (JWKS cached) on `/api/*` and protected pages. An expired access token is refreshed on the server with the refresh token. The verified user reaches route handlers as `x-pictora-user-*` request headers, which the proxy strips from incoming requests. Without a session, `/api/*` (except `/api/health`) answers 401 and protected pages redirect to `/auth/login`.
-- **First login:** a profile is created on first API call; the onboarding page collects terms acceptance and age confirmation (AUTH-4).
+- **First login:** a profile is created on first API call; the onboarding page collects terms acceptance and age confirmation (AUTH-4), and stores the accepted `TOS_VERSION`. A new version asks users to accept again.
+- **Public pages:** `/` is the landing page for signed-out visitors (AUTH-2) and redirects signed-in users to `/generate`. `/terms`, `/content-policy` and `/privacy` are rendered on the server from the Markdown in `app/content/legal/` with `markdown-it` (raw HTML disabled), once per server instance; they ship no page-specific client code. They can't be prerendered at build time, because the root layout reads the session for the header.
 - **Abuse signals:** a Cognito pre-sign-up Lambda checks the email domain against a disposable-domain list. A match sets `abuseFlag`, which lowers `dailyPoints` to 5.
 - **CSRF:** state-changing routes require the `Origin` header to match the site domain, on top of the SameSite cookies.
 
@@ -380,7 +383,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | Worker | Vitest + DynamoDB Local + mock provider | Full job lifecycle, idempotency on redelivery, sweeper | CI |
 | UI components | Vitest + React Testing Library | Prompt form, model picker, points display, gallery, edit panel | CI |
 | Infra | CDK assertions | Resource settings (encryption, public access blocks, alarms, IAM scope) and snapshot | CI |
-| End to end | Playwright | Sign in (Cognito test user), generate with the mock provider, edit, gallery, delete | After each dev deploy |
+| End to end | Playwright (`e2e/`, Chromium) | Health, sign in and out (Cognito test user), landing page, generate with the mock provider, edit, gallery, delete; refuses to run against prod | After each dev deploy |
 | Live provider check | Script | One draft image per enabled model | Manual before a prod release |
 
 ## 14. Environments

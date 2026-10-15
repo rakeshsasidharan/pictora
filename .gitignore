@@ -17,6 +17,8 @@ cdk-outputs.json
 coverage/
 playwright-report/
 test-results/
+# Playwright session state: holds the e2e test user's session cookies
+.auth/
 
 # Environment and secrets
 .env
