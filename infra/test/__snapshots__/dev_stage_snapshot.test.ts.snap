@@ -967,6 +967,575 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
 }
 `;
 
+exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
+{
+  "Outputs": {
+    "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DeadLetterQueue9F481546",
+          "QueueName",
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "DeadLetterQueue9F481546": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "pictora-dev-dlq",
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "DeadLetterQueuePolicyB1FB890C": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DeadLetterQueue9F481546",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "DeadLetterQueue9F481546",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "GeminiQueue107AFA75": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "QueueName": "pictora-dev-gemini",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "DeadLetterQueue9F481546",
+              "Arn",
+            ],
+          },
+          "maxReceiveCount": 3,
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "VisibilityTimeout": 1080,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "GeminiQueuePolicy14A908CB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "GeminiQueue107AFA75",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "GeminiQueue107AFA75",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "OpenaiQueue9426766E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "QueueName": "pictora-dev-openai",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "DeadLetterQueue9F481546",
+              "Arn",
+            ],
+          },
+          "maxReceiveCount": 3,
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "VisibilityTimeout": 1080,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "OpenaiQueuePolicyFE0EBEBA": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "OpenaiQueue9426766E",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "OpenaiQueue9426766E",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "WorkerFunctionACE6A4B0": {
+      "DependsOn": [
+        "WorkerFunctionServiceRoleDefaultPolicy07D8276A",
+        "WorkerFunctionServiceRole38D8F738",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GEMINI_SECRET_ID": "pictora/dev/gemini",
+            "GIT_SHA": "local",
+            "IMAGES_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefImagesBucket1E86AFB2076BAF05",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+            "OPENAI_SECRET_ID": "pictora/dev/openai",
+            "PICTORA_ENV": "dev",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "generate.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "WorkerLogGroup31FDBE4A",
+          },
+        },
+        "MemorySize": 1536,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "WorkerFunctionServiceRole38D8F738",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 180,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "WorkerFunctionServiceRole38D8F738": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "WorkerFunctionServiceRoleDefaultPolicy07D8276A": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:UpdateItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:Abort*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                        "Region": "us-west-2",
+                        "StackName": "PictoraDev-Data",
+                      },
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/gemini-??????",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/openai-??????",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "sqs:ChangeMessageVisibility",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:ReceiveMessage",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "GeminiQueue107AFA75",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::GetAtt": [
+                    "OpenaiQueue9426766E",
+                    "Arn",
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "WorkerFunctionServiceRoleDefaultPolicy07D8276A",
+        "Roles": [
+          {
+            "Ref": "WorkerFunctionServiceRole38D8F738",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "WorkerFunctionSqsEventSourcePictoraDevJobsGeminiQueue2E94BA3D1857C41B": {
+      "Properties": {
+        "BatchSize": 1,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "GeminiQueue107AFA75",
+            "Arn",
+          ],
+        },
+        "FunctionName": {
+          "Ref": "WorkerFunctionACE6A4B0",
+        },
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures",
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 5,
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
+    },
+    "WorkerFunctionSqsEventSourcePictoraDevJobsOpenaiQueue2E913E150F92F9A4": {
+      "Properties": {
+        "BatchSize": 1,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "OpenaiQueue9426766E",
+            "Arn",
+          ],
+        },
+        "FunctionName": {
+          "Ref": "WorkerFunctionACE6A4B0",
+        },
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures",
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 5,
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
+    },
+    "WorkerLogGroup31FDBE4A": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
 exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
 {
   "Parameters": {
@@ -1196,6 +1765,53 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
         ],
       },
       "Type": "AWS::Budgets::Budget",
+    },
+    "DeadLetterAlarmBB7AE56D": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "Job messages are in the dead-letter queue",
+        "AlarmName": "pictora-dev-dlq",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
     },
   },
   "Rules": {

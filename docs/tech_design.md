@@ -88,7 +88,7 @@ flowchart LR
 
 ### 3.2 Worker
 
-- Container image Lambda on arm64 (needed for `sharp`, which has a native binary), 1536 MB, 180 s timeout.
+- Container image Lambda on arm64 (needed for `sharp`, which has a native binary), 1536 MB, 180 s timeout. One image (`worker/Dockerfile`, on the AWS Lambda Node.js 22 base image) holds every handler as a bundled `<name>.mjs`; each function picks its handler with the image command, for example `generate.handler`.
 - One SQS queue per provider (`openai`, `gemini`, and `bedrock` in P1), each with its own event source mapping. Batch size 1, `ReportBatchItemFailures`, and `maximumConcurrency` 5 per queue (set in config) to stay inside provider rate limits.
 - Visibility timeout 1,080 s (6 × the function timeout, as AWS recommends). `maxReceiveCount` 3, then the dead-letter queue, which has an alarm.
 - Scheduled functions, triggered by EventBridge:
@@ -406,7 +406,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference) |
 | `Data` | us-west-2 | DynamoDB table, images bucket, registry seed custom resource |
 | `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` group, pre-sign-up Lambda |
-| `Jobs` | us-west-2 | SQS queues + dead-letter queue, worker Lambda, sweeper, model health, secrets |
+| `Jobs` | us-west-2 | SQS queues + dead-letter queue, worker Lambda, sweeper, model health, and read access to the provider secrets (created by hand, section 10) |
 | `Web` | us-west-2 | App Lambda + Function URL, assets bucket, CloudFront, DNS record, Cognito app client, app config parameter |
 | `Monitoring` | us-west-2 | Dashboard, alarms, SNS topic, budget |
 

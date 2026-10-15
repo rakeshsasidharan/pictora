@@ -10,7 +10,14 @@ function maskAssetHashes(template: unknown): unknown {
 describe('PictoraDev stage', () => {
   it('matches the snapshot', () => {
     const stage = testStage('PictoraDev');
-    const stacks = [stage.certificate, stage.data, stage.auth, stage.web, stage.monitoring];
+    const stacks = [
+      stage.certificate,
+      stage.data,
+      stage.auth,
+      stage.jobs,
+      stage.web,
+      stage.monitoring,
+    ];
     for (const stack of stacks) {
       if (!stack) throw new Error('missing stack');
       expect(maskAssetHashes(Template.fromStack(stack).toJSON())).toMatchSnapshot(stack.stackName);

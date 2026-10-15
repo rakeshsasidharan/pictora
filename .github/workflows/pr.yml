@@ -61,19 +61,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check for a Dockerfile
-        id: dockerfile
-        run: |
-          if [ -f "${{ matrix.image }}/Dockerfile" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::${{ matrix.image }}/Dockerfile does not exist yet; skipping the image build."
-          fi
-
       # The build context is the repository root, so the image can use the npm workspaces.
       - name: Build the image (arm64, no push)
-        if: steps.dockerfile.outputs.exists == 'true'
         run: docker buildx build --platform linux/arm64 --file "${{ matrix.image }}/Dockerfile" .
 
   # The required status check for the main ruleset. It always runs, so a PR whose image builds were skipped
