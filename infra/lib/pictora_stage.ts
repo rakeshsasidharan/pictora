@@ -58,6 +58,7 @@ export class PictoraStage extends Stage {
       table: this.data.table,
       imagesBucket: this.data.imagesBucket,
       auth: this.auth,
+      queues: this.jobs.queues,
       certificate: this.certificate?.certificate,
     });
     this.monitoring = new MonitoringStack(this, 'Monitoring', {
