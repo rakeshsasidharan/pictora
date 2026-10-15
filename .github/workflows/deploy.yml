@@ -252,6 +252,7 @@ jobs:
         if: steps.suite.outputs.exists == 'true'
         run: npm run e2e --workspace=@pictora/e2e
 
+      # Traces carry the test user's session cookies, so the artifact is kept only briefly.
       - uses: actions/upload-artifact@v7
         if: failure() && steps.suite.outputs.exists == 'true'
         with:
@@ -260,6 +261,7 @@ jobs:
             e2e/test-results
             e2e/playwright-report
           if-no-files-found: ignore
+          retention-days: 7
 
   deploy-prod:
     needs: [resolve, e2e-dev]
