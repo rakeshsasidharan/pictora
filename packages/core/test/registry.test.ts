@@ -31,7 +31,7 @@ describe('models.json', () => {
     expect(validateRegistry(seed).errors).toEqual([]);
   });
 
-  it('holds the five P0 models and the dev-only mock', () => {
+  it('holds the five P0 models, the three P1 Bedrock models and the dev-only mock', () => {
     const models = loadSeedRegistry();
     expect(models.map((model) => [model.id, model.provider, model.environments])).toEqual([
       ['gpt-image-2', 'openai', ['dev', 'prod']],
@@ -39,8 +39,31 @@ describe('models.json', () => {
       ['gemini-3.1-flash-image', 'gemini', ['dev', 'prod']],
       ['gemini-3.1-flash-lite-image', 'gemini', ['dev', 'prod']],
       ['gemini-3-pro-image', 'gemini', ['dev', 'prod']],
+      ['stable-image-core', 'bedrock', ['dev', 'prod']],
+      ['sd3.5-large', 'bedrock', ['dev', 'prod']],
+      ['stable-image-ultra', 'bedrock', ['dev', 'prod']],
       ['mock', 'mock', ['dev']],
     ]);
+  });
+
+  it('lists the Stability models on Bedrock by their Bedrock model IDs, for generating only', () => {
+    const bedrock = loadSeedRegistry().filter((model) => model.provider === 'bedrock');
+    expect(bedrock.map((model) => model.providerModelId)).toEqual([
+      'stability.stable-image-core-v1:1',
+      'stability.sd3-5-large-v1:0',
+      'stability.stable-image-ultra-v1:1',
+    ]);
+    for (const model of bedrock) {
+      expect(model.capabilities).toMatchObject({
+        generate: true,
+        edit: false,
+        transparentBackground: false,
+        negativePrompt: true,
+        seed: true,
+        referenceImages: 0,
+      });
+      expect(model.capabilities.aspects).toHaveLength(6);
+    }
   });
 
   it('offers transparent backgrounds only on OpenAI and the mock (GEN-9)', () => {
@@ -195,7 +218,7 @@ describe('validateRegistry', () => {
   it('labels entries without an id by their index', () => {
     const models = seedCopy();
     models.push({ provider: 'openai' });
-    expect(validateRegistry(models).errors[0]).toMatch(/^Model at index 6: /);
+    expect(validateRegistry(models).errors[0]).toMatch(/^Model at index 9: /);
   });
 });
 

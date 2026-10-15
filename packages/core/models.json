@@ -164,6 +164,81 @@
     "defaultFor": ["photorealistic", "cinematic"]
   },
   {
+    "id": "stable-image-core",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-image-core-v1:1",
+    "displayName": "Stable Image Core",
+    "strengths": ["Fast", "Low cost"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": true,
+      "seed": true,
+      "referenceImages": 0,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "draft": {
+        "providerParams": {},
+        "costPoints": 4
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "sd3.5-large",
+    "provider": "bedrock",
+    "providerModelId": "stability.sd3-5-large-v1:0",
+    "displayName": "SD 3.5 Large",
+    "strengths": ["Balanced", "Broad styles", "Negative prompts"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": true,
+      "seed": true,
+      "referenceImages": 0,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "standard": {
+        "providerParams": {},
+        "costPoints": 8
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-image-ultra",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-image-ultra-v1:1",
+    "displayName": "Stable Image Ultra",
+    "strengths": ["Photorealistic detail"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": true,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": true,
+      "seed": true,
+      "referenceImages": 0,
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+    },
+    "qualities": {
+      "high": {
+        "providerParams": {},
+        "costPoints": 14
+      }
+    },
+    "defaultFor": []
+  },
+  {
     "id": "mock",
     "provider": "mock",
     "providerModelId": "mock",

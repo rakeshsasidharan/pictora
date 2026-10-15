@@ -27,6 +27,9 @@ const EXPECTED_COST_POINTS: Record<string, Partial<Record<(typeof QUALITIES)[num
   'gemini-3.1-flash-image': { standard: 7, high: 11 },
   'gemini-3.1-flash-lite-image': { draft: 4 },
   'gemini-3-pro-image': { standard: 14, high: 24 },
+  'stable-image-core': { draft: 4 },
+  'sd3.5-large': { standard: 8 },
+  'stable-image-ultra': { high: 14 },
   mock: { draft: 1, standard: 2, high: 3 },
 };
 

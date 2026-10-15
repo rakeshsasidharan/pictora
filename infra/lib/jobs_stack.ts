@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Repository } from 'aws-cdk-lib/aws-ecr';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Architecture, DockerImageCode, DockerImageFunction } from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
@@ -8,14 +10,34 @@ import type { IBucket } from 'aws-cdk-lib/aws-s3';
 import { Secret, type ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
+import { MODELS_JSON_PATH } from './data_stack.js';
 import type { StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the worker image to (`PictoraCicd` stack). */
 export const WORKER_REPOSITORY_NAME = 'pictora-worker';
 
-/** Providers with a queue of their own. Bedrock joins in P1 (tech design 3.2). */
-export const QUEUE_PROVIDERS = ['openai', 'gemini'] as const;
+/** Providers with a queue of their own (tech design 3.2). */
+export const QUEUE_PROVIDERS = ['openai', 'gemini', 'bedrock'] as const;
 export type QueueProvider = (typeof QUEUE_PROVIDERS)[number];
+
+/** Providers called with an API key from Secrets Manager. Bedrock uses the worker's IAM role instead. */
+export const SECRET_PROVIDERS = ['openai', 'gemini'] as const;
+export type SecretProvider = (typeof SECRET_PROVIDERS)[number];
+
+/** Bedrock image models run on demand in us-west-2 only (PRD registry rules). */
+export const BEDROCK_REGION = 'us-west-2';
+
+/** The `providerModelId` of every Bedrock model in `models.json`, which the worker may invoke. */
+export function bedrockModelIds(modelsJsonPath: string = MODELS_JSON_PATH): string[] {
+  const models = JSON.parse(readFileSync(modelsJsonPath, 'utf8')) as {
+    provider: string;
+    providerModelId: string;
+  }[];
+  return models
+    .filter((model) => model.provider === 'bedrock')
+    .map((model) => model.providerModelId)
+    .sort();
+}
 
 /** Worker Lambda settings (tech design 3.2). */
 export const WORKER_MEMORY_MB = 1536;
@@ -35,7 +57,7 @@ export function queueName(envName: string, provider: QueueProvider): string {
 }
 
 /** Secrets Manager secret with a provider's API key, created by hand once per environment (tech design 10). */
-export function providerSecretName(envName: string, provider: QueueProvider): string {
+export function providerSecretName(envName: string, provider: SecretProvider): string {
   return `pictora/${envName}/${provider}`;
 }
 
@@ -53,7 +75,7 @@ export class JobsStack extends Stack {
   readonly queues: Readonly<Record<QueueProvider, Queue>>;
   readonly deadLetterQueue: Queue;
   readonly workerFunction: DockerImageFunction;
-  readonly providerSecrets: Readonly<Record<QueueProvider, ISecret>>;
+  readonly providerSecrets: Readonly<Record<SecretProvider, ISecret>>;
 
   constructor(scope: Construct, id: string, props: JobsStackProps) {
     super(scope, id, props);
@@ -69,7 +91,7 @@ export class JobsStack extends Stack {
 
     // Queues hold only messages in flight, so they're deleted with the stack in every environment.
     const queues = {} as Record<QueueProvider, Queue>;
-    const secrets = {} as Record<QueueProvider, ISecret>;
+    const secrets = {} as Record<SecretProvider, ISecret>;
     for (const provider of QUEUE_PROVIDERS) {
       const name = capitalize(provider);
       queues[provider] = new Queue(this, `${name}Queue`, {
@@ -79,6 +101,9 @@ export class JobsStack extends Stack {
         encryption: QueueEncryption.SQS_MANAGED,
         enforceSSL: true,
       });
+    }
+    for (const provider of SECRET_PROVIDERS) {
+      const name = capitalize(provider);
       // Referenced by name, so the grant covers only this secret, whatever suffix Secrets Manager gave it.
       secrets[provider] = Secret.fromSecretNameV2(
         this,
@@ -118,8 +143,25 @@ export class JobsStack extends Stack {
 
     props.table.grantReadWriteData(this.workerFunction);
     props.imagesBucket.grantPut(this.workerFunction);
-    for (const provider of QUEUE_PROVIDERS) {
+    for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.workerFunction);
+    }
+    // Bedrock is called with the worker's role, on the registry's Bedrock models only.
+    this.workerFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['bedrock:InvokeModel'],
+        resources: bedrockModelIds().map((modelId) =>
+          this.formatArn({
+            service: 'bedrock',
+            region: BEDROCK_REGION,
+            account: '',
+            resource: 'foundation-model',
+            resourceName: modelId,
+          }),
+        ),
+      }),
+    );
+    for (const provider of QUEUE_PROVIDERS) {
       this.workerFunction.addEventSource(
         new SqsEventSource(this.queues[provider], {
           batchSize: 1,

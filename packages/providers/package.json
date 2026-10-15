@@ -20,9 +20,11 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "aws-sdk-client-mock": "^4.1.0",
     "vitest": "^5.0.3"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1152.0",
     "@pictora/core": "^0.0.0",
     "sharp": "^0.35.5"
   }

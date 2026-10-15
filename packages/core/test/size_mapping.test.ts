@@ -77,12 +77,14 @@ describe('mapAspect', () => {
     }
   }
 
+  // Within 3%: Stability's native sizes are multiples of 64, so 3:2 comes out as 1216×832 (1.46).
   it('keeps every output close to the requested aspect ratio', () => {
     for (const entry of models) {
       for (const quality of QUALITIES.filter((candidate) => entry.qualities[candidate])) {
         for (const aspect of entry.capabilities.aspects) {
           const { output } = mapAspect(entry, aspect, quality);
-          expect(Math.abs(output.width / output.height - ASPECT_RATIOS[aspect])).toBeLessThan(0.02);
+          const ratio = output.width / output.height / ASPECT_RATIOS[aspect];
+          expect(Math.abs(ratio - 1)).toBeLessThan(0.03);
         }
       }
     }
@@ -103,10 +105,23 @@ describe('mapAspect', () => {
     expect(() => mapAspect(broken, '1:1', 'standard')).toThrow(/unknown imageSize: 8K/);
   });
 
-  it('has no size table for Bedrock yet', () => {
-    const bedrock: ModelConfig = { ...model('mock'), id: 'stable-image-core', provider: 'bedrock' };
-    expect(() => mapAspect(bedrock, '1:1', 'draft')).toThrow(/Bedrock sizes are not mapped/);
-  });
+  it.each(['stable-image-core', 'sd3.5-large', 'stable-image-ultra'])(
+    'sends every aspect to Bedrock model %s natively as aspect_ratio, uncropped and near 1 megapixel',
+    (id) => {
+      const entry = model(id);
+      const [quality] = QUALITIES.filter((q) => entry.qualities[q]);
+      for (const aspect of ASPECTS) {
+        const mapping = mapAspect(entry, aspect, quality as (typeof QUALITIES)[number]);
+        expect(mapping.providerSize).toBe(aspect);
+        expect(mapping.crop).toBe(false);
+        expect(mapping.output).toEqual(mapping.generated);
+        const { width, height } = mapping.output;
+        expect(Math.abs(width / height / ASPECT_RATIOS[aspect] - 1)).toBeLessThan(0.03);
+        expect(width * height).toBeGreaterThan(0.9e6);
+        expect(width * height).toBeLessThan(1.1e6);
+      }
+    },
+  );
 });
 
 describe('centreCropSize', () => {

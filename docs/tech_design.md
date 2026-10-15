@@ -288,7 +288,7 @@ Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `P
 | --- | --- | --- | --- | --- |
 | OpenAI | `openai` | `images.generate` with `output_format: 'png'`, `quality`, `size`, `background` | `images.edit` with the parent image (+ references) | Sizes: 1024×1024, 1536×1024, 1024×1536; other aspects are generated at the nearest size and centre-cropped |
 | Gemini | `@google/genai` | `models.generateContent` with an image response and an aspect-ratio config | Same call, with the parent image as inline data + the instruction | The same SDK works with the Gemini API (API key) or Vertex AI (`vertexai: true`), so the open Vertex question changes only config |
-| Bedrock (P1) | `@aws-sdk/client-bedrock-runtime` | `InvokeModel` with Stability request bodies | Stability edit models through `us.` inference profiles | IAM role auth; no key |
+| Bedrock (P1) | `@aws-sdk/client-bedrock-runtime` | `InvokeModel` in us-west-2 with Stability request bodies (`prompt`, `negative_prompt`, `aspect_ratio`, `seed`, `output_format: 'png'`; `mode: 'text-to-image'` for SD 3.5 Large). One image per call, so `count` images are parallel calls; when only some succeed, only those are returned and charged | Stability edit models through `us.` inference profiles (image tools, #35); Stable Image Core, SD 3.5 Large and Ultra generate only | IAM role auth; no key. All six aspects are native (about 1 megapixel). A content-filter `finish_reasons` entry becomes `ProviderSafetyError`. The worker may invoke only the Bedrock models listed in `models.json` |
 | Mock (dev/test) | none | Returns a placeholder PNG at the mapped size showing the prompt, after a delay (`MOCK_PROVIDER_DELAY_MS`, default 1 s); `__fail__`, `__block__` and `__timeout__` in the prompt raise the matching error | Same, over the input image | Lets CI and end-to-end tests run with no provider spend. Reports the model's list price as its cost, so points behave as with a real provider |
 
 ### 6.3 Prompt enhancer and moderation
@@ -406,7 +406,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference) |
 | `Data` | us-west-2 | DynamoDB table, images bucket, registry seed custom resource |
 | `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` group, pre-sign-up Lambda |
-| `Jobs` | us-west-2 | SQS queues + dead-letter queue, worker Lambda, sweeper, model health, and read access to the provider secrets (created by hand, section 10) |
+| `Jobs` | us-west-2 | SQS queues (`openai`, `gemini`, `bedrock`) + dead-letter queue, worker Lambda, sweeper, model health, read access to the OpenAI and Gemini secrets (created by hand, section 10), and `bedrock:InvokeModel` on the Bedrock models in `models.json` |
 | `Web` | us-west-2 | App Lambda + Function URL, assets bucket, CloudFront, DNS record, Cognito app client, app config parameter |
 | `Monitoring` | us-west-2 | Dashboard, alarms, SNS topic, budget |
 

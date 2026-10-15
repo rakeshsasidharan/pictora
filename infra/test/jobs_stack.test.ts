@@ -1,5 +1,6 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
+import { bedrockModelIds } from '../lib/jobs_stack.js';
 import { PLACEHOLDER_IMAGE_DIGEST } from '../lib/stage_config.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
@@ -37,7 +38,7 @@ function workerPolicyStatements(template: Template): Record<string, unknown>[] {
 describe('Jobs stack: queues', () => {
   const dlqId = logicalId(dev, 'AWS::SQS::Queue', { QueueName: 'pictora-dev-dlq' });
 
-  it.each(['openai', 'gemini'])(
+  it.each(['openai', 'gemini', 'bedrock'])(
     'creates the %s queue with a 1,080 s visibility timeout and 3 receives before the dead-letter queue',
     (provider) => {
       dev.hasResourceProperties('AWS::SQS::Queue', {
@@ -52,11 +53,16 @@ describe('Jobs stack: queues', () => {
     },
   );
 
-  it('has one queue per provider plus the shared dead-letter queue, and no bedrock queue yet', () => {
+  it('has one queue per provider plus the shared dead-letter queue', () => {
     const names = Object.values(dev.findResources('AWS::SQS::Queue'))
       .map((queue) => queue.Properties.QueueName)
       .sort();
-    expect(names).toEqual(['pictora-dev-dlq', 'pictora-dev-gemini', 'pictora-dev-openai']);
+    expect(names).toEqual([
+      'pictora-dev-bedrock',
+      'pictora-dev-dlq',
+      'pictora-dev-gemini',
+      'pictora-dev-openai',
+    ]);
   });
 
   it('keeps dead letters for 14 days', () => {
@@ -69,14 +75,19 @@ describe('Jobs stack: queues', () => {
   });
 
   it('names the queues per environment', () => {
-    for (const name of ['pictora-prod-openai', 'pictora-prod-gemini', 'pictora-prod-dlq']) {
+    for (const name of [
+      'pictora-prod-openai',
+      'pictora-prod-gemini',
+      'pictora-prod-bedrock',
+      'pictora-prod-dlq',
+    ]) {
       prod.hasResourceProperties('AWS::SQS::Queue', { QueueName: name });
     }
   });
 
   it('denies queue access without TLS', () => {
     const policies = Object.values(dev.findResources('AWS::SQS::QueuePolicy'));
-    expect(policies).toHaveLength(3);
+    expect(policies).toHaveLength(4);
     for (const policy of policies) {
       expect(policy.Properties.PolicyDocument.Statement).toEqual(
         expect.arrayContaining([
@@ -122,7 +133,7 @@ describe('Jobs stack: worker Lambda', () => {
     prod.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 90 });
   });
 
-  it.each(['openai', 'gemini'])(
+  it.each(['openai', 'gemini', 'bedrock'])(
     'consumes the %s queue one message at a time, reporting batch item failures, at most 5 at once',
     (provider) => {
       const queueId = logicalId(dev, 'AWS::SQS::Queue', { QueueName: `pictora-dev-${provider}` });
@@ -137,7 +148,7 @@ describe('Jobs stack: worker Lambda', () => {
   );
 
   it('has exactly one event source mapping per queue', () => {
-    dev.resourceCountIs('AWS::Lambda::EventSourceMapping', 2);
+    dev.resourceCountIs('AWS::Lambda::EventSourceMapping', 3);
   });
 
   it('takes the maximum concurrency from the environment settings', () => {
@@ -149,6 +160,7 @@ describe('Jobs stack: worker Lambda', () => {
     const template = Template.fromStack(testStage('PictoraDev', { environments }).jobs);
     const mappings = Object.values(template.findResources('AWS::Lambda::EventSourceMapping'));
     expect(mappings.map((mapping) => mapping.Properties.ScalingConfig)).toEqual([
+      { MaximumConcurrency: 3 },
       { MaximumConcurrency: 3 },
       { MaximumConcurrency: 3 },
     ]);
@@ -205,9 +217,22 @@ describe('Jobs stack: worker IAM', () => {
       expect.arrayContaining([
         { 'Fn::GetAtt': [expect.stringMatching(/^OpenaiQueue/), 'Arn'] },
         { 'Fn::GetAtt': [expect.stringMatching(/^GeminiQueue/), 'Arn'] },
+        { 'Fn::GetAtt': [expect.stringMatching(/^BedrockQueue/), 'Arn'] },
       ]),
     );
-    expect([statement?.Resource].flat()).toHaveLength(2);
+    expect([statement?.Resource].flat()).toHaveLength(3);
+  });
+
+  it('may invoke only the Bedrock models in models.json, in us-west-2', () => {
+    const bedrockStatements = statements.filter((s) =>
+      actionsOf(s).some((a) => a.startsWith('bedrock:')),
+    );
+    expect(bedrockStatements).toHaveLength(1);
+    const [statement] = bedrockStatements;
+    expect(actionsOf(statement ?? {})).toEqual(['bedrock:InvokeModel']);
+    expect([statement?.Resource].flat()).toEqual(
+      bedrockModelIds().map((modelId) => `arn:aws:bedrock:us-west-2::foundation-model/${modelId}`),
+    );
   });
 
   it('has no wildcard actions or resources', () => {
@@ -215,5 +240,15 @@ describe('Jobs stack: worker IAM', () => {
       for (const action of actionsOf(statement)) expect(action).not.toBe('*');
       expect(statement.Resource).not.toBe('*');
     }
+  });
+});
+
+describe('bedrockModelIds', () => {
+  it('lists the Stability models on Bedrock from models.json', () => {
+    expect(bedrockModelIds()).toEqual([
+      'stability.sd3-5-large-v1:0',
+      'stability.stable-image-core-v1:1',
+      'stability.stable-image-ultra-v1:1',
+    ]);
   });
 });
