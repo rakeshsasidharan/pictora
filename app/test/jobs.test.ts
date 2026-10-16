@@ -227,6 +227,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
       usageDate: '2026-10-15',
       attempts: 0,
       request: generate({ quality: 'high', count: 2 }),
+      GSI1PK: 'JOBS#queued',
+      GSI1SK: '2026-10-15T12:00:00.000Z',
     });
   });
 
@@ -363,6 +365,10 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
       error: { code: 'enqueue_failed', message: JOB_ERROR_MESSAGES.enqueue_failed },
       finishedAt: '2026-10-15T12:00:00.000Z',
     });
+    // Off the active-jobs index, so the sweeper leaves it alone.
+    const failed = await getItem(jobPk(jobId), JOB_SK);
+    expect(failed).not.toHaveProperty('GSI1PK');
+    expect(failed).not.toHaveProperty('GSI1SK');
     vi.mocked(console.error).mockRestore();
   });
 

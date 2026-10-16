@@ -3,7 +3,7 @@
 import { build } from 'esbuild';
 
 /** Handlers in the image; a function picks one with its image command, `<name>.handler`. */
-const ENTRY_POINTS = ['generate'];
+const ENTRY_POINTS = ['generate', 'sweeper'];
 
 await build({
   entryPoints: ENTRY_POINTS.map((name) => `src/${name}.ts`),

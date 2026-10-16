@@ -145,7 +145,8 @@ export async function failQueuedJob(
             TableName: tableName,
             Key: { PK: jobPk(job.jobId), SK: JOB_SK },
             UpdateExpression:
-              'SET #status = :failed, #error = :error, finishedAt = :now, pointsCharged = :zero',
+              'SET #status = :failed, #error = :error, finishedAt = :now, pointsCharged = :zero' +
+              ' REMOVE GSI1PK, GSI1SK',
             ConditionExpression: '#status = :queued',
             ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
             ExpressionAttributeValues: {

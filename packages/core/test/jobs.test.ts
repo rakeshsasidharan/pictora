@@ -2,13 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   JOB_ERROR_CODES,
   JOB_ERROR_MESSAGES,
+  activeJobsGsiPk,
   imageKey,
+  imageSk,
   jobError,
   jobPk,
   rateSk,
+  spendSk,
+  statsModelSk,
+  statsPk,
+  thumbnailKey,
   ttlAfter,
+  usageRankSk,
   usageSk,
   userPk,
+  utcMonth,
+  versionSk,
   utcDate,
   utcMinute,
 } from '../src/jobs.js';
@@ -20,6 +29,32 @@ describe('table keys', () => {
     expect(rateSk('202610151230')).toBe('RATE#202610151230');
     expect(jobPk('01J')).toBe('JOB#01J');
     expect(imageKey('abc', 'IMG', 2)).toBe('users/abc/IMG/v2.png');
+    expect(thumbnailKey('abc', 'IMG', 2)).toBe('users/abc/IMG/v2_thumb.webp');
+    expect(imageSk('01I')).toBe('IMG#01I');
+    expect(versionSk('01I', 3)).toBe('VER#01I#3');
+    expect(spendSk('2026-10')).toBe('SPEND#2026-10');
+    expect(statsPk('2026-10-15')).toBe('STATS#2026-10-15');
+    expect(statsModelSk('mock')).toBe('MODEL#mock');
+    expect(activeJobsGsiPk('running')).toBe('JOBS#running');
+    expect(activeJobsGsiPk('queued')).toBe('JOBS#queued');
+  });
+
+  it('pads usage ranks so they sort by points used', () => {
+    expect(usageRankSk(7)).toBe('0000000007');
+    expect(usageRankSk(1234)).toBe('0000001234');
+    expect(usageRankSk(-3)).toBe('0000000000');
+    expect([usageRankSk(25), usageRankSk(3), usageRankSk(100)].sort()).toEqual([
+      '0000000003',
+      '0000000025',
+      '0000000100',
+    ]);
+  });
+});
+
+describe('utcMonth', () => {
+  it('names the UTC month', () => {
+    expect(utcMonth(new Date('2026-10-31T23:59:59.999Z'))).toBe('2026-10');
+    expect(utcMonth(new Date('2026-11-01T00:00:00Z'))).toBe('2026-11');
   });
 });
 
