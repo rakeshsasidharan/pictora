@@ -540,7 +540,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
       "DeletionPolicy": "Delete",
       "Properties": {
         "GitSha": "local",
-        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Transparent backgrounds","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"defaultFor":[]}]",
+        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Transparent backgrounds","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"stable-image-core","provider":"bedrock","providerModelId":"stability.stable-image-core-v1:1","displayName":"Stable Image Core","strengths":["Fast","Low cost"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":4}},"defaultFor":[]},{"id":"sd3.5-large","provider":"bedrock","providerModelId":"stability.sd3-5-large-v1:0","displayName":"SD 3.5 Large","strengths":["Balanced","Broad styles","Negative prompts"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{},"costPoints":8}},"defaultFor":[]},{"id":"stable-image-ultra","provider":"bedrock","providerModelId":"stability.stable-image-ultra-v1:1","displayName":"Stable Image Ultra","strengths":["Photorealistic detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"high":{"providerParams":{},"costPoints":14}},"defaultFor":[]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"defaultFor":[]}]",
         "ServiceToken": {
           "Fn::GetAtt": [
             "RegistrySeedProviderframeworkonEventFBCF8235",
@@ -970,6 +970,14 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
 exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
 {
   "Outputs": {
+    "PublishOutputFnGetAttBedrockQueue897D9489Arn9BF3960B": {
+      "Value": {
+        "Fn::GetAtt": [
+          "BedrockQueue897D9489",
+          "Arn",
+        ],
+      },
+    },
     "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350": {
       "Value": {
         "Fn::GetAtt": [
@@ -994,6 +1002,11 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
     },
+    "PublishOutputRefBedrockQueue897D9489A89EE611": {
+      "Value": {
+        "Ref": "BedrockQueue897D9489",
+      },
+    },
     "PublishOutputRefGeminiQueue107AFA754FBDA33C": {
       "Value": {
         "Ref": "GeminiQueue107AFA75",
@@ -1013,6 +1026,68 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
     },
   },
   "Resources": {
+    "BedrockQueue897D9489": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "QueueName": "pictora-dev-bedrock",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "DeadLetterQueue9F481546",
+              "Arn",
+            ],
+          },
+          "maxReceiveCount": 3,
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "VisibilityTimeout": 1080,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "BedrockQueuePolicyE1F2D7DE": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "BedrockQueue897D9489",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "BedrockQueue897D9489",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
     "DeadLetterQueue9F481546": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -1416,6 +1491,15 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               ],
             },
             {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.sd3-5-large-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-core-v1:1",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-ultra-v1:1",
+              ],
+            },
+            {
               "Action": [
                 "sqs:ChangeMessageVisibility",
                 "sqs:DeleteMessage",
@@ -1425,6 +1509,12 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               ],
               "Effect": "Allow",
               "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BedrockQueue897D9489",
+                    "Arn",
+                  ],
+                },
                 {
                   "Fn::GetAtt": [
                     "GeminiQueue107AFA75",
@@ -1450,6 +1540,37 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "WorkerFunctionSqsEventSourcePictoraDevJobsBedrockQueue2BF57D6D72FDA1A6": {
+      "Properties": {
+        "BatchSize": 1,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "BedrockQueue897D9489",
+            "Arn",
+          ],
+        },
+        "FunctionName": {
+          "Ref": "WorkerFunctionACE6A4B0",
+        },
+        "FunctionResponseTypes": [
+          "ReportBatchItemFailures",
+        ],
+        "ScalingConfig": {
+          "MaximumConcurrency": 5,
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
     },
     "WorkerFunctionSqsEventSourcePictoraDevJobsGeminiQueue2E94BA3D1857C41B": {
       "Properties": {
@@ -1999,6 +2120,13 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         "Environment": {
           "Variables": {
             "APP_CONFIG_PARAMETER": "/pictora/dev/app-config",
+            "BEDROCK_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefBedrockQueue897D9489A89EE611",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
             "COGNITO_DOMAIN": {
               "Fn::Join": [
                 "",
@@ -2258,6 +2386,13 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
               ],
               "Effect": "Allow",
               "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttBedrockQueue897D9489Arn9BF3960B",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Jobs",
+                  },
+                },
                 {
                   "Fn::GetStackOutput": {
                     "OutputName": "PublishOutputFnGetAttGeminiQueue107AFA75Arn8BD875BC",

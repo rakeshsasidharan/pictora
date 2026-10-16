@@ -56,6 +56,7 @@ describe('Web stack: app Lambda', () => {
     const variables = appFunction(dev).Environment.Variables;
     expect(JSON.stringify(variables.OPENAI_QUEUE_URL)).toMatch(/OpenaiQueue/);
     expect(JSON.stringify(variables.GEMINI_QUEUE_URL)).toMatch(/GeminiQueue/);
+    expect(JSON.stringify(variables.BEDROCK_QUEUE_URL)).toMatch(/BedrockQueue/);
     expect(devStage.web.dependencies).toContain(devStage.jobs);
     const sendStatements = Object.values(dev.findResources('AWS::IAM::Policy')).flatMap((policy) =>
       (policy.Properties.PolicyDocument.Statement as { Action: unknown; Resource: unknown }[])
@@ -65,6 +66,7 @@ describe('Web stack: app Lambda', () => {
     expect(sendStatements.length).toBeGreaterThan(0);
     expect(sendStatements.join()).toMatch(/OpenaiQueue/);
     expect(sendStatements.join()).toMatch(/GeminiQueue/);
+    expect(sendStatements.join()).toMatch(/BedrockQueue/);
     expect(sendStatements.join()).not.toMatch(/DeadLetter/);
   });
 

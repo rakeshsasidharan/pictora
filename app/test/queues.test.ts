@@ -21,7 +21,12 @@ describe('queueUrl', () => {
     expect(queueUrl('mock', env)).toBe(env.OPENAI_QUEUE_URL);
   });
 
-  it('has no queue for a provider without one, such as Bedrock before P1', () => {
+  it("returns the Bedrock queue, and nothing when a provider's URL isn't set", () => {
+    expect(
+      queueUrl('bedrock', {
+        BEDROCK_QUEUE_URL: 'https://sqs.example/pictora-dev-bedrock',
+      } as unknown as NodeJS.ProcessEnv),
+    ).toBe('https://sqs.example/pictora-dev-bedrock');
     expect(queueUrl('bedrock', env)).toBeUndefined();
     expect(queueUrl('openai', {} as NodeJS.ProcessEnv)).toBeUndefined();
   });

@@ -8,7 +8,10 @@ export interface Size {
 /** How one aspect ratio is produced by one model (GEN-3). */
 export interface SizeMapping {
   aspect: Aspect;
-  /** What the adapter sends: an OpenAI `size` such as `1536x1024`, or a Gemini `aspectRatio` such as `16:9`. */
+  /**
+   * What the adapter sends: an OpenAI `size` such as `1536x1024`, or a Gemini `aspectRatio` or Stability
+   * `aspect_ratio` such as `16:9`.
+   */
   providerSize: string;
   /** The size the provider generates. */
   generated: Size;
@@ -67,6 +70,19 @@ export const GEMINI_SIZES: Record<GeminiImageSize, Record<Aspect, Size>> = {
 };
 
 /**
+ * Stability output sizes on Bedrock (about 1 megapixel) per `aspect_ratio`. Every Pictora aspect is native, so
+ * nothing is cropped; the adapter reads the actual size from the returned PNG.
+ */
+export const STABILITY_SIZES: Record<Aspect, Size> = {
+  '1:1': { width: 1024, height: 1024 },
+  '4:5': { width: 896, height: 1088 },
+  '3:2': { width: 1216, height: 832 },
+  '2:3': { width: 832, height: 1216 },
+  '16:9': { width: 1344, height: 768 },
+  '9:16': { width: 768, height: 1344 },
+};
+
+/**
  * The size a model generates for an aspect at a quality, and whether it is centre-cropped (GEN-3).
  * Throws when the model doesn't list the aspect or quality, or its provider has no size table.
  */
@@ -91,8 +107,10 @@ export function mapAspect(model: ModelConfig, aspect: Aspect, quality: Quality):
       const size = GEMINI_SIZES[imageSize][aspect];
       return { aspect, providerSize: aspect, generated: size, output: size, crop: false };
     }
-    case 'bedrock':
-      throw new Error(`Model ${model.id}: Bedrock sizes are not mapped yet`);
+    case 'bedrock': {
+      const size = STABILITY_SIZES[aspect];
+      return { aspect, providerSize: aspect, generated: size, output: size, crop: false };
+    }
   }
 }
 

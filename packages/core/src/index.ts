@@ -87,6 +87,7 @@ export {
   GEMINI_IMAGE_SIZES,
   GEMINI_SIZES,
   OPENAI_SIZES,
+  STABILITY_SIZES,
   centreCropSize,
   mapAspect,
   mapToNearestSize,

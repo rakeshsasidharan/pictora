@@ -1,4 +1,12 @@
 export {
+  BEDROCK_REGION,
+  BedrockProvider,
+  STABILITY_MAX_SEED,
+  stabilityRequestBody,
+  toBedrockError,
+} from './bedrock.js';
+export type { BedrockProviderOptions, StabilityRequestBody } from './bedrock.js';
+export {
   ProviderError,
   ProviderRateLimitError,
   ProviderSafetyError,

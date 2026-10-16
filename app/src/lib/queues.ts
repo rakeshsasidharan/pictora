@@ -1,7 +1,7 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import type { Provider } from '@pictora/core';
 
-/** Providers with a queue of their own (tech design 3.2). Bedrock joins in P1. */
+/** Providers with a queue of their own (tech design 3.2). */
 export type QueueProvider = Exclude<Provider, 'mock'>;
 
 /** The dev-only mock provider has no queue of its own; its jobs share the OpenAI queue. */

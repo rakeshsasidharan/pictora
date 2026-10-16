@@ -1,4 +1,5 @@
 import type { ModelConfig, Provider } from '@pictora/core';
+import { BedrockProvider } from './bedrock.js';
 import { ProviderError, toProviderError } from './errors.js';
 import { MockProvider } from './mock.js';
 import { withRetry, type RetryOptions } from './retry.js';
@@ -7,8 +8,9 @@ import type { ImageProvider, ImageRequest, ImageResult } from './types.js';
 /** Builds the adapter for one provider. */
 export type AdapterFactory = () => ImageProvider;
 
-/** The adapters this package ships. OpenAI and Gemini join them in their own issues; Bedrock in P1. */
+/** The adapters this package ships. OpenAI and Gemini join them in their own issues. */
 export const DEFAULT_ADAPTERS: Partial<Record<Provider, AdapterFactory>> = {
+  bedrock: () => new BedrockProvider(),
   mock: () => new MockProvider(),
 };
 
