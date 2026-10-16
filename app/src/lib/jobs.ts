@@ -1,0 +1,319 @@
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import {
+  JOB_SK,
+  JOB_TTL_DAYS,
+  SECONDS_PER_DAY,
+  createJobRequestSchema,
+  estimatePoints,
+  jobError,
+  jobPk,
+  ttlAfter,
+  utcDate,
+  type GenerateJobRequest,
+  type JobItem,
+  type JobStatus,
+  type ModelConfig,
+  type Provider,
+} from '@pictora/core';
+import { failQueuedJob, readJob, readUsedPoints, reserveJob } from './job_store';
+import { dailyLimit, ensureProfile, inCooldown, readProfile, type Profile } from './profile';
+import type { Session } from './session';
+
+/** What the job API needs, so tests can swap the queues, S3 and the clock. */
+export interface JobsDeps {
+  client: DynamoDBDocumentClient;
+  tableName: string;
+  /** The environment's registry, switched-off models included. */
+  models: () => Promise<ModelConfig[]>;
+  /** True when the provider has a queue to send jobs to. */
+  hasQueue: (provider: Provider) => boolean;
+  /** Sends `{ jobId }` to the provider's queue. */
+  enqueue: (provider: Provider, jobId: string) => Promise<void>;
+  /** A presigned GET URL for an object in the images bucket. */
+  presign: (key: string) => Promise<string>;
+  defaultDailyPoints: number;
+  now: () => Date;
+  newJobId: () => string;
+}
+
+/** A route handler's answer: an HTTP status and a JSON body. */
+export interface ApiResult {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+/** Error codes the job API returns, with the HTTP status of each. */
+export const API_ERROR_STATUS = {
+  invalid_request: 400,
+  unknown_model: 400,
+  model_disabled: 400,
+  unsupported_option: 400,
+  edit_unavailable: 400,
+  out_of_points: 402,
+  suspended: 403,
+  cooldown: 403,
+  not_found: 404,
+  rate_limited: 429,
+  too_many_jobs: 429,
+  enqueue_failed: 503,
+} as const;
+export type ApiErrorCode = keyof typeof API_ERROR_STATUS;
+
+/** An error answer with a plain-language message for the user (GEN-10). */
+export function apiError(code: ApiErrorCode, message: string): ApiResult {
+  return { status: API_ERROR_STATUS[code], body: { error: message, code } };
+}
+
+const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/**
+ * `POST /api/jobs` (tech design 5.1): validates the request, checks it against the model, estimates its points,
+ * reserves them with the limits in one transaction, and queues the job. Answers 202 with the job ID.
+ */
+export async function createJob(
+  deps: JobsDeps,
+  session: Session,
+  input: unknown,
+): Promise<ApiResult> {
+  const parsed = createJobRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return apiError(
+      'invalid_request',
+      "Something in the request isn't valid. Check the prompt and options, then try again.",
+    );
+  }
+  const request = parsed.data;
+  if (request.type === 'edit') {
+    return apiError('edit_unavailable', 'Editing images is coming soon.');
+  }
+
+  const model = (await deps.models()).find((candidate) => candidate.id === request.modelId);
+  if (!model) {
+    return apiError('unknown_model', "That model isn't available. Pick another model.");
+  }
+  if (!model.enabled || !deps.hasQueue(model.provider)) {
+    return apiError(
+      'model_disabled',
+      `${model.displayName} is switched off right now. Pick another model.`,
+    );
+  }
+  const unsupported = unsupportedOption(model, request);
+  if (unsupported) return apiError('unsupported_option', unsupported);
+  const points = estimatePoints(model, request.quality, request.aspect, request.count);
+
+  const now = deps.now();
+  const profile = await ensureProfile(deps.client, deps.tableName, session, now);
+  const blocked = profileRefusal(profile, now);
+  if (blocked) return blocked;
+  const limit = dailyLimit(profile, deps.defaultDailyPoints);
+  const usageDate = utcDate(now);
+  if (points > limit) return outOfPoints(deps, session.sub, usageDate, points);
+
+  const jobId = deps.newJobId();
+  const job: JobItem = {
+    PK: jobPk(jobId),
+    SK: JOB_SK,
+    jobId,
+    userId: session.sub,
+    type: 'generate',
+    status: 'queued',
+    request,
+    modelId: model.id,
+    provider: model.provider,
+    pointsReserved: points,
+    usageDate,
+    createdAt: now.toISOString(),
+    attempts: 0,
+    ttl: ttlAfter(now, JOB_TTL_DAYS * SECONDS_PER_DAY),
+  };
+  const reserved = await reserveJob(deps.client, deps.tableName, { job, limit, now });
+  if (!reserved.ok) {
+    if (reserved.reason === 'rate') {
+      return apiError(
+        'rate_limited',
+        "You've started 10 jobs in the last minute. Wait a moment, then try again.",
+      );
+    }
+    if (reserved.reason === 'points') return outOfPoints(deps, session.sub, usageDate, points);
+    const current = await readProfile(deps.client, deps.tableName, session.sub);
+    return (
+      (current && profileRefusal(current, now)) ??
+      apiError(
+        'too_many_jobs',
+        'You already have 2 jobs running. Wait for one to finish, then try again.',
+      )
+    );
+  }
+
+  try {
+    await deps.enqueue(model.provider, jobId);
+  } catch (error) {
+    logError('Enqueue failed; refunding the job', { jobId, provider: model.provider, error });
+    const failure = jobError('enqueue_failed');
+    try {
+      await failQueuedJob(deps.client, deps.tableName, job, failure, deps.now());
+    } catch (refundError) {
+      logError('Refund after enqueue failure failed', { jobId, error: refundError });
+    }
+    return apiError('enqueue_failed', failure.message);
+  }
+  return { status: 202, body: { jobId, status: 'queued', pointsReserved: points } };
+}
+
+/** Why the model can't take this request, in words for the user; undefined when it can. */
+export function unsupportedOption(
+  model: ModelConfig,
+  request: GenerateJobRequest,
+): string | undefined {
+  const name = model.displayName;
+  if (!model.capabilities.generate) return `${name} can't create new images. Pick another model.`;
+  if (!model.qualities[request.quality]) {
+    return `${name} doesn't offer ${request.quality} quality. Pick another quality.`;
+  }
+  if (!model.capabilities.aspects.includes(request.aspect)) {
+    return `${name} doesn't support the ${request.aspect} aspect ratio. Pick another one.`;
+  }
+  if (request.transparentBackground && !model.capabilities.transparentBackground) {
+    return `${name} can't make transparent backgrounds. Turn the option off or pick another model.`;
+  }
+  if (request.seed !== undefined && !model.capabilities.seed) {
+    return `${name} doesn't support a fixed seed. Clear the seed or pick another model.`;
+  }
+  return undefined;
+}
+
+function profileRefusal(profile: Profile, now: Date): ApiResult | undefined {
+  if (profile.status === 'suspended') {
+    return apiError('suspended', "Your account is suspended, so you can't create images.");
+  }
+  if (inCooldown(profile, now) && profile.cooldownUntil) {
+    const until = profile.cooldownUntil.slice(11, 16);
+    return apiError(
+      'cooldown',
+      `Image creation is paused for your account until ${until} UTC after several blocked requests.`,
+    );
+  }
+  return undefined;
+}
+
+async function outOfPoints(
+  deps: JobsDeps,
+  sub: string,
+  date: string,
+  points: number,
+): Promise<ApiResult> {
+  const profile = await readProfile(deps.client, deps.tableName, sub);
+  const limit = dailyLimit(profile ?? {}, deps.defaultDailyPoints);
+  const left = Math.max(0, limit - (await readUsedPoints(deps.client, deps.tableName, sub, date)));
+  return apiError(
+    'out_of_points',
+    `This request needs ${points} ${plural(points, 'point')} and you have ${left} left today. Points reset at 00:00 UTC.`,
+  );
+}
+
+/** The `GET /api/jobs/:id` body. */
+export interface JobStatusBody {
+  jobId: string;
+  type: JobItem['type'];
+  status: JobStatus;
+  modelId: string;
+  createdAt: string;
+  pointsReserved: number;
+  pointsCharged?: number;
+  finishedAt?: string;
+  /** Plain-language reason when the job failed or was blocked (GEN-10). */
+  error?: string;
+  /** The images, with presigned URLs, once the job succeeded. */
+  images?: { imageId: string; version: number; url: string }[];
+}
+
+/**
+ * `GET /api/jobs/:id`: the job's status for its owner. Anyone else gets 404, the same as for a job that doesn't
+ * exist, so job IDs can't be probed.
+ */
+export async function getJobStatus(
+  deps: JobsDeps,
+  session: Session,
+  jobId: string,
+): Promise<ApiResult> {
+  const notFound = apiError('not_found', 'Job not found.');
+  if (!ULID_PATTERN.test(jobId)) return notFound;
+  const job = await readJob(deps.client, deps.tableName, jobId);
+  if (!job || job.userId !== session.sub) return notFound;
+
+  const body: JobStatusBody = {
+    jobId: job.jobId,
+    type: job.type,
+    status: job.status,
+    modelId: job.modelId,
+    createdAt: job.createdAt,
+    pointsReserved: job.pointsReserved,
+    ...(job.pointsCharged !== undefined ? { pointsCharged: job.pointsCharged } : {}),
+    ...(job.finishedAt ? { finishedAt: job.finishedAt } : {}),
+  };
+  if ((job.status === 'failed' || job.status === 'blocked') && job.error) {
+    body.error = job.error.message;
+  }
+  if (job.status === 'succeeded') {
+    // Only the owner's own objects are ever presigned.
+    const prefix = `users/${session.sub}/`;
+    const images = (job.images ?? []).filter((image) => image.s3Key.startsWith(prefix));
+    body.images = await Promise.all(
+      images.map(async (image) => ({
+        imageId: image.imageId,
+        version: image.version,
+        url: await deps.presign(image.s3Key),
+      })),
+    );
+  }
+  return { status: 200, body: { ...body } };
+}
+
+/** The `GET /api/me` body: the profile and today's points (LIM-1, LIM-2). */
+export interface MeBody {
+  sub: string;
+  email: string;
+  status: Profile['status'];
+  /** The UTC day the points below are for. */
+  date: string;
+  dailyLimit: number;
+  pointsUsed: number;
+  pointsLeft: number;
+  activeJobs: number;
+}
+
+/** `GET /api/me`: creates the profile on first use, then reports today's points and running jobs. */
+export async function getMe(deps: JobsDeps, session: Session): Promise<ApiResult> {
+  const now = deps.now();
+  const profile = await ensureProfile(deps.client, deps.tableName, session, now);
+  const date = utcDate(now);
+  const limit = dailyLimit(profile, deps.defaultDailyPoints);
+  const used = await readUsedPoints(deps.client, deps.tableName, session.sub, date);
+  const body: MeBody = {
+    sub: session.sub,
+    email: profile.email ?? session.email,
+    status: profile.status,
+    date,
+    dailyLimit: limit,
+    pointsUsed: used,
+    pointsLeft: Math.max(0, limit - used),
+    activeJobs: Math.max(0, profile.activeJobs),
+  };
+  return { status: 200, body: { ...body } };
+}
+
+function plural(count: number, word: string): string {
+  return count === 1 ? word : `${word}s`;
+}
+
+function logError(message: string, fields: Record<string, unknown>): void {
+  const { error, ...rest } = fields;
+  console.error(
+    JSON.stringify({
+      level: 'ERROR',
+      message,
+      ...rest,
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
+}

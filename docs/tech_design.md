@@ -89,7 +89,7 @@ flowchart LR
 ### 3.2 Worker
 
 - Container image Lambda on arm64 (needed for `sharp`, which has a native binary), 1536 MB, 180 s timeout. One image (`worker/Dockerfile`, on the AWS Lambda Node.js 22 base image) holds every handler as a bundled `<name>.mjs`; each function picks its handler with the image command, for example `generate.handler`.
-- One SQS queue per provider (`openai`, `gemini`, and `bedrock` in P1), each with its own event source mapping. Batch size 1, `ReportBatchItemFailures`, and `maximumConcurrency` 5 per queue (set in config) to stay inside provider rate limits.
+- One SQS queue per provider (`openai`, `gemini`, and `bedrock` in P1), each with its own event source mapping. The dev-only `mock` provider has no queue of its own: its jobs go through the `openai` queue. The app gets the queue URLs as `<PROVIDER>_QUEUE_URL` environment variables and may only send to them. Batch size 1, `ReportBatchItemFailures`, and `maximumConcurrency` 5 per queue (set in config) to stay inside provider rate limits.
 - Visibility timeout 1,080 s (6 × the function timeout, as AWS recommends). `maxReceiveCount` 3, then the dead-letter queue, which has an alarm.
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min as `failed`, refunds points, and frees the concurrency slot.
@@ -101,13 +101,13 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 
 | Entity | PK | SK | Key attributes | TTL |
 | --- | --- | --- | --- | --- |
-| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil, abuseFlag | — |
+| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
 | Image | `USER#<sub>` | `IMG#<imageId>` | title, latestVersion, versionCount, style, modelId, createdAt, thumbnail key | — |
 | Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, width, height, parentVersion, prompt, enhancedPrompt, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage, category | 24 h |
-| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, pointsCharged, providerCostCents, error, startedAt, finishedAt, attempts | 30 days |
+| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
 | Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents, capCents | — |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
@@ -137,7 +137,8 @@ Points are integers, and 1 point is $0.01 of provider list price.
   3. Put `JOB#<id>` with condition `attribute_not_exists(PK)`.
 - **Settle** (worker, on success): if the actual cost is lower than the estimate, `ADD used :negativeDiff`. Then increment `PLATFORM/SPEND#<month>` and `STATS#…` by the actual cost, and decrement `activeJobs`.
 - **Refund** (failure or block): `ADD used :-p` and decrement `activeJobs`, in the same transaction that sets the job's final status.
-- **Rate limit:** 10 jobs a minute, via `ADD count :1` on `RATE#<minute>` with the condition `count < 10`.
+- **Rate limit:** 10 jobs a minute, via `ADD count :1` on `RATE#<minute>` with the condition `count < 10`, as a fourth item of the reserve transaction. A transaction cancelled by a concurrent one (`TransactionConflict`) is retried.
+- **Errors:** error answers are `{ error, code }`, where `error` is a plain-language message for the user (GEN-10).
 - **Platform cap:** at job creation, read `PLATFORM/SPEND#<month>`. If `spentCents ≥ capCents` ($100), reject any model whose quality tier isn't `draft`. At 80%, an alarm emails the admin. A small overrun from jobs already in flight is accepted.
 - The reset at 00:00 UTC comes for free, because the usage key is per day.
 
@@ -304,12 +305,12 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | --- | --- | --- | --- |
 | GET | `/api/health` | Readiness and smoke test | Public; no downstream calls |
 | GET | `/api/models` | Enabled models, styles, costs | Cached 60 s |
-| GET | `/api/me` | Profile, points left today, limits | |
+| GET | `/api/me` | Profile, points left today, limits | Creates the profile on first use; returns `dailyLimit`, `pointsUsed`, `pointsLeft`, `activeJobs` |
 | POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | Needed before the first job |
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Disables the Cognito user; async purge |
 | POST | `/api/enhance` | Rewrite a prompt | Moderated; rate-limited |
 | POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down |
-| GET | `/api/jobs/:id` | Job status and results | Owner only |
+| GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); presigned image URLs once succeeded |
 | POST | `/api/uploads` | Presigned POST for an upload | 10 MB, JPEG/PNG/WebP |
 | GET | `/api/images` | Gallery page (cursor) | Thumbnails as presigned URLs |
 | GET | `/api/images/:id` | Image detail + versions | |
