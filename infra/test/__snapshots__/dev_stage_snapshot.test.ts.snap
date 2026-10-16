@@ -970,12 +970,51 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
 exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
 {
   "Outputs": {
+    "PublishOutputFnGetAttBedrockQueue897D9489Arn9BF3960B": {
+      "Value": {
+        "Fn::GetAtt": [
+          "BedrockQueue897D9489",
+          "Arn",
+        ],
+      },
+    },
     "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350": {
       "Value": {
         "Fn::GetAtt": [
           "DeadLetterQueue9F481546",
           "QueueName",
         ],
+      },
+    },
+    "PublishOutputFnGetAttGeminiQueue107AFA75Arn8BD875BC": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GeminiQueue107AFA75",
+          "Arn",
+        ],
+      },
+    },
+    "PublishOutputFnGetAttOpenaiQueue9426766EArnB4FDB08E": {
+      "Value": {
+        "Fn::GetAtt": [
+          "OpenaiQueue9426766E",
+          "Arn",
+        ],
+      },
+    },
+    "PublishOutputRefBedrockQueue897D9489A89EE611": {
+      "Value": {
+        "Ref": "BedrockQueue897D9489",
+      },
+    },
+    "PublishOutputRefGeminiQueue107AFA754FBDA33C": {
+      "Value": {
+        "Ref": "GeminiQueue107AFA75",
+      },
+    },
+    "PublishOutputRefOpenaiQueue9426766EC8AD9BB1": {
+      "Value": {
+        "Ref": "OpenaiQueue9426766E",
       },
     },
   },
@@ -2081,6 +2120,13 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         "Environment": {
           "Variables": {
             "APP_CONFIG_PARAMETER": "/pictora/dev/app-config",
+            "BEDROCK_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefBedrockQueue897D9489A89EE611",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
             "COGNITO_DOMAIN": {
               "Fn::Join": [
                 "",
@@ -2105,12 +2151,26 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
               },
             },
             "DAILY_POINTS": "1000",
+            "GEMINI_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefGeminiQueue107AFA754FBDA33C",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
             "GIT_SHA": "local",
             "IMAGES_BUCKET": {
               "Fn::GetStackOutput": {
                 "OutputName": "PublishOutputRefImagesBucket1E86AFB2076BAF05",
                 "Region": "us-west-2",
                 "StackName": "PictoraDev-Data",
+              },
+            },
+            "OPENAI_QUEUE_URL": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefOpenaiQueue9426766EC8AD9BB1",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
               },
             },
             "ORIGIN_VERIFY_SECRET_ARN": {
@@ -2315,6 +2375,37 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
                       "/*",
                     ],
                   ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:SendMessage",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttBedrockQueue897D9489Arn9BF3960B",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Jobs",
+                  },
+                },
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttGeminiQueue107AFA75Arn8BD875BC",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Jobs",
+                  },
+                },
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttOpenaiQueue9426766EArnB4FDB08E",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Jobs",
+                  },
                 },
               ],
             },

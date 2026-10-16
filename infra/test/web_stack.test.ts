@@ -52,6 +52,24 @@ describe('Web stack: app Lambda', () => {
     });
   });
 
+  it('passes the provider queue URLs from the Jobs stack, and may send to those queues only', () => {
+    const variables = appFunction(dev).Environment.Variables;
+    expect(JSON.stringify(variables.OPENAI_QUEUE_URL)).toMatch(/OpenaiQueue/);
+    expect(JSON.stringify(variables.GEMINI_QUEUE_URL)).toMatch(/GeminiQueue/);
+    expect(JSON.stringify(variables.BEDROCK_QUEUE_URL)).toMatch(/BedrockQueue/);
+    expect(devStage.web.dependencies).toContain(devStage.jobs);
+    const sendStatements = Object.values(dev.findResources('AWS::IAM::Policy')).flatMap((policy) =>
+      (policy.Properties.PolicyDocument.Statement as { Action: unknown; Resource: unknown }[])
+        .filter((statement) => JSON.stringify(statement.Action).includes('sqs:SendMessage'))
+        .map((statement) => JSON.stringify(statement.Resource)),
+    );
+    expect(sendStatements.length).toBeGreaterThan(0);
+    expect(sendStatements.join()).toMatch(/OpenaiQueue/);
+    expect(sendStatements.join()).toMatch(/GeminiQueue/);
+    expect(sendStatements.join()).toMatch(/BedrockQueue/);
+    expect(sendStatements.join()).not.toMatch(/DeadLetter/);
+  });
+
   it('reserves 20 concurrent executions in prod only', () => {
     expect(appFunction(prod).ReservedConcurrentExecutions).toBe(20);
     expect(appFunction(dev).ReservedConcurrentExecutions).toBeUndefined();

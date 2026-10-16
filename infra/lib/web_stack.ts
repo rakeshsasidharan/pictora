@@ -38,6 +38,7 @@ import {
 } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, CacheControl, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import type { IQueue } from 'aws-cdk-lib/aws-sqs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
 import {
@@ -46,6 +47,7 @@ import {
   REFRESH_TOKEN_VALIDITY,
   type AuthStack,
 } from './auth_stack.js';
+import { QUEUE_PROVIDERS, type QueueProvider } from './jobs_stack.js';
 import { HOSTED_ZONE_NAME, type StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the app image to (`PictoraCicd` stack). */
@@ -68,6 +70,11 @@ export const SIGNED_OUT_PATH = '/';
 /** Local `next dev`, allowed as a callback in dev only. */
 export const LOCAL_DEV_URL = 'http://localhost:3000';
 
+/** The app environment variable with a provider queue's URL, for example `OPENAI_QUEUE_URL`. */
+export function queueUrlVariable(provider: QueueProvider): string {
+  return `${provider.toUpperCase()}_QUEUE_URL`;
+}
+
 /** SSM parameter with the app's runtime config: `{ siteUrl, cognitoClientId }`. */
 export function appConfigParameterName(envName: string): string {
   return `/pictora/${envName}/app-config`;
@@ -78,6 +85,8 @@ export interface WebStackProps extends StackProps {
   readonly table: Table;
   readonly imagesBucket: IBucket;
   readonly auth: AuthStack;
+  /** The provider queues the job API sends `{ jobId }` to. */
+  readonly queues: Readonly<Record<QueueProvider, IQueue>>;
   /** Required when the stage has a domain. */
   readonly certificate?: ICertificate;
 }
@@ -130,6 +139,12 @@ export class WebStack extends Stack {
         COGNITO_USER_POOL_ID: props.auth.userPool.userPoolId,
         COGNITO_DOMAIN: props.auth.domainBaseUrl,
         APP_CONFIG_PARAMETER: appConfigParameter,
+        ...Object.fromEntries(
+          QUEUE_PROVIDERS.map((provider) => [
+            queueUrlVariable(provider),
+            props.queues[provider].queueUrl,
+          ]),
+        ),
       },
     });
     // Built from the name, not the parameter: the parameter depends on the distribution, which depends on
@@ -149,6 +164,8 @@ export class WebStack extends Stack {
     this.originVerifySecret.grantRead(this.appFunction);
     props.table.grantReadWriteData(this.appFunction);
     props.imagesBucket.grantReadWrite(this.appFunction);
+    for (const provider of QUEUE_PROVIDERS)
+      props.queues[provider].grantSendMessages(this.appFunction);
 
     this.functionUrl = this.appFunction.addFunctionUrl({
       authType: FunctionUrlAuthType.NONE,
