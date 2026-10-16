@@ -1,6 +1,7 @@
 import { expect, test as setup } from '@playwright/test';
 import { e2eConfig, requireCredentials } from '../src/config.js';
 import { submitManagedLogin } from '../src/managed_login.js';
+import { completeOnboarding } from '../src/onboarding.js';
 import { SESSION_STATE_PATH } from '../src/session_state.js';
 
 /** Signs the Cognito test user in once and saves the session for every test that needs one. */
@@ -17,6 +18,11 @@ setup('sign in as the test user', async ({ page }) => {
     (url) => url.origin === config.baseUrl && !url.pathname.startsWith('/auth/'),
   );
   await expect(page.getByRole('banner').getByText(credentials.email)).toBeVisible();
+
+  // A new test user, or one after the terms changed, lands on onboarding first (AUTH-4) and goes through it.
+  if (new URL(page.url()).pathname === '/onboarding') {
+    await completeOnboarding(page);
+  }
 
   await page.context().storageState({ path: SESSION_STATE_PATH });
 });

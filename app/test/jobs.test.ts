@@ -3,6 +3,7 @@ import {
   JOB_ERROR_MESSAGES,
   JOB_SK,
   PROFILE_SK,
+  TOS_VERSION,
   jobPk,
   loadSeedRegistry,
   usageSk,
@@ -37,6 +38,12 @@ function generate(overrides: Partial<GenerateJobRequest> = {}): GenerateJobReque
     ...overrides,
   };
 }
+
+const ONBOARDED = {
+  tosAcceptedAt: '2026-10-14T09:00:00.000Z',
+  tosVersion: TOS_VERSION,
+  ageConfirmed: true,
+};
 
 let sessionCounter = 0;
 function newSession(): Session {
@@ -188,6 +195,12 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
       }),
     );
   };
+  /** A user who has been through onboarding for the current terms (AUTH-4). */
+  const onboardedSession = async (): Promise<Session> => {
+    const session = newSession();
+    await setProfile(session.sub, ONBOARDED);
+    return session;
+  };
   /** Frees the user's concurrency slots, as the worker does when jobs finish. */
   const finishJobs = (sub: string) => setProfile(sub, { activeJobs: 0 });
 
@@ -200,7 +213,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('creates the profile, reserves the points, records the queued job and queues it', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     const result = await createJob(deps(), session, generate({ quality: 'high', count: 2 }));
     expect(result.status).toBe(202);
     const { jobId } = result.body as { jobId: string };
@@ -231,7 +244,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('reserves up to the daily limit exactly, then answers 402 with what is left', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     const d = deps({ defaultDailyPoints: 5 });
     expect((await createJob(d, session, generate({ quality: 'high' }))).status).toBe(202);
     await finishJobs(session.sub);
@@ -248,7 +261,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('answers 402 for a request bigger than the whole allowance, even on a fresh day', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     const result = await createJob(
       deps({ defaultDailyPoints: 10 }),
       session,
@@ -260,7 +273,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('lets exactly one of two concurrent requests through when together they exceed the limit', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     await createJob(deps(), session, generate({ quality: 'draft' })); // creates the profile
     await finishJobs(session.sub);
     await setProfile(session.sub, { dailyPoints: 21 });
@@ -275,7 +288,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('allows 10 jobs a minute, then answers 429 until the next minute', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     const d = deps({ defaultDailyPoints: 100 });
     for (let i = 0; i < 10; i++) {
       expect((await createJob(d, session, generate())).status).toBe(202);
@@ -291,7 +304,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('allows 2 running jobs, then answers 429 until one finishes', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     expect((await createJob(deps(), session, generate())).status).toBe(202);
     expect((await createJob(deps(), session, generate())).status).toBe(202);
     const third = await createJob(deps(), session, generate());
@@ -302,7 +315,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('answers 403 to a suspended user and reserves nothing', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     await getMe(deps(), session);
     await setProfile(session.sub, { status: 'suspended' });
     const result = await createJob(deps(), session, generate());
@@ -312,7 +325,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('answers 403 during a cooldown, and accepts jobs once it ends', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     await getMe(deps(), session);
     await setProfile(session.sub, { cooldownUntil: '2026-10-15T12:30:00.000Z' });
     const result = await createJob(deps(), session, generate());
@@ -323,7 +336,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('refuses in the transaction when the profile is suspended after the first read', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     await getMe(deps(), session);
     // Suspend the user between the profile read and the reservation.
     const d = deps();
@@ -345,8 +358,48 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     }
   });
 
-  it('fails the job and refunds the points and the slot when the queue send fails', async () => {
+  it('refuses jobs until the user has been through onboarding', async () => {
     const session = newSession();
+    const result = await createJob(deps(), session, generate());
+    expect(result).toMatchObject({ status: 403, body: { code: 'onboarding_required' } });
+    expect(result.body.error).toMatch(/accept the terms before creating your first image/);
+    expect(await usedToday(session.sub)).toBeUndefined();
+    expect(enqueue).not.toHaveBeenCalled();
+
+    await setProfile(session.sub, ONBOARDED);
+    expect((await createJob(deps(), session, generate())).status).toBe(202);
+  });
+
+  it('refuses jobs from a user who has only confirmed part of onboarding', async () => {
+    const session = newSession();
+    await setProfile(session.sub, { ...ONBOARDED, ageConfirmed: false });
+    expect(await createJob(deps(), session, generate())).toMatchObject({
+      status: 403,
+      body: { code: 'onboarding_required' },
+    });
+  });
+
+  it('sends users through acceptance again when the terms version changes', async () => {
+    const session = newSession();
+    await setProfile(session.sub, { ...ONBOARDED, tosVersion: '2020-01-01' });
+    const result = await createJob(deps(), session, generate());
+    expect(result).toMatchObject({ status: 403, body: { code: 'onboarding_required' } });
+    expect(result.body.error).toMatch(/terms have changed/);
+    expect((await getMe(deps(), session)).body).toMatchObject({ onboardingRequired: true });
+  });
+
+  it('refuses jobs from an account that is being deleted', async () => {
+    const session = await onboardedSession();
+    await setProfile(session.sub, { status: 'deleting' });
+    expect(await createJob(deps(), session, generate())).toMatchObject({
+      status: 403,
+      body: { code: 'account_deleting' },
+    });
+    expect(await usedToday(session.sub)).toBeUndefined();
+  });
+
+  it('fails the job and refunds the points and the slot when the queue send fails', async () => {
+    const session = await onboardedSession();
     enqueue.mockRejectedValueOnce(new Error('SQS unavailable'));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const result = await createJob(deps(), session, generate({ quality: 'high' }));
@@ -367,7 +420,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
   });
 
   it('uses dailyPoints from the profile from the next request on, and the default once it is removed', async () => {
-    const session = newSession();
+    const session = await onboardedSession();
     const d = deps({ defaultDailyPoints: 3 });
     expect((await createJob(d, session, generate({ quality: 'high' }))).status).toBe(202);
     await finishJobs(session.sub);
@@ -502,7 +555,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
 
   describe('getMe', () => {
     it('creates the profile on first use and reports a full allowance', async () => {
-      const session = newSession();
+      const session = await onboardedSession();
       expect(await getMe(deps(), session)).toEqual({
         status: 200,
         body: {
@@ -514,6 +567,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
           pointsUsed: 0,
           pointsLeft: 25,
           activeJobs: 0,
+          onboardingRequired: false,
+          memberSince: '2026-10-15T12:00:00.000Z',
         },
       });
       expect(await profileOf(session.sub)).toMatchObject({
@@ -523,7 +578,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     });
 
     it('reports points used and left today, the limit and running jobs', async () => {
-      const session = newSession();
+      const session = await onboardedSession();
       await createJob(deps(), session, generate({ quality: 'high', count: 3 }));
       await createJob(deps(), session, generate({ quality: 'standard' }));
       expect((await getMe(deps(), session)).body).toMatchObject({
@@ -535,7 +590,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     });
 
     it('never reports fewer than 0 points left, and starts a new day at 0 used', async () => {
-      const session = newSession();
+      const session = await onboardedSession();
       await getMe(deps(), session);
       await client.send(
         new PutCommand({
@@ -553,7 +608,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     });
 
     it('keeps createdAt on later calls and follows a changed email', async () => {
-      const session = newSession();
+      const session = await onboardedSession();
       await getMe(deps(), session);
       clock = new Date('2026-10-15T13:00:00Z');
       await getMe(deps(), { ...session, email: 'new@example.com' });

@@ -1,8 +1,9 @@
 import { GetCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DEFAULT_DAILY_POINTS, PROFILE_SK, userPk } from '@pictora/core';
+import { DEFAULT_DAILY_POINTS, PROFILE_SK, TOS_VERSION, userPk } from '@pictora/core';
 import type { Session } from './session';
 
-export const PROFILE_STATUSES = ['active', 'suspended'] as const;
+/** `deleting` from the moment a user asks to delete their account until the purge removes the profile (AUTH-3). */
+export const PROFILE_STATUSES = ['active', 'suspended', 'deleting'] as const;
 export type ProfileStatus = (typeof PROFILE_STATUSES)[number];
 
 /** The `USER#<sub>` / `PROFILE` item, as far as the job API reads it (tech design 4). */
@@ -16,6 +17,12 @@ export interface Profile {
   dailyPoints?: number;
   /** ISO 8601 UTC time until which the user can't create jobs, after repeated blocks. */
   cooldownUntil?: string;
+  /** When the user accepted the terms and content policy at onboarding (AUTH-4). */
+  tosAcceptedAt?: string;
+  /** The `TOS_VERSION` they accepted. */
+  tosVersion?: string;
+  /** They confirmed they are 13 or older. */
+  ageConfirmed?: boolean;
 }
 
 /**
@@ -77,14 +84,32 @@ function profileFromItem(sub: string, item: Record<string, unknown>): Profile {
     sub,
     email: typeof item.email === 'string' ? item.email : undefined,
     createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
-    status: item.status === 'suspended' ? 'suspended' : 'active',
+    status: PROFILE_STATUSES.find((status) => status === item.status) ?? 'active',
     activeJobs: typeof item.activeJobs === 'number' ? item.activeJobs : 0,
     dailyPoints:
       typeof dailyPoints === 'number' && Number.isInteger(dailyPoints) && dailyPoints >= 0
         ? dailyPoints
         : undefined,
     cooldownUntil: typeof item.cooldownUntil === 'string' ? item.cooldownUntil : undefined,
+    tosAcceptedAt: typeof item.tosAcceptedAt === 'string' ? item.tosAcceptedAt : undefined,
+    tosVersion: typeof item.tosVersion === 'string' ? item.tosVersion : undefined,
+    ageConfirmed: item.ageConfirmed === true,
   };
+}
+
+/**
+ * True once the user has confirmed their age and accepted the current terms (AUTH-4). A new `TOS_VERSION`
+ * makes this false again, so everyone accepts the new text before their next image.
+ */
+export function onboardingComplete(
+  profile: Pick<Profile, 'tosAcceptedAt' | 'tosVersion' | 'ageConfirmed'>,
+  tosVersion: string = TOS_VERSION,
+): boolean {
+  return (
+    profile.ageConfirmed === true &&
+    profile.tosAcceptedAt !== undefined &&
+    profile.tosVersion === tosVersion
+  );
 }
 
 /** The user's daily allowance: their `dailyPoints` override, else the environment default (LIM-1, ADM-5). */

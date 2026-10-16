@@ -94,6 +94,7 @@ flowchart LR
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min as `failed`, refunds points, and frees the concurrency slot.
   - `model_health` (daily): checks every enabled registry model still exists with its provider. A missing model or a deprecation notice triggers an SNS alert, which covers the model-retirement risk in the PRD.
+- Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
 
 ## 4. Data model (DynamoDB)
 
@@ -101,7 +102,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 
 | Entity | PK | SK | Key attributes | TTL |
 | --- | --- | --- | --- | --- |
-| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
+| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), ageConfirmed, status (`active` \| `suspended` \| `deleting`), deletionRequestedAt, `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
 | Image | `USER#<sub>` | `IMG#<imageId>` | title, latestVersion, versionCount, style, modelId, createdAt, thumbnail key | — |
@@ -306,8 +307,8 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | GET | `/api/health` | Readiness and smoke test | Public; no downstream calls |
 | GET | `/api/models` | Enabled models, styles, costs | Cached 60 s |
 | GET | `/api/me` | Profile, points left today, limits | Creates the profile on first use; returns `dailyLimit`, `pointsUsed`, `pointsLeft`, `activeJobs` |
-| POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | Needed before the first job |
-| DELETE | `/api/me` | Delete the account (AUTH-3) | Disables the Cognito user; async purge |
+| POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | `{ ageConfirmed: true, termsAccepted: true, tosVersion }`; 409 `terms_changed` for an older version. Needed before the first job: until then `POST /api/jobs` and `POST /api/enhance` answer 403 `onboarding_required` |
+| DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
 | POST | `/api/enhance` | Rewrite a prompt | Moderated; rate-limited |
 | POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down |
 | GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); presigned image URLs once succeeded |
@@ -328,7 +329,8 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 - **App client:** a public client (no secret) with the authorization code flow and PKCE, in the `Web` stack rather than `Auth`: its callback URL is the site URL, which is the CloudFront domain while an environment has no custom domain, and the distribution depends on the app Lambda. For the same reason, the app reads the client ID and site URL at runtime from the SSM parameter `/pictora/<env>/app-config` (`{ siteUrl, cognitoClientId }`, cached 5 minutes) instead of Lambda environment variables. Dev also allows `http://localhost:3000` for local `next dev`.
 - **Flow:** `/auth/login` → Cognito authorize (code + PKCE; `?provider=google` goes straight to Google) → `/auth/callback` checks `state`, exchanges the code on the server → tokens go into `httpOnly`, `Secure`, `SameSite=Lax` cookies (access and ID tokens 1 h, refresh token 30 days). `POST /auth/logout` clears the cookies and calls Cognito logout.
 - **Verification:** the Next.js proxy (`app/src/proxy.ts`) checks the access token (and the ID token, which carries the email) with `aws-jwt-verify` (JWKS cached) on `/api/*` and protected pages. An expired access token is refreshed on the server with the refresh token. The verified user reaches route handlers as `x-pictora-user-*` request headers, which the proxy strips from incoming requests. Without a session, `/api/*` (except `/api/health`) answers 401 and protected pages redirect to `/auth/login`.
-- **First login:** a profile is created on first API call; the onboarding page collects terms acceptance and age confirmation (AUTH-4), and stores the accepted `TOS_VERSION`. A new version asks users to accept again.
+- **First login:** a profile is created on first API call. Until the profile has `ageConfirmed`, `tosAcceptedAt` and the current `TOS_VERSION`, the home page sends the user to `/onboarding`, which collects the age confirmation and terms acceptance (AUTH-4); pages that create or show images use `requireOnboarding` from `app/src/lib/onboarding.ts`. A new version asks users to accept again.
+- **Account deletion (AUTH-3):** `/account` shows the email, sign-in method, member-since date and today's points, and a "Delete account" confirmation that needs "DELETE" typed. Sessions carry the Cognito `username` (from the access token) for the admin calls; Google users' usernames start with `google_`. Access tokens already issued stay valid until they expire (at most 1 hour), but the cookies are cleared, the refresh tokens revoked, and the profile is `deleting`, so no new jobs start.
 - **Public pages:** `/` is the landing page for signed-out visitors (AUTH-2) and redirects signed-in users to `/generate`. `/terms`, `/content-policy` and `/privacy` are rendered on the server from the Markdown in `app/content/legal/` with `markdown-it` (raw HTML disabled), once per server instance; they ship no page-specific client code. They can't be prerendered at build time, because the root layout reads the session for the header.
 - **Abuse signals:** a Cognito pre-sign-up Lambda checks the email domain against a disposable-domain list. A match sets `abuseFlag`, which lowers `dailyPoints` to 5.
 - **CSRF:** state-changing routes require the `Origin` header to match the site domain, on top of the SameSite cookies.
@@ -367,7 +369,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 
 ## 12. Security
 
-- Least-privilege IAM per function. The app can read and write the table, send to the queues, and presign for its bucket. The worker can also read the secrets and call Bedrock. Neither can delete the table or the buckets.
+- Least-privilege IAM per function. The app can read and write the table, send to the queues, presign for its bucket, and disable and sign out users of its user pool (account deletion). The purge Lambda can delete users of the pool and objects in the images bucket. The worker can also read the secrets and call Bedrock. Neither can delete the table or the buckets.
 - No secrets in the browser or in the repo. Provider calls happen only in the worker or the app's server side.
 - Every API checks ownership: users can reach only their own items under `USER#<sub>`, and job reads check `userId`.
 - Security headers via Next.js middleware: CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`.
@@ -407,7 +409,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference) |
 | `Data` | us-west-2 | DynamoDB table, images bucket, registry seed custom resource |
 | `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` group, pre-sign-up Lambda |
-| `Jobs` | us-west-2 | SQS queues (`openai`, `gemini`, `bedrock`) + dead-letter queue, worker Lambda, sweeper, model health, read access to the OpenAI and Gemini secrets (created by hand, section 10), and `bedrock:InvokeModel` on the Bedrock models in `models.json` |
+| `Jobs` | us-west-2 | SQS queues (`openai`, `gemini`, `bedrock`, `purge`) + dead-letter queue, worker Lambda, sweeper, model health, account purge Lambda (`cognito-idp:AdminDeleteUser` on the user pool), read access to the OpenAI and Gemini secrets (created by hand, section 10), and `bedrock:InvokeModel` on the Bedrock models in `models.json` |
 | `Web` | us-west-2 | App Lambda + Function URL, assets bucket, CloudFront, DNS record, Cognito app client, app config parameter |
 | `Monitoring` | us-west-2 | Dashboard, alarms, SNS topic, budget |
 

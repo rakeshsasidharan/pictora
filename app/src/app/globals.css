@@ -8,6 +8,8 @@
   --accent-text: #ffffff;
   --notice: #fff4d6;
   --notice-border: #e0b84a;
+  --danger: #b3261e;
+  --danger-text: #ffffff;
   color-scheme: light;
 }
 
@@ -259,4 +261,97 @@ img {
   padding: 8px 16px;
   border-left: 4px solid var(--notice-border);
   background: var(--notice);
+}
+
+/* Onboarding and account */
+
+.onboarding,
+.account {
+  max-width: 640px;
+}
+
+.onboarding-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.onboarding-form label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.onboarding-form input[type='checkbox'] {
+  margin-top: 5px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.account-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 24px;
+}
+
+.account-details dt {
+  color: var(--muted);
+}
+
+.account-details dd {
+  margin: 0;
+}
+
+.delete-account {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.button-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+}
+
+.confirm-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirm-panel input {
+  max-width: 240px;
+  padding: 8px;
+  font: inherit;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .account-details {
+    grid-template-columns: 1fr;
+  }
 }

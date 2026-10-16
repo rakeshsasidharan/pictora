@@ -63,6 +63,13 @@ export const enhanceRequestSchema = z.strictObject({
   modelId: modelIdSchema,
 });
 
+/** `POST /api/me/onboarding` (AUTH-4): both confirmations, and the terms version the user was shown. */
+export const onboardingRequestSchema = z.strictObject({
+  ageConfirmed: z.literal(true),
+  termsAccepted: z.literal(true),
+  tosVersion: z.string().min(1).max(32),
+});
+
 /** `POST /api/uploads` (EDIT-2). */
 export const uploadRequestSchema = z.strictObject({
   contentType: z.enum(UPLOAD_CONTENT_TYPES),
@@ -74,3 +81,4 @@ export type EditJobRequest = z.infer<typeof editJobRequestSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;
+export type OnboardingRequest = z.infer<typeof onboardingRequestSchema>;

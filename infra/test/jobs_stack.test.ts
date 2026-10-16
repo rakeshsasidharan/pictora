@@ -18,22 +18,28 @@ function logicalId(template: Template, type: string, props: Record<string, unkno
   return ids[0] as string;
 }
 
-function workerFunction(template: Template) {
+function imageFunction(template: Template, command: string) {
   const functions = template.findResources('AWS::Lambda::Function', {
-    Properties: { PackageType: 'Image' },
+    Properties: { PackageType: 'Image', ImageConfig: { Command: [command] } },
   });
   const values = Object.values(functions);
   expect(values).toHaveLength(1);
   return values[0]?.Properties;
 }
 
-function workerPolicyStatements(template: Template): Record<string, unknown>[] {
+const workerFunction = (template: Template) => imageFunction(template, 'generate.handler');
+const purgeFunction = (template: Template) => imageFunction(template, 'purge.handler');
+
+function policyStatements(template: Template, role: string): Record<string, unknown>[] {
   const policies = Object.values(template.findResources('AWS::IAM::Policy')).filter((policy) =>
-    JSON.stringify(policy.Properties.Roles).includes('WorkerFunctionServiceRole'),
+    JSON.stringify(policy.Properties.Roles).includes(role),
   );
   expect(policies).toHaveLength(1);
   return policies[0]?.Properties.PolicyDocument.Statement;
 }
+
+const workerPolicyStatements = (template: Template) =>
+  policyStatements(template, 'WorkerFunctionServiceRole');
 
 describe('Jobs stack: queues', () => {
   const dlqId = logicalId(dev, 'AWS::SQS::Queue', { QueueName: 'pictora-dev-dlq' });
@@ -62,6 +68,7 @@ describe('Jobs stack: queues', () => {
       'pictora-dev-dlq',
       'pictora-dev-gemini',
       'pictora-dev-openai',
+      'pictora-dev-purge',
     ]);
   });
 
@@ -87,7 +94,7 @@ describe('Jobs stack: queues', () => {
 
   it('denies queue access without TLS', () => {
     const policies = Object.values(dev.findResources('AWS::SQS::QueuePolicy'));
-    expect(policies).toHaveLength(4);
+    expect(policies).toHaveLength(5);
     for (const policy of policies) {
       expect(policy.Properties.PolicyDocument.Statement).toEqual(
         expect.arrayContaining([
@@ -147,8 +154,14 @@ describe('Jobs stack: worker Lambda', () => {
     },
   );
 
-  it('has exactly one event source mapping per queue', () => {
-    dev.resourceCountIs('AWS::Lambda::EventSourceMapping', 3);
+  it('has exactly one event source mapping per provider queue', () => {
+    const workerId = logicalId(dev, 'AWS::Lambda::Function', {
+      ImageConfig: { Command: ['generate.handler'] },
+    });
+    const mappings = Object.values(dev.findResources('AWS::Lambda::EventSourceMapping')).filter(
+      (mapping) => mapping.Properties.FunctionName.Ref === workerId,
+    );
+    expect(mappings).toHaveLength(3);
   });
 
   it('takes the maximum concurrency from the environment settings', () => {
@@ -158,7 +171,9 @@ describe('Jobs stack: worker Lambda', () => {
     );
     environments.dev = { ...environments.dev, queueConcurrency: 3 };
     const template = Template.fromStack(testStage('PictoraDev', { environments }).jobs);
-    const mappings = Object.values(template.findResources('AWS::Lambda::EventSourceMapping'));
+    const mappings = Object.values(
+      template.findResources('AWS::Lambda::EventSourceMapping'),
+    ).filter((mapping) => mapping.Properties.ScalingConfig);
     expect(mappings.map((mapping) => mapping.Properties.ScalingConfig)).toEqual([
       { MaximumConcurrency: 3 },
       { MaximumConcurrency: 3 },
@@ -240,6 +255,52 @@ describe('Jobs stack: worker IAM', () => {
       for (const action of actionsOf(statement)) expect(action).not.toBe('*');
       expect(statement.Resource).not.toBe('*');
     }
+  });
+});
+
+describe('Jobs stack: account purge', () => {
+  it('runs the purge handler from the worker image, with what it needs to find the account', () => {
+    const props = purgeFunction(dev);
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.MemorySize).toBe(512);
+    expect(props.Timeout).toBe(300);
+    expect(JSON.stringify(props.Code.ImageUri)).toContain(`/pictora-worker@${TEST_IMAGE_DIGEST}`);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: expect.anything(),
+      IMAGES_BUCKET: expect.anything(),
+      COGNITO_USER_POOL_ID: expect.anything(),
+      PURGE_QUEUE_URL: expect.anything(),
+    });
+  });
+
+  it('consumes the purge queue one message at a time, with the dead-letter queue after 3 receives', () => {
+    const dlqId = logicalId(dev, 'AWS::SQS::Queue', { QueueName: 'pictora-dev-dlq' });
+    const queueId = logicalId(dev, 'AWS::SQS::Queue', {
+      QueueName: 'pictora-dev-purge',
+      VisibilityTimeout: 1800,
+      SqsManagedSseEnabled: true,
+      RedrivePolicy: { deadLetterTargetArn: { 'Fn::GetAtt': [dlqId, 'Arn'] }, maxReceiveCount: 3 },
+    });
+    dev.hasResourceProperties('AWS::Lambda::EventSourceMapping', {
+      EventSourceArn: { 'Fn::GetAtt': [queueId, 'Arn'] },
+      FunctionName: { Ref: Match.stringLikeRegexp('^PurgeFunction') },
+      BatchSize: 1,
+      FunctionResponseTypes: ['ReportBatchItemFailures'],
+    });
+  });
+
+  it('may delete users from its own pool, list and delete images, and requeue itself', () => {
+    const statements = policyStatements(dev, 'PurgeFunctionServiceRole');
+    const actionsOf = (statement: Record<string, unknown>) => [statement.Action].flat() as string[];
+    const cognito = statements.find((s) => actionsOf(s).includes('cognito-idp:AdminDeleteUser'));
+    expect(actionsOf(cognito ?? {})).toEqual(['cognito-idp:AdminDeleteUser']);
+    expect(JSON.stringify(cognito?.Resource)).toContain('UserPool');
+    const s3Actions = statements.flatMap(actionsOf).filter((a) => a.startsWith('s3:'));
+    expect(s3Actions).toEqual(expect.arrayContaining(['s3:ListBucket', 's3:DeleteObject*']));
+    expect(s3Actions.filter((a) => /^s3:(Get|Put)/.test(a))).toEqual([]);
+    expect(statements.flatMap(actionsOf)).toContain('sqs:SendMessage');
+    for (const statement of statements) expect(statement.Resource).not.toBe('*');
   });
 });
 

@@ -43,6 +43,7 @@ export function createTokenVerifier(
             sub: accessClaims.sub,
             email: idClaims.email,
             groups: accessClaims['cognito:groups'] ?? [],
+            username: accessClaims.username,
           },
         };
       } catch (error) {

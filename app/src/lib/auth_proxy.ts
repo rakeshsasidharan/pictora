@@ -16,7 +16,14 @@ import type { TokenVerifier } from './token_verifier';
 export const PUBLIC_API_PATHS = ['/api/health'];
 
 /** Pages that need a signed-in user; visitors are sent to sign in and brought back. */
-export const PROTECTED_PAGE_PREFIXES = ['/generate', '/gallery', '/images', '/admin'];
+export const PROTECTED_PAGE_PREFIXES = [
+  '/generate',
+  '/gallery',
+  '/images',
+  '/admin',
+  '/onboarding',
+  '/account',
+];
 
 export interface AuthProxyDeps {
   /** Undefined when sign-in isn't configured: nobody is signed in and state-changing requests are refused. */

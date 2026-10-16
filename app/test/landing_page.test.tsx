@@ -9,6 +9,13 @@ const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
+const onboarded = vi.hoisted(() => ({ current: true }));
+
+// The home page reads the profile to choose between onboarding and the generate screen.
+vi.mock('../src/lib/onboarding', () => ({
+  signedInHome: async () => (onboarded.current ? '/generate' : '/onboarding'),
+}));
+
 class RedirectSignal extends Error {
   constructor(readonly url: string) {
     super(`redirect to ${url}`);
@@ -62,7 +69,8 @@ describe('landing page', () => {
     expect(screen.getByRole('heading', { name: 'Free, with a daily allowance' })).toBeTruthy();
   });
 
-  it('sends signed-in users to the generate screen', async () => {
+  it('sends signed-in users who have been through onboarding to the generate screen', async () => {
+    onboarded.current = true;
     requestHeaders.current = new Headers({
       [SESSION_HEADERS.sub]: 'user-sub',
       [SESSION_HEADERS.email]: 'user@example.com',
@@ -70,5 +78,11 @@ describe('landing page', () => {
 
     await expect(HomePage()).rejects.toThrow(RedirectSignal);
     await expect(HomePage()).rejects.toMatchObject({ url: '/generate' });
+  });
+
+  it('sends signed-in users who have not been through onboarding there first', async () => {
+    onboarded.current = false;
+    requestHeaders.current = new Headers({ [SESSION_HEADERS.sub]: 'new-user' });
+    await expect(HomePage()).rejects.toMatchObject({ url: '/onboarding' });
   });
 });

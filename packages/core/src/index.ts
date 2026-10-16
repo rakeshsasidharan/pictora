@@ -1,3 +1,5 @@
+export { DELETE_CONFIRMATION, parsePurgeMessage, userObjectPrefixes } from './account.js';
+export type { PurgeMessage } from './account.js';
 export {
   JOB_ERROR_CODES,
   JOB_ERROR_MESSAGES,
@@ -71,6 +73,7 @@ export {
   editJobRequestSchema,
   enhanceRequestSchema,
   generateJobRequestSchema,
+  onboardingRequestSchema,
   qualitySchema,
   styleIdSchema,
   uploadRequestSchema,
@@ -80,6 +83,7 @@ export type {
   EditJobRequest,
   EnhanceRequest,
   GenerateJobRequest,
+  OnboardingRequest,
   UploadRequest,
 } from './schemas.js';
 export {

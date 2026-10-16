@@ -16,7 +16,14 @@ import {
   type Provider,
 } from '@pictora/core';
 import { failQueuedJob, readJob, readUsedPoints, reserveJob } from './job_store';
-import { dailyLimit, ensureProfile, inCooldown, readProfile, type Profile } from './profile';
+import {
+  dailyLimit,
+  ensureProfile,
+  inCooldown,
+  onboardingComplete,
+  readProfile,
+  type Profile,
+} from './profile';
 import type { Session } from './session';
 
 /** What the job API needs, so tests can swap the queues, S3 and the clock. */
@@ -51,11 +58,15 @@ export const API_ERROR_STATUS = {
   edit_unavailable: 400,
   out_of_points: 402,
   suspended: 403,
+  account_deleting: 403,
+  onboarding_required: 403,
   cooldown: 403,
   not_found: 404,
+  terms_changed: 409,
   rate_limited: 429,
   too_many_jobs: 429,
   enqueue_failed: 503,
+  deletion_failed: 503,
 } as const;
 export type ApiErrorCode = keyof typeof API_ERROR_STATUS;
 
@@ -182,9 +193,24 @@ export function unsupportedOption(
   return undefined;
 }
 
-function profileRefusal(profile: Profile, now: Date): ApiResult | undefined {
+/**
+ * Why the user can't create images or use the enhancer right now, or undefined when they can: a suspended or
+ * deleting account, onboarding not done for the current terms (AUTH-4), or a cooldown after repeated blocks.
+ */
+export function profileRefusal(profile: Profile, now: Date): ApiResult | undefined {
   if (profile.status === 'suspended') {
     return apiError('suspended', "Your account is suspended, so you can't create images.");
+  }
+  if (profile.status === 'deleting') {
+    return apiError('account_deleting', 'Your account is being deleted.');
+  }
+  if (!onboardingComplete(profile)) {
+    return apiError(
+      'onboarding_required',
+      profile.tosAcceptedAt
+        ? 'Our terms have changed. Accept the new terms to keep creating images.'
+        : 'Confirm your age and accept the terms before creating your first image.',
+    );
   }
   if (inCooldown(profile, now) && profile.cooldownUntil) {
     const until = profile.cooldownUntil.slice(11, 16);
@@ -280,6 +306,10 @@ export interface MeBody {
   pointsUsed: number;
   pointsLeft: number;
   activeJobs: number;
+  /** True until the user has accepted the current terms (AUTH-4); the UI sends them to `/onboarding`. */
+  onboardingRequired: boolean;
+  /** When the profile was created. */
+  memberSince: string;
 }
 
 /** `GET /api/me`: creates the profile on first use, then reports today's points and running jobs. */
@@ -298,6 +328,8 @@ export async function getMe(deps: JobsDeps, session: Session): Promise<ApiResult
     pointsUsed: used,
     pointsLeft: Math.max(0, limit - used),
     activeJobs: Math.max(0, profile.activeJobs),
+    onboardingRequired: !onboardingComplete(profile),
+    memberSince: profile.createdAt,
   };
   return { status: 200, body: { ...body } };
 }

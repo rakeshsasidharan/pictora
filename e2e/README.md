@@ -11,10 +11,10 @@ It never runs against prod: `src/config.ts` refuses the prod domain from `infra/
 | `playwright.config.ts`   | Projects, retries, traces and the four-minute budget                                       |
 | `specs/sign_in.setup.ts` | The `setup` project: signs the test user in once and saves the session to `.auth/user.json` |
 | `specs/*.spec.ts`        | The `chromium` project, which reuses that session                                          |
-| `src/`                   | Settings and the prod guard, the managed login helper and issue links                      |
+| `src/`                   | Settings and the prod guard, the managed login and onboarding helpers, and issue links      |
 | `test/`                  | Vitest unit tests for `src/`, run by `npm test`                                            |
 
-`health` and `auth` run today. `generate`, `edit`, `gallery`, `delete` and `landing` are placeholders marked `test.fixme`, each linked to the issue that makes it pass (#18, #22, #23 and #29). They use the mock provider, which only dev offers.
+`health`, `auth` and `onboarding` run today; the setup project takes the test user through onboarding (AUTH-4) when it lands there. `generate`, `edit`, `gallery`, `delete` and `landing` are placeholders marked `test.fixme`, each linked to the issue that makes it pass (#18, #22, #23 and #29). They use the mock provider, which only dev offers.
 
 ## Settings
 
