@@ -17,7 +17,7 @@ test.describe('onboarding', () => {
     await page.goto('/');
     await page.getByRole('banner').getByRole('link', { name: email }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.getByText('Email and password')).toBeVisible();
 
     await page.getByRole('button', { name: 'Delete account' }).click();
