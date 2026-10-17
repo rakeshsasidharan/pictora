@@ -21,10 +21,17 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.164",
+    "aws-sdk-client-mock": "^4.1.0",
     "esbuild": "^0.28.2",
     "vitest": "^5.0.3"
   },
   "dependencies": {
-    "sharp": "^0.35.5"
+    "@aws-sdk/client-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1149.0",
+    "@pictora/core": "^0.0.0",
+    "@pictora/providers": "^0.0.0",
+    "sharp": "^0.35.5",
+    "ulid": "^3.0.2"
   }
 }

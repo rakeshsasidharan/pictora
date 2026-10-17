@@ -3,6 +3,7 @@ import {
   JOB_SK,
   JOB_TTL_DAYS,
   SECONDS_PER_DAY,
+  activeJobsGsiPk,
   createJobRequestSchema,
   estimatePoints,
   jobError,
@@ -124,6 +125,9 @@ export async function createJob(
     usageDate,
     createdAt: now.toISOString(),
     attempts: 0,
+    // Indexed while queued, so the sweeper finds it if it's never picked up.
+    GSI1PK: activeJobsGsiPk('queued'),
+    GSI1SK: now.toISOString(),
     ttl: ttlAfter(now, JOB_TTL_DAYS * SECONDS_PER_DAY),
   };
   const reserved = await reserveJob(deps.client, deps.tableName, { job, limit, now });

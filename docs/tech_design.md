@@ -92,7 +92,7 @@ flowchart LR
 - One SQS queue per provider (`openai`, `gemini`, and `bedrock` in P1), each with its own event source mapping. The dev-only `mock` provider has no queue of its own: its jobs go through the `openai` queue. The app gets the queue URLs as `<PROVIDER>_QUEUE_URL` environment variables and may only send to them. Batch size 1, `ReportBatchItemFailures`, and `maximumConcurrency` 5 per queue (set in config) to stay inside provider rate limits.
 - Visibility timeout 1,080 s (6 × the function timeout, as AWS recommends). `maxReceiveCount` 3, then the dead-letter queue, which has an alarm.
 - Scheduled functions, triggered by EventBridge:
-  - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min as `failed`, refunds points, and frees the concurrency slot.
+  - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min, or in `queued` for over 10 min, as `failed`, refunds points, and frees the concurrency slot. It finds them through the active-jobs index (section 4), and each refund is conditional on the job still being in the status it was found in.
   - `model_health` (daily): checks every enabled registry model still exists with its provider. A missing model or a deprecation notice triggers an SNS alert, which covers the model-retirement risk in the PRD.
 
 ## 4. Data model (DynamoDB)
@@ -104,12 +104,12 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), birthYearOk, status (`active` \| `suspended`), `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
-| Image | `USER#<sub>` | `IMG#<imageId>` | title, latestVersion, versionCount, style, modelId, createdAt, thumbnail key | — |
-| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, width, height, parentVersion, prompt, enhancedPrompt, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
+| Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt), latestVersion, versionCount, style, modelId, createdAt, thumbKey | — |
+| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage, category | 24 h |
-| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts | 30 days |
+| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
-| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents, capCents | — |
+| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents | — |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
 | Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | userId, stage, category, promptExcerpt, provider | 90 days |
 
@@ -122,7 +122,8 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Job status poll | GetItem `JOB#<jobId>`, checking that userId matches the caller |
 | Today's usage | GetItem `USAGE#<today>` |
 | Whole model registry (seed, loader) | Query GSI1 `GSI1PK=REGISTRY` |
-| Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending |
+| Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending. The worker writes `GSI1SK` (10 digits) after each settle or refund |
+| Stuck jobs (sweeper) | Query GSI1 `GSI1PK=JOBS#running`, `GSI1SK < now − 5 min`, and `GSI1PK=JOBS#queued`, `GSI1SK < now − 10 min` |
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
 | Account deletion (AUTH-3) | Query all items under `USER#<sub>` and delete them in batches; delete the S3 prefix `users/<sub>/` |
 
@@ -135,8 +136,8 @@ Points are integers, and 1 point is $0.01 of provider list price.
   1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? DEFAULT_DAILY_POINTS` (25).
   2. Update `PROFILE`: `ADD activeJobs :1`, on condition `activeJobs < :2` and `status = active` and no cooldown in force (LIM-3).
   3. Put `JOB#<id>` with condition `attribute_not_exists(PK)`.
-- **Settle** (worker, on success): if the actual cost is lower than the estimate, `ADD used :negativeDiff`. Then increment `PLATFORM/SPEND#<month>` and `STATS#…` by the actual cost, and decrement `activeJobs`.
-- **Refund** (failure or block): `ADD used :-p` and decrement `activeJobs`, in the same transaction that sets the job's final status.
+- **Settle** (worker, on success): the user pays the actual cost rounded up to points, capped at the returned images' share of the reservation, so a partial success (fewer images than requested) charges only for the images returned (`settleJobPoints`). If that is lower than the reservation, `ADD used :negativeDiff` on the job's `usageDate`. Then increment `PLATFORM/SPEND#<month>` and `STATS#…` by the actual cost, and decrement `activeJobs`.
+- **Refund** (failure or block): `ADD used :-p` and decrement `activeJobs`, in the same transaction that sets the job's final status, and count the failure or block in `STATS#…`. If the provider had already answered (for example, storing the images failed), its cost is still added to the platform spend.
 - **Rate limit:** 10 jobs a minute, via `ADD count :1` on `RATE#<minute>` with the condition `count < 10`, as a fourth item of the reserve transaction. A transaction cancelled by a concurrent one (`TransactionConflict`) is retried.
 - **Errors:** error answers are `{ error, code }`, where `error` is a plain-language message for the user (GEN-10).
 - **Platform cap:** at job creation, read `PLATFORM/SPEND#<month>`. If `spentCents ≥ capCents` ($100), reject any model whose quality tier isn't `draft`. At 80%, an alarm emails the admin. A small overrun from jobs already in flight is accepted.

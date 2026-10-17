@@ -55,6 +55,31 @@ export function settlePoints(reservedPoints: number, actualCostCents: number): P
   return { chargedPoints, usageDelta: chargedPoints - reservedPoints };
 }
 
+/**
+ * Settles a job that returned `returnedCount` of the `requestedCount` images it reserved for. The user pays for
+ * the returned images only: the actual cost rounded up to points, capped at those images' share of the
+ * reservation. A job that returned no images is refunded in full.
+ */
+export function settleJobPoints(
+  reservedPoints: number,
+  requestedCount: number,
+  returnedCount: number,
+  actualCostCents: number,
+): PointsSettlement {
+  assertPoints(reservedPoints);
+  if (!Number.isInteger(requestedCount) || requestedCount < MIN_IMAGE_COUNT) {
+    throw new RangeError(`Invalid requested image count: ${requestedCount}`);
+  }
+  if (!Number.isInteger(returnedCount) || returnedCount < 0) {
+    throw new RangeError(`Invalid returned image count: ${returnedCount}`);
+  }
+  const returned = Math.min(returnedCount, requestedCount);
+  if (returned === 0) return refundPoints(reservedPoints);
+  const share = Math.ceil((reservedPoints * returned) / requestedCount);
+  const { chargedPoints } = settlePoints(share, actualCostCents);
+  return { chargedPoints, usageDelta: chargedPoints - reservedPoints };
+}
+
 /** Returns every reserved point, for a failed or blocked job (GEN-10). */
 export function refundPoints(reservedPoints: number): PointsSettlement {
   assertPoints(reservedPoints);
