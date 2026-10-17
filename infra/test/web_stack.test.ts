@@ -70,6 +70,30 @@ describe('Web stack: app Lambda', () => {
     expect(sendStatements.join()).not.toMatch(/DeadLetter/);
   });
 
+  it('passes the purge queue URL and may send account purges to it', () => {
+    expect(JSON.stringify(appFunction(dev).Environment.Variables.PURGE_QUEUE_URL)).toMatch(
+      /PurgeQueue/,
+    );
+    const statements = Object.values(dev.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const send = statements.filter((s) => JSON.stringify(s.Action).includes('sqs:SendMessage'));
+    expect(JSON.stringify(send.map((s) => s.Resource))).toMatch(/PurgeQueue/);
+  });
+
+  it('may disable and sign out users of its own pool, and not delete them', () => {
+    const statements = Object.values(dev.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const cognito = statements.filter((s) => JSON.stringify(s.Action).includes('cognito-idp:'));
+    expect(cognito).toHaveLength(1);
+    expect(cognito[0]?.Action).toEqual([
+      'cognito-idp:AdminDisableUser',
+      'cognito-idp:AdminUserGlobalSignOut',
+    ]);
+    expect(JSON.stringify(cognito[0]?.Resource)).toMatch(/UserPool/);
+  });
+
   it('reserves 20 concurrent executions in prod only', () => {
     expect(appFunction(prod).ReservedConcurrentExecutions).toBe(20);
     expect(appFunction(dev).ReservedConcurrentExecutions).toBeUndefined();

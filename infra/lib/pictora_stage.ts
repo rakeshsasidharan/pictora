@@ -51,6 +51,7 @@ export class PictoraStage extends Stage {
       config,
       table: this.data.table,
       imagesBucket: this.data.imagesBucket,
+      userPool: this.auth.userPool,
     });
     this.web = new WebStack(this, 'Web', {
       crossRegionReferences: config.domain !== undefined,
@@ -59,6 +60,7 @@ export class PictoraStage extends Stage {
       imagesBucket: this.data.imagesBucket,
       auth: this.auth,
       queues: this.jobs.queues,
+      purgeQueue: this.jobs.purgeQueue,
       certificate: this.certificate?.certificate,
     });
     this.monitoring = new MonitoringStack(this, 'Monitoring', {

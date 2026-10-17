@@ -87,6 +87,8 @@ export interface WebStackProps extends StackProps {
   readonly auth: AuthStack;
   /** The provider queues the job API sends `{ jobId }` to. */
   readonly queues: Readonly<Record<QueueProvider, IQueue>>;
+  /** The queue `DELETE /api/me` sends the account purge to (AUTH-3). */
+  readonly purgeQueue: IQueue;
   /** Required when the stage has a domain. */
   readonly certificate?: ICertificate;
 }
@@ -139,6 +141,7 @@ export class WebStack extends Stack {
         COGNITO_USER_POOL_ID: props.auth.userPool.userPoolId,
         COGNITO_DOMAIN: props.auth.domainBaseUrl,
         APP_CONFIG_PARAMETER: appConfigParameter,
+        PURGE_QUEUE_URL: props.purgeQueue.queueUrl,
         ...Object.fromEntries(
           QUEUE_PROVIDERS.map((provider) => [
             queueUrlVariable(provider),
@@ -166,6 +169,14 @@ export class WebStack extends Stack {
     props.imagesBucket.grantReadWrite(this.appFunction);
     for (const provider of QUEUE_PROVIDERS)
       props.queues[provider].grantSendMessages(this.appFunction);
+    props.purgeQueue.grantSendMessages(this.appFunction);
+    // Account deletion disables the user and signs them out at once; the purge deletes them.
+    this.appFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['cognito-idp:AdminDisableUser', 'cognito-idp:AdminUserGlobalSignOut'],
+        resources: [props.auth.userPool.userPoolArn],
+      }),
+    );
 
     this.functionUrl = this.appFunction.addFunctionUrl({
       authType: FunctionUrlAuthType.NONE,

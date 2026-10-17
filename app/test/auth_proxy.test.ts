@@ -65,6 +65,7 @@ describe('authenticate: API routes', () => {
     expect(forwardedHeader(response, SESSION_HEADERS.sub)).toBe(SUB);
     expect(forwardedHeader(response, SESSION_HEADERS.email)).toBe(EMAIL);
     expect(forwardedHeader(response, SESSION_HEADERS.groups)).toBe('admins');
+    expect(forwardedHeader(response, SESSION_HEADERS.username)).toBe(SUB);
   });
 
   it('drops session headers sent by the browser', async () => {

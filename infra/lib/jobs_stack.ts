@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import type { IUserPool } from 'aws-cdk-lib/aws-cognito';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Repository } from 'aws-cdk-lib/aws-ecr';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
@@ -53,6 +54,11 @@ export const SWEEPER_MEMORY_MB = 512;
 export const SWEEPER_TIMEOUT_SECONDS = 60;
 export const SWEEPER_INTERVAL_MINUTES = 5;
 
+/** The account purge (AUTH-3): same image, its own handler, fed by the purge queue. */
+export const PURGE_HANDLER = 'purge.handler';
+export const PURGE_MEMORY_MB = 512;
+export const PURGE_TIMEOUT_SECONDS = 300;
+
 /** 6 × the worker timeout, as AWS recommends for an SQS event source. */
 export const QUEUE_VISIBILITY_TIMEOUT_SECONDS = 6 * WORKER_TIMEOUT_SECONDS;
 /** Receives before a message moves to the dead-letter queue. */
@@ -73,6 +79,8 @@ export interface JobsStackProps extends StackProps {
   readonly config: StageConfig;
   readonly table: Table;
   readonly imagesBucket: IBucket;
+  /** The user pool the purge deletes users from. */
+  readonly userPool: IUserPool;
 }
 
 /**
@@ -85,6 +93,9 @@ export class JobsStack extends Stack {
   readonly deadLetterQueue: Queue;
   readonly workerFunction: DockerImageFunction;
   readonly sweeperFunction: DockerImageFunction;
+  /** Takes `{ sub, username }` from `DELETE /api/me` and deletes the account's data and Cognito user. */
+  readonly purgeQueue: Queue;
+  readonly purgeFunction: DockerImageFunction;
   readonly providerSecrets: Readonly<Record<SecretProvider, ISecret>>;
 
   constructor(scope: Construct, id: string, props: JobsStackProps) {
@@ -195,6 +206,54 @@ export class JobsStack extends Stack {
       schedule: Schedule.rate(Duration.minutes(SWEEPER_INTERVAL_MINUTES)),
       targets: [new LambdaFunction(this.sweeperFunction, { retryAttempts: 0 })],
     });
+
+    this.purgeQueue = new Queue(this, 'PurgeQueue', {
+      queueName: `pictora-${config.envName}-purge`,
+      visibilityTimeout: Duration.seconds(6 * PURGE_TIMEOUT_SECONDS),
+      deadLetterQueue: { queue: this.deadLetterQueue, maxReceiveCount: MAX_RECEIVE_COUNT },
+      encryption: QueueEncryption.SQS_MANAGED,
+      enforceSSL: true,
+    });
+    this.purgeFunction = new DockerImageFunction(this, 'PurgeFunction', {
+      code: DockerImageCode.fromEcr(repository, {
+        tagOrDigest: config.workerImageDigest,
+        cmd: [PURGE_HANDLER],
+      }),
+      architecture: Architecture.ARM_64,
+      memorySize: PURGE_MEMORY_MB,
+      timeout: Duration.seconds(PURGE_TIMEOUT_SECONDS),
+      logGroup: new LogGroup(this, 'PurgeLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        PICTORA_ENV: config.envName,
+        GIT_SHA: config.gitSha,
+        TABLE_NAME: props.table.tableName,
+        IMAGES_BUCKET: props.imagesBucket.bucketName,
+        COGNITO_USER_POOL_ID: props.userPool.userPoolId,
+        PURGE_QUEUE_URL: this.purgeQueue.queueUrl,
+      },
+    });
+    props.table.grantReadWriteData(this.purgeFunction);
+    props.imagesBucket.grantDelete(this.purgeFunction);
+    this.purgeFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [props.imagesBucket.bucketArn],
+      }),
+    );
+    this.purgeFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['cognito-idp:AdminDeleteUser'],
+        resources: [props.userPool.userPoolArn],
+      }),
+    );
+    // The purge puts its message back on the queue while the user's jobs finish.
+    this.purgeQueue.grantSendMessages(this.purgeFunction);
+    this.purgeFunction.addEventSource(
+      new SqsEventSource(this.purgeQueue, { batchSize: 1, reportBatchItemFailures: true }),
+    );
 
     for (const provider of QUEUE_PROVIDERS) {
       this.workerFunction.addEventSource(
