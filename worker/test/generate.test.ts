@@ -1,6 +1,6 @@
 import type { SQSEvent, SQSRecord } from 'aws-lambda';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { handler, parseJobMessage } from '../src/generate.js';
+import { createGenerateHandler, parseJobMessage } from '../src/generate.js';
 
 const QUEUE_ARN = 'arn:aws:sqs:us-west-2:000000000000:pictora-dev-openai';
 
@@ -59,22 +59,34 @@ describe('generate handler', () => {
     vi.restoreAllMocks();
   });
 
-  it('acknowledges a valid job message and logs its job ID', async () => {
-    const result = await handler(event(record('m1', JSON.stringify({ jobId: '01JOB' }))));
+  it('runs the job in a valid message and acknowledges it', async () => {
+    const runJob = vi.fn(async () => 'succeeded' as const);
+    const result = await createGenerateHandler(runJob)(
+      event(record('m1', JSON.stringify({ jobId: '01JOB' }))),
+    );
 
     expect(result).toEqual({ batchItemFailures: [] });
-    expect(log).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
-      message: 'Job received',
+    expect(runJob).toHaveBeenCalledWith('01JOB');
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+      message: 'Job message handled',
       jobId: '01JOB',
+      outcome: 'succeeded',
       messageId: 'm1',
       queue: 'pictora-dev-openai',
     });
     expect(error).not.toHaveBeenCalled();
   });
 
+  it('acknowledges a message whose job was skipped', async () => {
+    const handler = createGenerateHandler(async () => 'skipped');
+    expect(await handler(event(record('m1', '{"jobId":"01JOB"}')))).toEqual({
+      batchItemFailures: [],
+    });
+  });
+
   it('reports only the records that are not job messages as batch item failures', async () => {
-    const result = await handler(
+    const runJob = vi.fn(async () => 'succeeded' as const);
+    const result = await createGenerateHandler(runJob)(
       event(
         record('good-1', '{"jobId":"01A"}'),
         record('bad-json', '{jobId'),
@@ -86,7 +98,7 @@ describe('generate handler', () => {
     expect(result).toEqual({
       batchItemFailures: [{ itemIdentifier: 'bad-json' }, { itemIdentifier: 'no-job-id' }],
     });
-    expect(log).toHaveBeenCalledTimes(2);
+    expect(runJob).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
       level: 'ERROR',
@@ -95,7 +107,26 @@ describe('generate handler', () => {
     });
   });
 
+  it('reports a job that threw as a batch item failure and carries on with the batch', async () => {
+    const runJob = vi.fn(async (jobId: string) => {
+      if (jobId === '01A') throw new Error('DynamoDB unavailable');
+      return 'failed' as const;
+    });
+    const result = await createGenerateHandler(runJob)(
+      event(record('m1', '{"jobId":"01A"}'), record('m2', '{"jobId":"01B"}')),
+    );
+    expect(result).toEqual({ batchItemFailures: [{ itemIdentifier: 'm1' }] });
+    expect(runJob).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
+      message: 'Job message failed',
+      jobId: '01A',
+      error: 'DynamoDB unavailable',
+    });
+  });
+
   it('returns no failures for an empty batch', async () => {
-    expect(await handler(event())).toEqual({ batchItemFailures: [] });
+    expect(await createGenerateHandler(async () => 'skipped')(event())).toEqual({
+      batchItemFailures: [],
+    });
   });
 });

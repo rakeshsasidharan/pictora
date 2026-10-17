@@ -8,6 +8,7 @@ import {
   loadSeedRegistry,
   pointsForCents,
   refundPoints,
+  settleJobPoints,
   settlePoints,
   type ModelConfig,
 } from '../src/index.js';
@@ -128,6 +129,36 @@ describe('settlePoints', () => {
   it('rejects invalid reservations', () => {
     expect(() => settlePoints(-1, 1)).toThrow(RangeError);
     expect(() => settlePoints(1.5, 1)).toThrow(RangeError);
+  });
+});
+
+describe('settleJobPoints', () => {
+  it('charges the actual cost when every image came back', () => {
+    expect(settleJobPoints(12, 4, 4, 12)).toEqual({ chargedPoints: 12, usageDelta: 0 });
+    expect(settleJobPoints(12, 4, 4, 9.2)).toEqual({ chargedPoints: 10, usageDelta: -2 });
+  });
+
+  it('charges only for the images returned on a partial success', () => {
+    expect(settleJobPoints(12, 4, 3, 9)).toEqual({ chargedPoints: 9, usageDelta: -3 });
+    expect(settleJobPoints(8, 4, 1, 2)).toEqual({ chargedPoints: 2, usageDelta: -6 });
+  });
+
+  it('caps the charge at the returned images, even when the provider reports the full cost', () => {
+    expect(settleJobPoints(12, 4, 2, 12)).toEqual({ chargedPoints: 6, usageDelta: -6 });
+  });
+
+  it('refunds everything when no image came back', () => {
+    expect(settleJobPoints(6, 2, 0, 6)).toEqual({ chargedPoints: 0, usageDelta: -6 });
+  });
+
+  it('never charges for more images than were requested', () => {
+    expect(settleJobPoints(3, 1, 2, 6)).toEqual({ chargedPoints: 3, usageDelta: 0 });
+  });
+
+  it('rejects invalid counts', () => {
+    expect(() => settleJobPoints(3, 0, 0, 0)).toThrow(RangeError);
+    expect(() => settleJobPoints(3, 1, -1, 0)).toThrow(RangeError);
+    expect(() => settleJobPoints(3, 1, 0.5, 0)).toThrow(RangeError);
   });
 });
 

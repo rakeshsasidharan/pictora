@@ -1638,6 +1638,244 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
       },
       "Type": "AWS::SQS::QueuePolicy",
     },
+    "SweeperFunctionB5F2624B": {
+      "DependsOn": [
+        "SweeperFunctionServiceRoleDefaultPolicyD5F37340",
+        "SweeperFunctionServiceRole2CF3687F",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GIT_SHA": "local",
+            "PICTORA_ENV": "dev",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "sweeper.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SweeperLogGroupCF4F3D67",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "SweeperFunctionServiceRole2CF3687F",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 60,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SweeperFunctionServiceRole2CF3687F": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SweeperFunctionServiceRoleDefaultPolicyD5F37340": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:UpdateItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SweeperFunctionServiceRoleDefaultPolicyD5F37340",
+        "Roles": [
+          {
+            "Ref": "SweeperFunctionServiceRole2CF3687F",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SweeperLogGroupCF4F3D67": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SweeperSchedule231E891E": {
+      "Properties": {
+        "Description": "Fails and refunds stuck Pictora jobs",
+        "ScheduleExpression": "rate(5 minutes)",
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "SweeperFunctionB5F2624B",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "SweeperScheduleAllowEventRulePictoraDevJobsSweeperFunction927EF5384CF5ACD7": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "SweeperFunctionB5F2624B",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "SweeperSchedule231E891E",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
     "WorkerFunctionACE6A4B0": {
       "DependsOn": [
         "WorkerFunctionServiceRoleDefaultPolicy07D8276A",

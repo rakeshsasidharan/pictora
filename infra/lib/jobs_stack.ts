@@ -3,6 +3,8 @@ import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import type { IUserPool } from 'aws-cdk-lib/aws-cognito';
 import type { Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Repository } from 'aws-cdk-lib/aws-ecr';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Architecture, DockerImageCode, DockerImageFunction } from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
@@ -46,6 +48,12 @@ export const WORKER_TIMEOUT_SECONDS = 180;
 /** The image command that picks the SQS consumer in the worker image. */
 export const GENERATE_HANDLER = 'generate.handler';
 
+/** The stuck-job sweeper (tech design 3.2): same image, its own handler, every 5 minutes. */
+export const SWEEPER_HANDLER = 'sweeper.handler';
+export const SWEEPER_MEMORY_MB = 512;
+export const SWEEPER_TIMEOUT_SECONDS = 60;
+export const SWEEPER_INTERVAL_MINUTES = 5;
+
 /** The account purge (AUTH-3): same image, its own handler, fed by the purge queue. */
 export const PURGE_HANDLER = 'purge.handler';
 export const PURGE_MEMORY_MB = 512;
@@ -76,13 +84,15 @@ export interface JobsStackProps extends StackProps {
 }
 
 /**
- * The job pipeline (tech design 3.2): one SQS queue per provider, a shared dead-letter queue, and the worker
- * Lambda that consumes every queue. The worker runs the `pictora-worker` image by digest.
+ * The job pipeline (tech design 3.2): one SQS queue per provider, a shared dead-letter queue, the worker Lambda
+ * that consumes every queue, and the sweeper that fails and refunds stuck jobs every 5 minutes. Both run the
+ * `pictora-worker` image by digest.
  */
 export class JobsStack extends Stack {
   readonly queues: Readonly<Record<QueueProvider, Queue>>;
   readonly deadLetterQueue: Queue;
   readonly workerFunction: DockerImageFunction;
+  readonly sweeperFunction: DockerImageFunction;
   /** Takes `{ sub, username }` from `DELETE /api/me` and deletes the account's data and Cognito user. */
   readonly purgeQueue: Queue;
   readonly purgeFunction: DockerImageFunction;
@@ -172,6 +182,31 @@ export class JobsStack extends Stack {
         ),
       }),
     );
+    this.sweeperFunction = new DockerImageFunction(this, 'SweeperFunction', {
+      code: DockerImageCode.fromEcr(repository, {
+        tagOrDigest: config.workerImageDigest,
+        cmd: [SWEEPER_HANDLER],
+      }),
+      architecture: Architecture.ARM_64,
+      memorySize: SWEEPER_MEMORY_MB,
+      timeout: Duration.seconds(SWEEPER_TIMEOUT_SECONDS),
+      logGroup: new LogGroup(this, 'SweeperLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        PICTORA_ENV: config.envName,
+        GIT_SHA: config.gitSha,
+        TABLE_NAME: props.table.tableName,
+      },
+    });
+    props.table.grantReadWriteData(this.sweeperFunction);
+    new Rule(this, 'SweeperSchedule', {
+      description: 'Fails and refunds stuck Pictora jobs',
+      schedule: Schedule.rate(Duration.minutes(SWEEPER_INTERVAL_MINUTES)),
+      targets: [new LambdaFunction(this.sweeperFunction, { retryAttempts: 0 })],
+    });
+
     this.purgeQueue = new Queue(this, 'PurgeQueue', {
       queueName: `pictora-${config.envName}-purge`,
       visibilityTimeout: Duration.seconds(6 * PURGE_TIMEOUT_SECONDS),

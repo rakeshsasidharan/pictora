@@ -28,6 +28,7 @@ function imageFunction(template: Template, command: string) {
 }
 
 const workerFunction = (template: Template) => imageFunction(template, 'generate.handler');
+const sweeperFunction = (template: Template) => imageFunction(template, 'sweeper.handler');
 const purgeFunction = (template: Template) => imageFunction(template, 'purge.handler');
 
 function policyStatements(template: Template, role: string): Record<string, unknown>[] {
@@ -255,6 +256,65 @@ describe('Jobs stack: worker IAM', () => {
       for (const action of actionsOf(statement)) expect(action).not.toBe('*');
       expect(statement.Resource).not.toBe('*');
     }
+  });
+});
+
+describe('Jobs stack: sweeper', () => {
+  it('runs the sweeper handler from the worker image on arm64', () => {
+    const props = sweeperFunction(dev);
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.MemorySize).toBe(512);
+    expect(props.Timeout).toBe(60);
+    expect(JSON.stringify(props.Code.ImageUri)).toContain(`/pictora-worker@${TEST_IMAGE_DIGEST}`);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      GIT_SHA: 'abc123',
+      TABLE_NAME: expect.anything(),
+    });
+  });
+
+  it('runs every 5 minutes, without retrying a failed run', () => {
+    const functionId = logicalId(dev, 'AWS::Lambda::Function', {
+      ImageConfig: { Command: ['sweeper.handler'] },
+    });
+    dev.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'rate(5 minutes)',
+      State: 'ENABLED',
+      Targets: [
+        Match.objectLike({
+          Arn: { 'Fn::GetAtt': [functionId, 'Arn'] },
+          RetryPolicy: { MaximumRetryAttempts: 0 },
+        }),
+      ],
+    });
+    dev.hasResourceProperties('AWS::Lambda::Permission', {
+      Action: 'lambda:InvokeFunction',
+      Principal: 'events.amazonaws.com',
+      FunctionName: { 'Fn::GetAtt': [functionId, 'Arn'] },
+    });
+  });
+
+  it('keeps logs 30 days in dev and 90 days in prod', () => {
+    expect(
+      Object.values(dev.findResources('AWS::Logs::LogGroup')).map(
+        (group) => group.Properties.RetentionInDays,
+      ),
+    ).toEqual([30, 30, 30]);
+    expect(
+      Object.values(prod.findResources('AWS::Logs::LogGroup')).map(
+        (group) => group.Properties.RetentionInDays,
+      ),
+    ).toEqual([90, 90, 90]);
+  });
+
+  it('can use the table and its indexes, and nothing else', () => {
+    const statements = policyStatements(dev, 'SweeperFunctionServiceRole');
+    const actions = statements.flatMap((s) => [s.Action].flat() as string[]);
+    expect(actions).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:UpdateItem']));
+    expect(actions.every((action) => action.startsWith('dynamodb:'))).toBe(true);
+    expect(actions).not.toContain('dynamodb:DeleteTable');
+    const resources = JSON.stringify(statements.map((s) => s.Resource));
+    expect(resources).toContain('/index/*');
   });
 });
 
