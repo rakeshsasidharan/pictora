@@ -312,7 +312,7 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
 | POST | `/api/enhance` | Rewrite a prompt | Moderated; rate-limited |
 | POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down |
-| GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); presigned image URLs once succeeded |
+| GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
 | POST | `/api/uploads` | Presigned POST for an upload | 10 MB, JPEG/PNG/WebP |
 | GET | `/api/images` | Gallery page (cursor) | Thumbnails as presigned URLs |
 | GET | `/api/images/:id` | Image detail + versions | |
