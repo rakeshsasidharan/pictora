@@ -10,14 +10,22 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import {
+  BLOCK_TTL_SECONDS,
+  BLOCK_WINDOW_MS,
+  COOLDOWN_BLOCKS,
+  COOLDOWN_MS,
   JOB_SK,
+  MODLOG_TTL_DAYS,
   PLATFORM_PK,
   PROFILE_SK,
   SECONDS_PER_DAY,
   STATS_TTL_DAYS,
   activeJobsGsiPk,
+  blockSk,
   imageSk,
   jobPk,
+  modlogPk,
+  promptExcerpt,
   spendSk,
   statsModelSk,
   statsPk,
@@ -29,10 +37,13 @@ import {
   utcMonth,
   versionSk,
   type ActiveJobStatus,
+  type BlockItem,
+  type BlockStage,
   type GenerateJobRequest,
   type JobError,
   type JobImage,
   type JobItem,
+  type ModlogItem,
   type PointsSettlement,
 } from '@pictora/core';
 import { log } from './log.js';
@@ -231,13 +242,26 @@ export interface RefundInput {
   error: JobError;
   /** What the provider already cost, when it answered before the job failed; counted as platform spend. */
   providerCostCents?: number;
+  /** For a block: the `BLOCK#` and `MODLOG#` items to write with it. */
+  block?: BlockRecord;
   now: Date;
+}
+
+/** Why a job was blocked, recorded as a `BLOCK#` item and a `MODLOG#` entry (tech design 6.3). */
+export interface BlockRecord {
+  /** A ULID, used as the key of both items. */
+  blockId: string;
+  stage: BlockStage;
+  category: string;
+  /** The prompt that was checked; only an excerpt is kept. */
+  prompt: string;
 }
 
 /**
  * Fails or blocks an active job with a full refund, in one transaction (tech design 4.1): the final status and
- * error, every reserved point back on the day they came from, one concurrency slot freed, and the day's
- * failure or block count. Returns false, writing nothing, when the job has left the status it was read in.
+ * error, every reserved point back on the day they came from, one concurrency slot freed, the day's failure
+ * or block count, and for a block its `BLOCK#` item and `MODLOG#` entry. Returns false, writing nothing, when
+ * the job has left the status it was read in.
  */
 export async function refundJob(ctx: TableContext, input: RefundInput): Promise<boolean> {
   const { job, from, status, error, now } = input;
@@ -271,7 +295,95 @@ export async function refundJob(ctx: TableContext, input: RefundInput): Promise<
       ...(cost > 0 ? { providerCostCents: cost } : {}),
     }),
     ...(cost > 0 ? [spendUpdate(ctx.tableName, now, cost)] : []),
+    ...(input.block ? blockItems(ctx.tableName, job, input.block, now) : []),
   ]);
+}
+
+/** The `BLOCK#` item (24 h) and the `MODLOG#` entry (90 days) for a blocked job. */
+function blockItems(
+  tableName: string,
+  job: JobItem,
+  block: BlockRecord,
+  now: Date,
+): TransactItem[] {
+  const at = now.toISOString();
+  const blockItem: BlockItem = {
+    PK: userPk(job.userId),
+    SK: blockSk(block.blockId),
+    stage: block.stage,
+    category: block.category,
+    jobId: job.jobId,
+    createdAt: at,
+    ttl: ttlAfter(now, BLOCK_TTL_SECONDS),
+  };
+  const logItem: ModlogItem = {
+    PK: modlogPk(utcDate(now)),
+    SK: block.blockId,
+    type: 'block',
+    userId: job.userId,
+    stage: block.stage,
+    category: block.category,
+    promptExcerpt: promptExcerpt(block.prompt),
+    provider: job.provider,
+    modelId: job.modelId,
+    jobId: job.jobId,
+    createdAt: at,
+    ttl: ttlAfter(now, MODLOG_TTL_DAYS * SECONDS_PER_DAY),
+  };
+  return [
+    { Put: { TableName: tableName, Item: blockItem } },
+    { Put: { TableName: tableName, Item: logItem } },
+  ];
+}
+
+/**
+ * Counts the user's blocks in the last 24 hours, and at 3 or more cools the account down until 24 hours from
+ * now (PRD, Trust and safety): `cooldownUntil` on the profile, which job creation checks. Returns the new
+ * `cooldownUntil`, or undefined when no cooldown was set. A later cooldown is never shortened.
+ */
+export async function applyCooldown(
+  { client, tableName }: TableContext,
+  sub: string,
+  now: Date,
+): Promise<string | undefined> {
+  const since = new Date(now.getTime() - BLOCK_WINDOW_MS).toISOString();
+  let blocks = 0;
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await client.send(
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        // Expired items can linger until DynamoDB removes them, so the window is checked too.
+        FilterExpression: 'createdAt >= :since',
+        ExpressionAttributeValues: { ':pk': userPk(sub), ':prefix': blockSk(''), ':since': since },
+        Select: 'COUNT',
+        ConsistentRead: true,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    blocks += page.Count ?? 0;
+    exclusiveStartKey = page.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  if (blocks < COOLDOWN_BLOCKS) return undefined;
+
+  const until = new Date(now.getTime() + COOLDOWN_MS).toISOString();
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: userPk(sub), SK: PROFILE_SK },
+        UpdateExpression: 'SET cooldownUntil = :until',
+        ConditionExpression:
+          'attribute_exists(PK) AND (attribute_not_exists(cooldownUntil) OR cooldownUntil < :until)',
+        ExpressionAttributeValues: { ':until': until },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return undefined;
+    throw error;
+  }
+  return until;
 }
 
 type TransactItem = NonNullable<

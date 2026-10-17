@@ -3,9 +3,10 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { Environment } from '@pictora/core';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
-import { createProviderFactory } from '@pictora/providers';
+import { createModerator, createProviderFactory, secretApiKey } from '@pictora/providers';
 import { ulid } from 'ulid';
 import type { TableContext } from './job_store.js';
+import { moderateImageRequests } from './moderation.js';
 import type { PipelineDeps } from './pipeline.js';
 
 /**
@@ -35,7 +36,8 @@ export function tableContext(env: NodeJS.ProcessEnv = process.env): TableContext
 
 /**
  * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
- * registry cached for 60 s, and the provider adapters. Moderation joins them with its own issue (#19).
+ * registry cached for 60 s, the provider adapters, and moderation with the OpenAI key from the secret named in
+ * `OPENAI_SECRET_ID`.
  */
 export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
   const table = tableContext(env);
@@ -49,6 +51,9 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
     bucket: required('IMAGES_BUCKET', env),
     models: () => registry.models(),
     provider: createProviderFactory(),
+    moderate: moderateImageRequests(
+      createModerator({ apiKey: secretApiKey(required('OPENAI_SECRET_ID', env)) }),
+    ),
     now: () => new Date(),
     newImageId: () => ulid(),
   };

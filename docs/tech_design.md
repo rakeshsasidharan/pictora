@@ -107,12 +107,12 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
 | Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt), latestVersion, versionCount, style, modelId, createdAt, thumbKey | — |
 | Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
-| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage, category | 24 h |
+| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId, createdAt | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
 | Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents | — |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
-| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | userId, stage, category, promptExcerpt, provider | 90 days |
+| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key | 90 days |
 
 **Access patterns**
 
@@ -297,7 +297,9 @@ Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `P
 ### 6.3 Prompt enhancer and moderation
 
 - **Enhancer (ENH-1 to ENH-4):** `POST /api/enhance` is synchronous, with a target of under 3 s. A system prompt tells the LLM to add subject, composition, lighting and style detail suited to the model, to keep the user's intent, and to add no people, brands or new content. The output is capped at 1,500 characters. The model is chosen in config (`ENHANCER_MODEL`), so the GPT-5.6 Luna versus Gemini Flash test in M2 needs only a config change. Enhancer calls are not charged to users but are counted in the stats.
-- **Moderation:** the OpenAI moderation endpoint (`omni-moderation-latest`) checks text and images. It runs on the raw prompt in `/api/enhance`, and in the worker on the final prompt and any input image. A flag means the job is `blocked`, with a `BLOCK#` record and a `MODLOG#` entry. Three blocks in 24 hours set `cooldownUntil` to now + 24 h. A provider safety refusal is handled the same way.
+- **Moderation:** the OpenAI moderation endpoint (`omni-moderation-latest`) checks text and images. It runs on the raw prompt in `/api/enhance`, and in the worker on the final prompt and any input image. A flag means the job is `blocked`, with a `BLOCK#` record and a `MODLOG#` entry. Three blocks in 24 hours set `cooldownUntil` to now + 24 h. A provider safety refusal is handled the same way (stage `provider`, category `provider_refusal`). If the moderation call fails, the job fails with a refund; it never goes ahead unchecked. The worker reads the OpenAI key from the secret named in `OPENAI_SECRET_ID`.
+- **Policy mapping** (`BLOCKED_CATEGORIES` in `packages/core`): `sexual/minors`, `sexual`, `violence/graphic`, `hate/threatening`, `hate`, `harassment/threatening`, the three `self-harm` categories, `illicit/violent` and `illicit` block; the first one flagged, in that order, is logged. Plain `violence` and `harassment` are allowed, so a flag on those alone doesn't block. The user sees the neutral `blocked` message, never the category.
+- **Reports:** `POST /api/reports` with `{ imageId, version, reason }` (reason one of `REPORT_REASONS`) writes a `MODLOG#` entry of type `report` for one of the user's own image versions (404 otherwise). The "Report" action sits in the image view.
 
 ## 7. API surface
 
@@ -318,7 +320,7 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | GET | `/api/images/:id` | Image detail + versions | |
 | DELETE | `/api/images/:id` | Delete an image and all its versions | |
 | GET | `/api/images/:id/versions/:n/download` | Redirect to a presigned original PNG | `Content-Disposition: attachment` |
-| POST | `/api/reports` | Report an output | Writes a `MODLOG` entry |
+| POST | `/api/reports` | Report an output | `{ imageId, version, reason }`; 201 with `reportId`. Writes a `MODLOG` entry of type `report`; owner only (404 otherwise) |
 | GET | `/api/admin/stats` | Spend and blocks dashboard (ADM-3) | `admins` Cognito group only |
 | POST | `/api/admin/users/:sub/suspend` | Suspend a user (ADM-4) | Admins only |
 

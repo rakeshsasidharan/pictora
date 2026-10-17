@@ -1,10 +1,12 @@
 import { PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import {
+  PROVIDER_REFUSAL_CATEGORY,
   applyStyle,
   imageKey,
   jobError,
   settleJobPoints,
   thumbnailKey,
+  type BlockStage,
   type GenerateJobRequest,
   type JobErrorCode,
   type JobItem,
@@ -21,18 +23,25 @@ import {
   type ImageRequest,
   type ImageResult,
 } from '@pictora/providers';
+import { ulid } from 'ulid';
 import {
+  applyCooldown,
   claimJob,
   completeJob,
   loadJob,
   refundJob,
+  type BlockRecord,
   type StoredImage,
   type TableContext,
 } from './job_store.js';
 import { log } from './log.js';
 
-/** What the moderation hook decides about a request before it reaches the provider. */
-export type ModerationVerdict = { flagged: false } | { flagged: true; category: string };
+/**
+ * What the moderation hook decides about a request before it reaches the provider: allowed, or blocked with
+ * the policy category and whether the prompt or an input image was flagged (the prompt when not given).
+ */
+export type ModerationVerdict =
+  { flagged: false } | { flagged: true; category: string; stage?: Exclude<BlockStage, 'provider'> };
 
 /** The moderation hook: checks the final prompt (and any input image) before the paid provider call. */
 export type ModerateRequest = (input: {
@@ -123,8 +132,15 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
       return fail(deps, job, 'provider_error');
     }
     if (verdict.flagged) {
-      log('INFO', 'Request blocked by moderation', { ...fields, category: verdict.category });
-      return fail(deps, job, 'blocked');
+      const stage = verdict.stage ?? 'prompt';
+      log('INFO', 'Request blocked by moderation', {
+        ...fields,
+        stage,
+        category: verdict.category,
+      });
+      return fail(deps, job, 'blocked', {
+        block: { stage, category: verdict.category, prompt: imageRequest.prompt },
+      });
     }
   }
 
@@ -140,13 +156,23 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
       latencyMs: Date.now() - started,
       error,
     });
-    return fail(deps, job, code);
+    return fail(deps, job, code, {
+      ...(code === 'blocked'
+        ? {
+            block: {
+              stage: 'provider',
+              category: PROVIDER_REFUSAL_CATEGORY,
+              prompt: imageRequest.prompt,
+            },
+          }
+        : {}),
+    });
   }
   const providerCostCents = result.providerCostCents;
   const images = result.images.slice(0, request.count);
   if (images.length === 0) {
     log('ERROR', 'Provider returned no images', { ...fields, providerCostCents });
-    return fail(deps, job, 'provider_error', providerCostCents);
+    return fail(deps, job, 'provider_error', { providerCostCents });
   }
 
   const settlement = settleJobPoints(
@@ -173,7 +199,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     });
   } catch (error) {
     log('ERROR', 'Storing the result failed', { ...fields, error });
-    return fail(deps, job, 'provider_error', providerCostCents);
+    return fail(deps, job, 'provider_error', { providerCostCents });
   }
   if (!completed) {
     log('WARN', 'Job was failed by the sweeper before it could be recorded', fields);
@@ -276,26 +302,40 @@ async function storeImage(
   };
 }
 
-/** Fails (or, for a block, blocks) the running job with a full refund. */
+/**
+ * Fails (or, for a block, blocks) the running job with a full refund. A block also writes its `BLOCK#` item
+ * and `MODLOG#` entry, then cools the account down if it was the third block in 24 hours.
+ */
 async function fail(
   deps: PipelineDeps,
   job: JobItem,
   code: JobErrorCode,
-  providerCostCents = 0,
+  options: { providerCostCents?: number; block?: Omit<BlockRecord, 'blockId'> } = {},
 ): Promise<JobOutcome> {
   const status = code === 'blocked' ? 'blocked' : 'failed';
+  const now = deps.now();
   const done = await refundJob(deps, {
     job,
     from: 'running',
     status,
     error: jobError(code),
-    providerCostCents,
-    now: deps.now(),
+    providerCostCents: options.providerCostCents ?? 0,
+    ...(options.block ? { block: { ...options.block, blockId: ulid(now.getTime()) } } : {}),
+    now,
   });
   if (!done) {
     log('WARN', 'Job was failed by the sweeper first', { jobId: job.jobId });
     return 'skipped';
   }
   log('INFO', 'Job refunded', { jobId: job.jobId, modelId: job.modelId, outcome: status, code });
+  if (options.block) {
+    try {
+      const until = await applyCooldown(deps, job.userId, now);
+      if (until)
+        log('INFO', 'Account cooled down after repeated blocks', { jobId: job.jobId, until });
+    } catch (error) {
+      log('ERROR', 'Cooldown check failed', { jobId: job.jobId, error });
+    }
+  }
   return status;
 }

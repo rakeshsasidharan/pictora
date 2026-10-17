@@ -49,6 +49,32 @@ export type {
 } from './jobs.js';
 export { TOS_VERSION } from './legal.js';
 export {
+  ALWAYS_BLOCKED_CATEGORIES,
+  BLOCKED_CATEGORIES,
+  BLOCK_STAGES,
+  BLOCK_TTL_SECONDS,
+  BLOCK_WINDOW_MS,
+  COOLDOWN_BLOCKS,
+  COOLDOWN_MS,
+  MODERATION_CATEGORIES,
+  MODLOG_TTL_DAYS,
+  PROMPT_EXCERPT_LENGTH,
+  PROVIDER_REFUSAL_CATEGORY,
+  REPORT_REASONS,
+  blockSk,
+  blockingCategory,
+  modlogPk,
+  promptExcerpt,
+} from './moderation.js';
+export type {
+  BlockItem,
+  BlockStage,
+  ModerationCategory,
+  ModerationResult,
+  ModlogItem,
+  ReportReason,
+} from './moderation.js';
+export {
   CENTS_PER_POINT,
   DEFAULT_DAILY_POINTS,
   MAX_IMAGE_COUNT,
@@ -98,6 +124,7 @@ export {
   generateJobRequestSchema,
   onboardingRequestSchema,
   qualitySchema,
+  reportRequestSchema,
   styleIdSchema,
   uploadRequestSchema,
 } from './schemas.js';
@@ -107,6 +134,7 @@ export type {
   EnhanceRequest,
   GenerateJobRequest,
   OnboardingRequest,
+  ReportRequest,
   UploadRequest,
 } from './schemas.js';
 export {
