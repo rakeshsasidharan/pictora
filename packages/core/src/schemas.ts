@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { REPORT_REASONS } from './moderation.js';
 import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT } from './points.js';
 import { ASPECTS, MAX_REFERENCE_IMAGES, MODEL_ID_PATTERN, QUALITIES } from './registry.js';
 import { STYLE_IDS } from './styles.js';
@@ -76,9 +77,17 @@ export const uploadRequestSchema = z.strictObject({
   size: z.int().min(1).max(MAX_UPLOAD_BYTES),
 });
 
+/** `POST /api/reports`: a user reports one of their images (PRD, Trust and safety). */
+export const reportRequestSchema = z.strictObject({
+  imageId: ulidSchema,
+  version: z.int().min(1),
+  reason: z.enum(REPORT_REASONS),
+});
+
 export type GenerateJobRequest = z.infer<typeof generateJobRequestSchema>;
 export type EditJobRequest = z.infer<typeof editJobRequestSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;
 export type OnboardingRequest = z.infer<typeof onboardingRequestSchema>;
+export type ReportRequest = z.infer<typeof reportRequestSchema>;

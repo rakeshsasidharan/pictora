@@ -355,3 +355,41 @@ img {
     grid-template-columns: 1fr;
   }
 }
+
+/* Reporting an image */
+
+.report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.report-panel fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.report-panel legend {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.report-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-sent {
+  margin: 0;
+  color: var(--muted);
+}

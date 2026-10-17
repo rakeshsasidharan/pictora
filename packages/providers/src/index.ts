@@ -32,6 +32,15 @@ export {
   MockProvider,
 } from './mock.js';
 export type { MockProviderOptions } from './mock.js';
+export {
+  MODERATION_MODEL,
+  MODERATION_TIMEOUT_MS,
+  OPENAI_MODERATION_URL,
+  createModerator,
+  imageDataUrl,
+  parseModeration,
+} from './moderation.js';
+export type { Moderate, ModerationInput, ModeratorOptions } from './moderation.js';
 export { PROVIDER_IDS, isProviderId } from './provider_ids.js';
 export type { ProviderId } from './provider_ids.js';
 export {
@@ -43,4 +52,6 @@ export {
   withRetry,
 } from './retry.js';
 export type { RetryOptions } from './retry.js';
+export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey } from './secrets.js';
+export type { SecretApiKeyOptions } from './secrets.js';
 export type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
