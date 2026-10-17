@@ -14,7 +14,7 @@ It never runs against prod: `src/config.ts` refuses the prod domain from `infra/
 | `src/`                   | Settings and the prod guard, the managed login and onboarding helpers, and issue links      |
 | `test/`                  | Vitest unit tests for `src/`, run by `npm test`                                            |
 
-`health`, `auth` and `onboarding` run today; the setup project takes the test user through onboarding (AUTH-4) when it lands there. `generate`, `edit`, `gallery`, `delete` and `landing` are placeholders marked `test.fixme`, each linked to the issue that makes it pass (#18, #22, #23 and #29). They use the mock provider, which only dev offers.
+`health`, `auth`, `onboarding` and `generate` run today; the setup project takes the test user through onboarding (AUTH-4) when it lands there. `generate` creates two draft images with the mock provider, which only dev offers, so each run uses 2 of the test user's daily points. `edit`, `gallery`, `delete` and `landing` are placeholders marked `test.fixme`, each linked to the issue that makes it pass (#22, #23 and #29).
 
 ## Settings
 
