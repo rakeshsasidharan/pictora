@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check:providers": "tsx scripts/check_providers.ts"
+    "check:providers": "tsx scripts/check_providers.ts",
+    "generate:samples": "tsx scripts/generate_samples.ts"
   },
   "devDependencies": {
     "aws-sdk-client-mock": "^4.1.0",

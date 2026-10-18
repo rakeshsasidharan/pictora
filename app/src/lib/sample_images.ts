@@ -16,6 +16,7 @@ export const SAMPLE_IMAGE_SIZE = 512;
 /**
  * The landing page's samples, one per style preset in picker order. Each file is an image we generated with
  * Pictora from the prompt shown; replacing a file needs no code change as long as its name stays the same.
+ * `npm run generate:samples` regenerates them with each style's suggested model (`-- --style <id>` for one).
  */
 export const SAMPLE_IMAGES: readonly SampleImage[] = [
   {

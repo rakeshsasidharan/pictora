@@ -20,7 +20,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "check:providers": "npm run check:providers --workspace @pictora/providers --"
+    "check:providers": "npm run check:providers --workspace @pictora/providers --",
+    "generate:samples": "npm run generate:samples --workspace @pictora/providers --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
