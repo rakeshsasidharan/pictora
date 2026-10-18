@@ -1,4 +1,10 @@
-import { QUALITIES, STYLE_PRESETS, suggestedModelId, type ModelConfig } from '@pictora/core';
+import {
+  QUALITIES,
+  STYLE_PRESETS,
+  suggestedModelId,
+  type ModelConfig,
+  type StyleId,
+} from '@pictora/core';
 
 /** A model as the UI sees it: what to show and what it costs, without provider settings. */
 export interface PublicModel {
@@ -14,7 +20,7 @@ export interface PublicModel {
 }
 
 export interface PublicStyle {
-  id: string;
+  id: StyleId;
   name: string;
   /** The enabled model this style suggests, if one is enabled. */
   suggestedModelId?: string;

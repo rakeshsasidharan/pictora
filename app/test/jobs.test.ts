@@ -61,7 +61,8 @@ function offlineDeps(overrides: Partial<JobsDeps> = {}): JobsDeps {
     models: async () => devModels,
     hasQueue: () => true,
     enqueue: async () => undefined,
-    presign: async (key) => `https://signed.example/${key}`,
+    presign: async (key, downloadName) =>
+      `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
     defaultDailyPoints: 25,
     now: () => new Date('2026-10-15T12:00:00Z'),
     newJobId: () => '01JAAAAAAAAAAAAAAAAAAAAAAA',
@@ -166,7 +167,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     models: async () => devModels,
     hasQueue: () => true,
     enqueue,
-    presign: async (key) => `https://signed.example/${key}`,
+    presign: async (key, downloadName) =>
+      `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
     defaultDailyPoints: 25,
     now: () => clock,
     newJobId: () => {
@@ -521,11 +523,13 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
             imageId: 'IMG1',
             version: 1,
             url: `https://signed.example/users/${owner.sub}/IMG1/v1.png`,
+            downloadUrl: `https://signed.example/users/${owner.sub}/IMG1/v1.png?download=pictora-IMG1-v1.png`,
           },
           {
             imageId: 'IMG2',
             version: 1,
             url: `https://signed.example/users/${owner.sub}/IMG2/v1.png`,
+            downloadUrl: `https://signed.example/users/${owner.sub}/IMG2/v1.png?download=pictora-IMG2-v1.png`,
           },
         ],
       });
