@@ -1,0 +1,11 @@
+{
+  "candidates": [
+    {
+      "content": { "parts": [{ "text": "I can only describe that." }], "role": "model" },
+      "finishReason": "NO_IMAGE",
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-3.1-flash-image",
+  "responseId": "resp-noimage-1"
+}

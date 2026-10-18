@@ -100,7 +100,8 @@
         "dailyPoints": 1000,
         "spendCapUsd": 20,
         "queueConcurrency": 5,
-        "budgetUsd": 15
+        "budgetUsd": 15,
+        "geminiBackend": "api"
       },
       "prod": {
         "authDomainPrefix": "pictora-rpillai-prod",
@@ -108,7 +109,8 @@
         "spendCapUsd": 100,
         "queueConcurrency": 5,
         "budgetUsd": 25,
-        "appReservedConcurrency": 20
+        "appReservedConcurrency": 20,
+        "geminiBackend": "api"
       }
     }
   }

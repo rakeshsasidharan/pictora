@@ -1,7 +1,7 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { mockClient } from 'aws-sdk-client-mock';
 import { describe, expect, it } from 'vitest';
-import { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey } from '../src/secrets.js';
+import { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey, secretString } from '../src/secrets.js';
 
 describe('secretApiKey', () => {
   it('reads the secret once and caches it for 5 minutes', async () => {
@@ -22,6 +22,32 @@ describe('secretApiKey', () => {
     time = SECRET_CACHE_MS;
     expect(await read()).toBe('sk-two');
     expect(sm.commandCalls(GetSecretValueCommand)).toHaveLength(2);
+    sm.restore();
+  });
+});
+
+describe('secretString', () => {
+  it('returns the secret as stored, such as a service account JSON, and caches it', async () => {
+    const json = '{"type":"service_account","project_id":"p"}';
+    const sm = mockClient(SecretsManagerClient);
+    sm.on(GetSecretValueCommand, { SecretId: 'pictora/dev/gemini' }).resolves({
+      SecretString: ` ${json}\n`,
+    });
+    const read = secretString('pictora/dev/gemini', {
+      client: new SecretsManagerClient({}),
+      now: () => 0,
+    });
+    expect(await read()).toBe(json);
+    expect(await read()).toBe(json);
+    expect(sm.commandCalls(GetSecretValueCommand)).toHaveLength(1);
+    sm.restore();
+  });
+
+  it('throws when the secret is empty', async () => {
+    const sm = mockClient(SecretsManagerClient);
+    sm.on(GetSecretValueCommand).resolves({ SecretString: '  ' });
+    const read = secretString('pictora/dev/gemini', { client: new SecretsManagerClient({}) });
+    await expect(read()).rejects.toThrow('The secret is empty');
     sm.restore();
   });
 });

@@ -24,6 +24,10 @@ const AUTH_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const IMAGE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
+/** Where the worker calls Gemini: the Gemini API with an API key, or Vertex AI (tech design 10). */
+export const GEMINI_BACKENDS = ['api', 'vertex'] as const;
+export type GeminiBackend = (typeof GEMINI_BACKENDS)[number];
+
 /** Per-environment settings from the `environments` context in `infra/cdk.json` (tech design 10 and 14). */
 export interface EnvironmentSettings {
   /** Site domain under `rpillai.dev`. Without one, the site is served on the CloudFront domain. */
@@ -40,6 +44,10 @@ export interface EnvironmentSettings {
   readonly budgetUsd: number;
   /** Reserved concurrency for the app Lambda, as a cost guard. Unset means unreserved. */
   readonly appReservedConcurrency?: number;
+  /** `api` (the default) or `vertex`. The secret `pictora/<env>/gemini` must hold the matching credential. */
+  readonly geminiBackend: GeminiBackend;
+  /** Vertex AI location; the worker defaults to `global`. */
+  readonly geminiVertexLocation?: string;
 }
 
 /** Values passed with `-c` at deploy time, with placeholders so synth works without them. */
@@ -53,6 +61,11 @@ export interface DeploySettings {
   readonly gitSha: string;
   /** Email for the alert topic. Kept out of the repo; without it the topic has no subscription. */
   readonly alertEmail?: string;
+  /**
+   * Google Cloud project for Vertex AI, kept out of the repo. Without it the worker uses the service account
+   * key's `project_id`.
+   */
+  readonly geminiVertexProject?: string;
   /** Next.js `.next/static` output, served under `/_next/static/`. */
   readonly appStaticDir: string;
   /** Next.js `public` folder; files under `public/static/` are served from S3. */
@@ -92,6 +105,13 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     );
   }
 
+  const geminiBackend = optionalString(raw, 'geminiBackend', where) ?? 'api';
+  if (!(GEMINI_BACKENDS as readonly string[]).includes(geminiBackend)) {
+    throw new Error(
+      `${where}.geminiBackend must be one of ${GEMINI_BACKENDS.join(', ')}: ${geminiBackend}`,
+    );
+  }
+
   return {
     domain,
     authDomainPrefix,
@@ -103,6 +123,8 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
       raw.appReservedConcurrency === undefined
         ? undefined
         : positiveInteger(raw, 'appReservedConcurrency', where),
+    geminiBackend: geminiBackend as GeminiBackend,
+    geminiVertexLocation: optionalString(raw, 'geminiVertexLocation', where),
   };
 }
 
@@ -132,6 +154,7 @@ function deploySettings(node: Node): DeploySettings {
     workerImageDigest,
     gitSha: contextString(node, 'gitSha') ?? 'local',
     alertEmail: contextString(node, 'alertEmail'),
+    geminiVertexProject: contextString(node, 'geminiVertexProject'),
     appStaticDir,
     appPublicDir: contextString(node, 'appPublicDir') ?? DEFAULT_APP_PUBLIC_DIR,
   };
