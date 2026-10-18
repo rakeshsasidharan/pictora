@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Rate limit reached for gpt-image-2 in organization org-test on images per minute (IPM): Limit 5, Used 5, Requested 1. Please try again in 12s.",
+    "type": "requests",
+    "param": null,
+    "code": "rate_limit_exceeded"
+  }
+}
