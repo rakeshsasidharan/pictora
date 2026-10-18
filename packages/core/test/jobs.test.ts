@@ -9,6 +9,7 @@ import {
   jobPk,
   rateSk,
   spendSk,
+  statsEnhancerSk,
   statsModelSk,
   statsPk,
   thumbnailKey,
@@ -35,6 +36,9 @@ describe('table keys', () => {
     expect(spendSk('2026-10')).toBe('SPEND#2026-10');
     expect(statsPk('2026-10-15')).toBe('STATS#2026-10-15');
     expect(statsModelSk('mock')).toBe('MODEL#mock');
+    expect(statsEnhancerSk('bedrock:us.openai.gpt-5.6-luna')).toBe(
+      'ENHANCER#bedrock:us.openai.gpt-5.6-luna',
+    );
     expect(activeJobsGsiPk('running')).toBe('JOBS#running');
     expect(activeJobsGsiPk('queued')).toBe('JOBS#queued');
   });

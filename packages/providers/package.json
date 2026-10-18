@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./text": {
+      "types": "./dist/text.d.ts",
+      "default": "./dist/text.js"
     }
   },
   "files": [
@@ -19,7 +23,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:providers": "tsx scripts/check_providers.ts",
-    "generate:samples": "tsx scripts/generate_samples.ts"
+    "generate:samples": "tsx scripts/generate_samples.ts",
+    "compare:enhancers": "tsx scripts/compare_enhancers.ts"
   },
   "devDependencies": {
     "aws-sdk-client-mock": "^4.1.0",

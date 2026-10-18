@@ -57,6 +57,7 @@ export const API_ERROR_STATUS = {
   model_disabled: 400,
   unsupported_option: 400,
   edit_unavailable: 400,
+  blocked: 422,
   out_of_points: 402,
   suspended: 403,
   account_deleting: 403,
@@ -67,6 +68,7 @@ export const API_ERROR_STATUS = {
   rate_limited: 429,
   too_many_jobs: 429,
   enqueue_failed: 503,
+  enhance_failed: 503,
   deletion_failed: 503,
 } as const;
 export type ApiErrorCode = keyof typeof API_ERROR_STATUS;
@@ -359,7 +361,8 @@ function plural(count: number, word: string): string {
   return count === 1 ? word : `${word}s`;
 }
 
-function logError(message: string, fields: Record<string, unknown>): void {
+/** Logs an error as one JSON line, with the error's message. */
+export function logError(message: string, fields: Record<string, unknown>): void {
   const { error, ...rest } = fields;
   console.error(
     JSON.stringify({

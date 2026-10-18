@@ -16,6 +16,7 @@ const devSettings = {
   spendCapUsd: 20,
   queueConcurrency: 5,
   budgetUsd: 15,
+  enhancerModel: 'mock',
 };
 
 function configFor(context: Record<string, unknown>, envName: 'dev' | 'prod' = 'dev') {
@@ -111,6 +112,27 @@ describe('stageConfig', () => {
       expect(() =>
         configFor({ environments: { dev: { ...devSettings, [key]: undefined } } }),
       ).toThrow(key);
+    },
+  );
+
+  it('reads the enhancer model for each environment', () => {
+    expect(configFor(cdkJsonContext()).enhancerModel).toBe('mock');
+    expect(configFor(cdkJsonContext(), 'prod').enhancerModel).toBe(
+      'bedrock:us.openai.gpt-5.6-luna',
+    );
+    expect(
+      configFor({
+        environments: { dev: { ...devSettings, enhancerModel: 'gemini:gemini-3.1-flash-lite' } },
+      }).enhancerModel,
+    ).toBe('gemini:gemini-3.1-flash-lite');
+  });
+
+  it.each([undefined, 'openai:gpt-5', 'bedrock:', 'luna'])(
+    'rejects the enhancer model %s',
+    (enhancerModel) => {
+      expect(() => configFor({ environments: { dev: { ...devSettings, enhancerModel } } })).toThrow(
+        /enhancerModel must be bedrock:<model ID>, gemini:<model ID> or mock/,
+      );
     },
   );
 

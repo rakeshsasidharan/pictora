@@ -24,6 +24,9 @@ const AUTH_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const IMAGE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
+/** `bedrock:<model or inference profile ID>`, `gemini:<model ID>` or `mock`, as `ENHANCER_MODEL` takes it. */
+const ENHANCER_MODEL_PATTERN = /^(?:(?:bedrock|gemini):[A-Za-z0-9._:-]+|mock)$/;
+
 /** Per-environment settings from the `environments` context in `infra/cdk.json` (tech design 10 and 14). */
 export interface EnvironmentSettings {
   /** Site domain under `rpillai.dev`. Without one, the site is served on the CloudFront domain. */
@@ -40,6 +43,8 @@ export interface EnvironmentSettings {
   readonly budgetUsd: number;
   /** Reserved concurrency for the app Lambda, as a cost guard. Unset means unreserved. */
   readonly appReservedConcurrency?: number;
+  /** The prompt enhancer model (tech design 6.3): `bedrock:<id>`, `gemini:<id>` or `mock`. */
+  readonly enhancerModel: string;
 }
 
 /** Values passed with `-c` at deploy time, with placeholders so synth works without them. */
@@ -92,6 +97,13 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     );
   }
 
+  const enhancerModel = optionalString(raw, 'enhancerModel', where);
+  if (enhancerModel === undefined || !ENHANCER_MODEL_PATTERN.test(enhancerModel)) {
+    throw new Error(
+      `${where}.enhancerModel must be bedrock:<model ID>, gemini:<model ID> or mock: ${enhancerModel ?? '(missing)'}`,
+    );
+  }
+
   return {
     domain,
     authDomainPrefix,
@@ -103,6 +115,7 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
       raw.appReservedConcurrency === undefined
         ? undefined
         : positiveInteger(raw, 'appReservedConcurrency', where),
+    enhancerModel,
   };
 }
 
