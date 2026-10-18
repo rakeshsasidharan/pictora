@@ -311,7 +311,7 @@ The biggest risks are model churn and runaway free-tier cost. Amazon retired two
 **Dependencies**
 
 - OpenAI API account with organisation verification and image model access.
-- Google AI (Gemini API) or Vertex AI project with billing and quota.
+- Google AI (Gemini API) project with billing and quota.
 - AWS account: Cognito, S3, SQS, Lambda, DynamoDB, Secrets Manager, CloudFront, and Bedrock model access for P1.
 - Google OAuth client for sign-in, plus a custom domain with TLS.
 - Legal: terms of service, content policy, privacy policy.
@@ -346,8 +346,8 @@ Public launch is November 6, 2026. The build is one developer working with codin
 
 - [x] Team size and start date, which set the real timeline.
 - [x] Daily budget: is 25 points ($0.25) per user right, and what is the platform-wide monthly spend cap?
-- [ ] Gemini through the Gemini API (simpler) or Vertex AI (enterprise terms, Google Cloud billing)?
-  Leaning toward Vertex AI so Gemini usage bills through Google Cloud; still to be explored before the provider setup work starts.
+- [x] Gemini through the Gemini API (simpler) or Vertex AI (enterprise terms, Google Cloud billing)?
+  Decided: the Gemini API with an API key. The adapter still supports Vertex AI through config, if needed later.
 - [ ] Which prompt enhancer model wins the quality and latency test: GPT-5.6 Luna on Bedrock or Gemini Flash?
 - [ ] Exact Gemini and OpenAI model IDs and prices, to verify against provider docs at build time.
 - [x] Launch geography: US only, or also EU/UK (affects GDPR, data region and age rules)?

@@ -5,5 +5,5 @@
     // Type-check against core's source, so checks don't need core built first. The build uses core's dist.
     "paths": { "@pictora/core": ["../core/src/index.ts"] }
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "scripts", "test", "vitest.config.ts"]
 }

@@ -54,6 +54,8 @@ The worker reads the provider API keys from Secrets Manager secrets `pictora/<en
 aws secretsmanager create-secret --region us-west-2 --name pictora/dev/openai --secret-string '<api key>'
 ```
 
+Both secrets hold the plain key string; Gemini uses a Gemini API key. To check the keys work, run `npm run check:providers` from the repo root with AWS credentials for the account. It makes one paid image call per enabled model, plus an OpenAI moderation call, and writes the images to a temp folder. Add `-- --env prod` to check prod, or `-- --provider openai,gemini` to skip Bedrock.
+
 ### Deploying a stage from a laptop
 
 ```sh
