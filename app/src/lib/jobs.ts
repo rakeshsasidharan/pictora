@@ -78,6 +78,16 @@ export function apiError(code: ApiErrorCode, message: string): ApiResult {
 
 const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
+/** For example `16 October at 12:30`. */
+const COOLDOWN_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZone: 'UTC',
+});
+
 /**
  * `POST /api/jobs` (tech design 5.1): validates the request, checks it against the model, estimates its points,
  * reserves them with the limits in one transaction, and queues the job. Answers 202 with the job ID.
@@ -217,7 +227,8 @@ export function profileRefusal(profile: Profile, now: Date): ApiResult | undefin
     );
   }
   if (inCooldown(profile, now) && profile.cooldownUntil) {
-    const until = profile.cooldownUntil.slice(11, 16);
+    // A cooldown lasts 24 hours, so the day matters as much as the time.
+    const until = COOLDOWN_END_FORMAT.format(new Date(profile.cooldownUntil));
     return apiError(
       'cooldown',
       `Image creation is paused for your account until ${until} UTC after several blocked requests.`,

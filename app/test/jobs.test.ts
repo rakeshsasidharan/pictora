@@ -334,7 +334,9 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     await setProfile(session.sub, { cooldownUntil: '2026-10-15T12:30:00.000Z' });
     const result = await createJob(deps(), session, generate());
     expect(result).toMatchObject({ status: 403, body: { code: 'cooldown' } });
-    expect(result.body.error).toMatch(/until 12:30 UTC/);
+    expect(result.body.error).toBe(
+      'Image creation is paused for your account until 15 October at 12:30 UTC after several blocked requests.',
+    );
     clock = new Date('2026-10-15T12:30:00Z');
     expect((await createJob(deps(), session, generate())).status).toBe(202);
   });

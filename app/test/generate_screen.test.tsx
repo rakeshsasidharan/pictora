@@ -43,6 +43,7 @@ function stubApi(options: {
       return json({ jobId: JOB_ID, pointsReserved: 2, ...next });
     }
     if (url === '/api/me') return json({ pointsLeft: 25, dailyLimit: 25, ...options.me });
+    if (url === '/api/reports') return json({ reportId: 'R1' }, 201);
     return json({}, 404);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -225,6 +226,24 @@ describe('GenerateScreen', () => {
       );
       fireEvent.keyDown(dialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('reports an image from the full-size view', async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'succeeded', pointsCharged: 6, images }] });
+      renderScreen();
+      fillAndGenerate();
+      fireEvent.click(await screen.findByRole('button', { name: 'View image 2 full size' }));
+      const dialog = screen.getByRole('dialog', { name: 'Full-size image' });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Report' }));
+      fireEvent.click(within(dialog).getByRole('radio', { name: 'Hate or harassment' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send report' }));
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageId: 'IMG2', version: 1, reason: 'hate' }),
+        }),
+      );
     });
 
     it('shows a plain-language reason and the refund when the job fails', async () => {

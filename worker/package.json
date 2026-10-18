@@ -23,6 +23,7 @@
     "@types/aws-lambda": "^8.10.164",
     "aws-sdk-client-mock": "^4.1.0",
     "esbuild": "^0.28.2",
+    "msw": "^2.15.0",
     "vitest": "^5.0.3"
   },
   "dependencies": {
