@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { expectStaticImagesLoaded } from '../src/images.js';
 
 /** The first bytes of every PNG file. */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -12,6 +13,14 @@ function pointsLeft(text: string | null): number {
 
 // The generate screen: prompt, style, size, quality and model, run with the mock provider (GEN-1 to GEN-10).
 test.describe('generate', () => {
+  test('the style picker shows a loaded sample thumbnail for every style but None', async ({
+    page,
+  }) => {
+    await page.goto('/generate');
+    // The thumbnails are decorative (empty alt text), so they are found inside the Style group.
+    await expectStaticImagesLoaded(page.getByRole('group', { name: 'Style' }).locator('img'), 8);
+  });
+
   test('generates two images with the mock provider, shows the cost and downloads a PNG', async ({
     page,
   }) => {
