@@ -37,8 +37,8 @@ export interface JobsDeps {
   hasQueue: (provider: Provider) => boolean;
   /** Sends `{ jobId }` to the provider's queue. */
   enqueue: (provider: Provider, jobId: string) => Promise<void>;
-  /** A presigned GET URL for an object in the images bucket. */
-  presign: (key: string) => Promise<string>;
+  /** A presigned GET URL for an object in the images bucket; with a download name, it saves as that file. */
+  presign: (key: string, downloadName?: string) => Promise<string>;
   defaultDailyPoints: number;
   now: () => Date;
   newJobId: () => string;
@@ -264,8 +264,8 @@ export interface JobStatusBody {
   finishedAt?: string;
   /** Plain-language reason when the job failed or was blocked (GEN-10). */
   error?: string;
-  /** The images, with presigned URLs, once the job succeeded. */
-  images?: { imageId: string; version: number; url: string }[];
+  /** The images once the job succeeded: presigned URLs to show each one and to download its original PNG. */
+  images?: { imageId: string; version: number; url: string; downloadUrl: string }[];
 }
 
 /**
@@ -304,10 +304,16 @@ export async function getJobStatus(
         imageId: image.imageId,
         version: image.version,
         url: await deps.presign(image.s3Key),
+        downloadUrl: await deps.presign(image.s3Key, imageFileName(image.imageId, image.version)),
       })),
     );
   }
   return { status: 200, body: { ...body } };
+}
+
+/** The file name a downloaded image is saved as, for example `pictora-01J…-v1.png`. */
+export function imageFileName(imageId: string, version: number): string {
+  return `pictora-${imageId}-v${version}.png`;
 }
 
 /** The `GET /api/me` body: the profile and today's points (LIM-1, LIM-2). */
