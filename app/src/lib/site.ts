@@ -12,3 +12,6 @@ export const ONBOARDING_PATH = '/onboarding';
 
 /** Account settings: profile details, today's points and account deletion (AUTH-3). */
 export const ACCOUNT_PATH = '/account';
+
+/** Where an edit starts: uploading an image of your own (EDIT-2). */
+export const EDIT_PATH = '/edit';

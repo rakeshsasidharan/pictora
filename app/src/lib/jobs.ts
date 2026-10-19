@@ -57,6 +57,9 @@ export const API_ERROR_STATUS = {
   model_disabled: 400,
   unsupported_option: 400,
   edit_unavailable: 400,
+  upload_wrong_type: 400,
+  not_an_image: 400,
+  upload_too_large: 413,
   blocked: 422,
   out_of_points: 402,
   suspended: 403,
@@ -70,6 +73,7 @@ export const API_ERROR_STATUS = {
   enqueue_failed: 503,
   enhance_failed: 503,
   deletion_failed: 503,
+  moderation_failed: 503,
 } as const;
 export type ApiErrorCode = keyof typeof API_ERROR_STATUS;
 

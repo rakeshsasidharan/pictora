@@ -7,6 +7,12 @@ export type EnvName = 'dev' | 'prod';
 /** The Route 53 hosted zone that holds the site records and certificate validation (tech design 14). */
 export const HOSTED_ZONE_NAME = 'rpillai.dev';
 
+/** Local `next dev`, allowed as a sign-in callback and an upload origin in dev only. */
+export const LOCAL_DEV_URL = 'http://localhost:3000';
+
+/** Every CloudFront domain, the site's origin while an environment has no custom domain. */
+export const CLOUDFRONT_ORIGIN = 'https://*.cloudfront.net';
+
 /** Used when no `hostedZoneId` context is given, so synth works without AWS access. Deploys pass the real ID. */
 export const PLACEHOLDER_HOSTED_ZONE_ID = 'Z0000000000PLACEHOLDER';
 

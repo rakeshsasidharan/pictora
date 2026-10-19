@@ -6,7 +6,7 @@ export interface ComingSoonFeature {
   issue: number;
 }
 
-/** Features the generate screen links to before they land (edit #22, gallery #23). */
+/** Features the generate and upload screens link to before they land (edit #22, gallery #23). */
 export const COMING_SOON = {
   edit: { name: 'Edit', issue: 22 },
   gallery: { name: 'Gallery', issue: 23 },
