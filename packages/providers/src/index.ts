@@ -13,6 +13,7 @@ export {
   ProviderTimeoutError,
   toProviderError,
 } from './errors.js';
+export * from './enhancer.js';
 export { createProviderFactory, DEFAULT_ADAPTERS, guardProvider } from './factory.js';
 export type { AdapterFactory, ProviderFactoryOptions } from './factory.js';
 export {

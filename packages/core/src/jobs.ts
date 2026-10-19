@@ -140,6 +140,11 @@ export function statsModelSk(modelId: string): string {
   return `MODEL#${modelId}`;
 }
 
+/** Prompt enhancer overhead for the day, per enhancer model (`bedrock:<id>`, `gemini:<id>` or `mock`). */
+export function statsEnhancerSk(enhancerModel: string): string {
+  return `ENHANCER#${enhancerModel}`;
+}
+
 /** Digits in a usage item's `GSI1SK`, so the ADM-3 top-users query sorts by points used. */
 export const USAGE_RANK_DIGITS = 10;
 

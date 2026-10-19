@@ -26,6 +26,7 @@ export {
   jobPk,
   rateSk,
   spendSk,
+  statsEnhancerSk,
   statsModelSk,
   statsPk,
   thumbnailKey,

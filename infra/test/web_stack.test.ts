@@ -1,6 +1,7 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { CERTIFICATE_REGION } from '../lib/certificate_stack.js';
+import { US_INFERENCE_REGIONS, enhancerModelArns } from '../lib/web_stack.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
 /** AWS managed CloudFront policy IDs. */
@@ -50,6 +51,51 @@ describe('Web stack: app Lambda', () => {
       COGNITO_DOMAIN: expect.anything(),
       ORIGIN_VERIFY_SECRET_ARN: { Ref: expect.stringMatching(/^OriginVerifySecret/) },
     });
+  });
+
+  it('passes the enhancer model and secret names, and reads only the secrets it needs', () => {
+    expect(appFunction(dev).Environment.Variables).toMatchObject({
+      ENHANCER_MODEL: 'mock',
+      OPENAI_SECRET_ID: 'pictora/dev/openai',
+    });
+    expect(appFunction(dev).Environment.Variables).not.toHaveProperty('GEMINI_SECRET_ID');
+    expect(appFunction(prod).Environment.Variables).toMatchObject({
+      ENHANCER_MODEL: 'bedrock:us.openai.gpt-5.6-luna',
+      OPENAI_SECRET_ID: 'pictora/prod/openai',
+    });
+    const reads = (template: Template) =>
+      JSON.stringify(
+        Object.values(template.findResources('AWS::IAM::Policy')).map(
+          (policy) => policy.Properties.PolicyDocument.Statement,
+        ),
+      );
+    expect(reads(dev)).toContain('secret:pictora/dev/openai');
+    expect(reads(dev)).not.toContain('secret:pictora/dev/gemini');
+    expect(reads(dev)).not.toContain('bedrock:InvokeModel');
+  });
+
+  it('may invoke only the Bedrock enhancer profile and its model in the US regions', () => {
+    const statements = Object.values(prod.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const invoke = statements.filter((statement) => statement.Action === 'bedrock:InvokeModel');
+    expect(invoke).toHaveLength(1);
+    const resources = JSON.stringify(invoke[0]?.Resource);
+    expect(resources).toContain(':bedrock:us-west-2:');
+    expect(resources).toContain(':inference-profile/us.openai.gpt-5.6-luna');
+    for (const region of US_INFERENCE_REGIONS) {
+      expect(resources).toContain(`:bedrock:${region}::foundation-model/openai.gpt-5.6-luna`);
+    }
+  });
+
+  it('builds the Bedrock enhancer resources for a bare model and a global profile', () => {
+    const stack = devStage.web;
+    expect(JSON.stringify(enhancerModelArns(stack, 'openai.gpt-5.6-luna'))).toContain(
+      ':bedrock:us-west-2::foundation-model/openai.gpt-5.6-luna',
+    );
+    const global = JSON.stringify(enhancerModelArns(stack, 'global.openai.gpt-5.6-luna'));
+    expect(global).toContain(':inference-profile/global.openai.gpt-5.6-luna');
+    expect(global).toContain(':bedrock:*::foundation-model/openai.gpt-5.6-luna');
   });
 
   it('passes the provider queue URLs from the Jobs stack, and may send to those queues only', () => {

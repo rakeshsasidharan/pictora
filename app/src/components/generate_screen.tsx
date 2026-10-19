@@ -9,7 +9,7 @@ import {
   type StyleId,
 } from '@pictora/core';
 import Image from 'next/image';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { ComingSoonFeature } from '../lib/coming_soon';
 import {
   DEFAULT_QUALITY,
@@ -54,6 +54,94 @@ interface SubmittedJob {
   prompt: string;
 }
 
+/** The enhancer's output for one prompt, style and model, as the user may have edited it (ENH-2). */
+interface EnhancedPrompt {
+  /** The prompt, style and model it was made for; a change to any of them enhances again. */
+  source: string;
+  text: string;
+}
+
+/** Where the "Enhance prompt" toggle is remembered, per browser (ENH-1). */
+export const ENHANCE_STORAGE_KEY = 'pictora.enhancePrompt';
+
+const enhanceListeners = new Set<() => void>();
+
+function storedEnhanceSetting(): boolean {
+  try {
+    return window.localStorage.getItem(ENHANCE_STORAGE_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function storeEnhanceSetting(on: boolean): void {
+  try {
+    window.localStorage.setItem(ENHANCE_STORAGE_KEY, on ? 'on' : 'off');
+  } catch {
+    // Private windows may refuse storage; the toggle still works for this visit.
+  }
+  for (const listener of enhanceListeners) listener();
+}
+
+/** Follows the stored setting, including changes made in other tabs. */
+function subscribeEnhanceSetting(listener: () => void): () => void {
+  enhanceListeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    enhanceListeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
+type Enhancement =
+  | { kind: 'enhanced'; text: string }
+  | { kind: 'own-words'; notice: string }
+  | { kind: 'refused'; error: string };
+
+/**
+ * Asks `/api/enhance` for a richer prompt. A flagged output, an unavailable enhancer or a network error fall
+ * back to the user's own words with a notice; a blocked prompt or an account refusal stops the request.
+ */
+async function requestEnhancement(
+  prompt: string,
+  style: StyleId,
+  modelId: string,
+): Promise<Enhancement> {
+  try {
+    const response = await fetch('/api/enhance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, style, modelId }),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      enhancedPrompt?: string;
+      fallback?: boolean;
+      error?: string;
+    };
+    if (response.ok && body.enhancedPrompt) {
+      if (body.fallback) {
+        return {
+          kind: 'own-words',
+          notice: "We used your own words, because the enhanced prompt didn't pass our checks.",
+        };
+      }
+      return { kind: 'enhanced', text: body.enhancedPrompt };
+    }
+    if (response.status === 403 || response.status === 422 || response.status === 429) {
+      return { kind: 'refused', error: body.error ?? "We couldn't enhance your prompt." };
+    }
+    return {
+      kind: 'own-words',
+      notice: "The prompt enhancer isn't available right now, so we used your own words.",
+    };
+  } catch {
+    return {
+      kind: 'own-words',
+      notice: "The prompt enhancer isn't available right now, so we used your own words.",
+    };
+  }
+}
+
 const COUNTS = Array.from(
   { length: MAX_IMAGE_COUNT - MIN_IMAGE_COUNT + 1 },
   (_, index) => MIN_IMAGE_COUNT + index,
@@ -88,6 +176,17 @@ export function GenerateScreen({
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<SubmittedJob>();
   const [toast, setToast] = useState<ComingSoonFeature>();
+  // The server render, and so hydration, assumes the default: on.
+  const storedEnhanceOn = useSyncExternalStore(
+    subscribeEnhanceSetting,
+    storedEnhanceSetting,
+    () => true,
+  );
+  /** Set by "Use my words" for this visit only, without changing the remembered setting. */
+  const [enhanceOverride, setEnhanceOverride] = useState<boolean>();
+  const enhanceOn = enhanceOverride ?? storedEnhanceOn;
+  const [enhanced, setEnhanced] = useState<EnhancedPrompt>();
+  const [notice, setNotice] = useState<string>();
 
   const refreshPoints = useCallback(async () => {
     try {
@@ -142,8 +241,26 @@ export function GenerateScreen({
     if (suggested) chooseModel(suggested);
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function toggleEnhance(on: boolean) {
+    setEnhanceOverride(undefined);
+    storeEnhanceSetting(on);
+    if (!on) setEnhanced(undefined);
+  }
+
+  /** "Use my words": drops the enhanced prompt, so the next images use exactly what the user typed (ENH-2). */
+  function useMyWords() {
+    setEnhanced(undefined);
+    setEnhanceOverride(false);
+    setNotice(undefined);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    void run();
+  }
+
+  /** Generates; `fromPanel` means "Regenerate with this prompt", which always uses the panel's text. */
+  async function run(fromPanel = false) {
     if (!model || !choices || busy) return;
     const text = prompt.trim();
     if (!text) {
@@ -152,14 +269,39 @@ export function GenerateScreen({
     }
     if (!affordable) return;
     setFormError(undefined);
+    setNotice(undefined);
     setSubmitting(true);
     try {
+      let finalPrompt: string | undefined;
+      if (enhanceOn) {
+        const source = JSON.stringify([text, styleId, model.id]);
+        if (enhanced && (fromPanel || enhanced.source === source)) {
+          // Reuse the enhanced prompt, with the user's edits, until the prompt, style or model changes.
+          finalPrompt = enhanced.text.trim() || undefined;
+          if (enhanced.source !== source) setEnhanced({ ...enhanced, source });
+        } else {
+          const enhancement = await requestEnhancement(text, styleId, model.id);
+          if (enhancement.kind === 'refused') {
+            setFormError(enhancement.error);
+            return;
+          }
+          if (enhancement.kind === 'own-words') {
+            setEnhanced(undefined);
+            setNotice(enhancement.notice);
+          } else {
+            setEnhanced({ source, text: enhancement.text });
+            finalPrompt = enhancement.text;
+          }
+        }
+      }
+      const enhancedPrompt = finalPrompt && finalPrompt !== text ? finalPrompt : undefined;
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'generate',
           prompt: text,
+          ...(enhancedPrompt ? { enhancedPrompt } : {}),
           ...(model.capabilities.negativePrompt && avoid.trim() ? { avoid: avoid.trim() } : {}),
           style: styleId,
           modelId: model.id,
@@ -229,6 +371,18 @@ export function GenerateScreen({
             />
           </div>
         )}
+
+        <label className="checkbox enhance-toggle">
+          <input
+            type="checkbox"
+            checked={enhanceOn}
+            onChange={(event) => toggleEnhance(event.target.checked)}
+          />
+          Enhance prompt
+          <span className="field-hint">
+            Adds detail about the subject, composition and lighting. You can edit the result.
+          </span>
+        </label>
 
         <fieldset className="style-picker">
           <legend>Style</legend>
@@ -383,6 +537,36 @@ export function GenerateScreen({
         </div>
       </form>
 
+      {notice && (
+        <p className="form-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {enhanceOn && enhanced && (
+        <section className="enhanced-panel" aria-label="Enhanced prompt">
+          <label htmlFor="enhanced-prompt">Enhanced prompt</label>
+          <textarea
+            id="enhanced-prompt"
+            rows={4}
+            maxLength={MAX_PROMPT_LENGTH}
+            value={enhanced.text}
+            onChange={(event) => setEnhanced({ ...enhanced, text: event.target.value })}
+          />
+          <div className="enhanced-actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!affordable || busy || !enhanced.text.trim()}
+              onClick={() => void run(true)}
+            >
+              Regenerate with this prompt
+            </button>
+            <button type="button" className="button" onClick={useMyWords}>
+              Use my words
+            </button>
+          </div>
+        </section>
+      )}
       {job && (
         <JobProgress
           key={job.id}

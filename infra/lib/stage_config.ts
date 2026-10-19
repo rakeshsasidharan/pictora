@@ -24,6 +24,9 @@ const AUTH_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const IMAGE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
+/** `bedrock:<model or inference profile ID>`, `gemini:<model ID>` or `mock`, as `ENHANCER_MODEL` takes it. */
+const ENHANCER_MODEL_PATTERN = /^(?:(?:bedrock|gemini):[A-Za-z0-9._:-]+|mock)$/;
+
 /** Where the worker calls Gemini: the Gemini API with an API key, or Vertex AI (tech design 10). */
 export const GEMINI_BACKENDS = ['api', 'vertex'] as const;
 export type GeminiBackend = (typeof GEMINI_BACKENDS)[number];
@@ -44,6 +47,8 @@ export interface EnvironmentSettings {
   readonly budgetUsd: number;
   /** Reserved concurrency for the app Lambda, as a cost guard. Unset means unreserved. */
   readonly appReservedConcurrency?: number;
+  /** The prompt enhancer model (tech design 6.3): `bedrock:<id>`, `gemini:<id>` or `mock`. */
+  readonly enhancerModel: string;
   /** `api` (the default) or `vertex`. The secret `pictora/<env>/gemini` must hold the matching credential. */
   readonly geminiBackend: GeminiBackend;
   /** Vertex AI location; the worker defaults to `global`. */
@@ -105,6 +110,13 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     );
   }
 
+  const enhancerModel = optionalString(raw, 'enhancerModel', where);
+  if (enhancerModel === undefined || !ENHANCER_MODEL_PATTERN.test(enhancerModel)) {
+    throw new Error(
+      `${where}.enhancerModel must be bedrock:<model ID>, gemini:<model ID> or mock: ${enhancerModel ?? '(missing)'}`,
+    );
+  }
+
   const geminiBackend = optionalString(raw, 'geminiBackend', where) ?? 'api';
   if (!(GEMINI_BACKENDS as readonly string[]).includes(geminiBackend)) {
     throw new Error(
@@ -123,6 +135,7 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
       raw.appReservedConcurrency === undefined
         ? undefined
         : positiveInteger(raw, 'appReservedConcurrency', where),
+    enhancerModel,
     geminiBackend: geminiBackend as GeminiBackend,
     geminiVertexLocation: optionalString(raw, 'geminiVertexLocation', where),
   };

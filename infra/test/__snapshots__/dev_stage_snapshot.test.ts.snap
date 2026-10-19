@@ -2763,6 +2763,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
               },
             },
             "DAILY_POINTS": "1000",
+            "ENHANCER_MODEL": "mock",
             "GEMINI_QUEUE_URL": {
               "Fn::GetStackOutput": {
                 "OutputName": "PublishOutputRefGeminiQueue107AFA754FBDA33C",
@@ -2785,6 +2786,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
                 "StackName": "PictoraDev-Jobs",
               },
             },
+            "OPENAI_SECRET_ID": "pictora/dev/openai",
             "ORIGIN_VERIFY_SECRET_ARN": {
               "Ref": "OriginVerifySecret1DED2FB3",
             },
@@ -2913,9 +2915,23 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
                 "secretsmanager:GetSecretValue",
               ],
               "Effect": "Allow",
-              "Resource": {
-                "Ref": "OriginVerifySecret1DED2FB3",
-              },
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/openai-??????",
+                    ],
+                  ],
+                },
+                {
+                  "Ref": "OriginVerifySecret1DED2FB3",
+                },
+              ],
             },
             {
               "Action": [

@@ -501,6 +501,49 @@ img {
   gap: 8px;
 }
 
+.enhance-toggle {
+  flex-wrap: wrap;
+}
+
+.enhance-toggle .field-hint {
+  flex-basis: 100%;
+  margin-left: 24px;
+}
+
+.enhanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.enhanced-panel label {
+  font-weight: 600;
+}
+
+.enhanced-panel textarea {
+  width: 100%;
+  font: inherit;
+}
+
+.enhanced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.form-notice {
+  margin: 16px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--notice-border);
+  border-radius: 8px;
+  background: var(--notice);
+}
+
 .advanced summary {
   cursor: pointer;
   font-weight: 600;

@@ -2,7 +2,11 @@
 import { loadSeedRegistry, modelsForEnvironment, MAX_PROMPT_LENGTH } from '@pictora/core';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GenerateScreen, type PointsLeft } from '../src/components/generate_screen';
+import {
+  ENHANCE_STORAGE_KEY,
+  GenerateScreen,
+  type PointsLeft,
+} from '../src/components/generate_screen';
 import { modelsResponse } from '../src/lib/models_response';
 import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 
@@ -28,14 +32,26 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/** A fetch stand-in: POST /api/jobs answers `created`, each job poll the next status, /api/me `me`. */
+/**
+ * A fetch stand-in: POST /api/jobs answers `created`, each job poll the next status, /api/me `me`.
+ * POST /api/enhance answers `enhance`, or by default returns the prompt unchanged.
+ */
 function stubApi(options: {
   created?: Response;
   statuses?: Record<string, unknown>[];
   me?: Record<string, unknown>;
+  enhance?: (body: { prompt: string; style: string; modelId: string }) => Response;
 }) {
   const statuses = [...(options.statuses ?? [])];
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/enhance' && init?.method === 'POST') {
+      const body = JSON.parse(init.body as string) as {
+        prompt: string;
+        style: string;
+        modelId: string;
+      };
+      return options.enhance?.(body) ?? json({ enhancedPrompt: body.prompt });
+    }
     if (url === '/api/jobs' && init?.method === 'POST') {
       return options.created ?? json({ jobId: JOB_ID, status: 'queued', pointsReserved: 2 }, 202);
     }
@@ -65,10 +81,190 @@ function fillAndGenerate(text = 'A lighthouse at dusk') {
   fireEvent.click(generate());
 }
 
+/** The JSON body of each call to `url`, in order. */
+function bodiesOf(fetchMock: ReturnType<typeof stubApi>, url: string): Record<string, unknown>[] {
+  return fetchMock.mock.calls
+    .filter(([called]) => called === url)
+    .map(([, init]) => JSON.parse((init as RequestInit).body as string) as Record<string, unknown>);
+}
+
+const ENHANCED = 'A lighthouse on a rocky headland at dusk, warm lamp glow, violet sky';
+
 describe('GenerateScreen', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  describe('prompt enhancer', () => {
+    const toggle = () =>
+      screen.getByRole('checkbox', { name: /Enhance prompt/ }) as HTMLInputElement;
+    const panel = () => screen.queryByRole('region', { name: 'Enhanced prompt' });
+    const enhancedBox = () =>
+      screen.getByRole('textbox', { name: 'Enhanced prompt' }) as HTMLTextAreaElement;
+
+    it('is on by default and remembers being turned off', () => {
+      renderScreen();
+      expect(toggle().checked).toBe(true);
+      fireEvent.click(toggle());
+      expect(toggle().checked).toBe(false);
+      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('off');
+      cleanup();
+
+      renderScreen();
+      expect(toggle().checked).toBe(false);
+      fireEvent.click(toggle());
+      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('on');
+    });
+
+    it('enhances first, shows the enhanced prompt and generates from it', async () => {
+      const fetchMock = stubApi({ enhance: () => json({ enhancedPrompt: ENHANCED }) });
+      renderScreen();
+      fillAndGenerate('  A lighthouse at dusk ');
+
+      await screen.findByText('Status: Queued');
+      expect(bodiesOf(fetchMock, '/api/enhance')).toEqual([
+        { prompt: 'A lighthouse at dusk', style: 'none', modelId: 'gpt-image-2' },
+      ]);
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({
+        prompt: 'A lighthouse at dusk',
+        enhancedPrompt: ENHANCED,
+      });
+      expect(panel()).toBeTruthy();
+      expect(enhancedBox().value).toBe(ENHANCED);
+    });
+
+    it('regenerates from an edited enhanced prompt without enhancing again', async () => {
+      const fetchMock = stubApi({
+        enhance: () => json({ enhancedPrompt: ENHANCED }),
+        statuses: [{ status: 'succeeded', images: [] }],
+      });
+      renderScreen();
+      fillAndGenerate();
+      await screen.findByText('Status: Done');
+
+      fireEvent.change(enhancedBox(), { target: { value: `${ENHANCED}, light rain` } });
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate with this prompt' }));
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(2));
+      expect(bodiesOf(fetchMock, '/api/jobs')[1]).toMatchObject({
+        enhancedPrompt: `${ENHANCED}, light rain`,
+      });
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(1);
+    });
+
+    it('keeps the panel text when regenerating from it after the prompt changed', async () => {
+      const fetchMock = stubApi({
+        enhance: () => json({ enhancedPrompt: ENHANCED }),
+        statuses: [{ status: 'succeeded', images: [] }],
+      });
+      renderScreen();
+      fillAndGenerate();
+      await screen.findByText('Status: Done');
+      fireEvent.change(prompt(), { target: { value: 'A lighthouse at dawn' } });
+      fireEvent.change(enhancedBox(), { target: { value: 'My own detailed prompt' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate with this prompt' }));
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(2));
+      expect(bodiesOf(fetchMock, '/api/jobs')[1]).toMatchObject({
+        prompt: 'A lighthouse at dawn',
+        enhancedPrompt: 'My own detailed prompt',
+      });
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(1);
+    });
+
+    it('enhances again when the prompt changes', async () => {
+      const fetchMock = stubApi({
+        enhance: ({ prompt: text }) => json({ enhancedPrompt: `${text}, detailed` }),
+        statuses: [{ status: 'succeeded', images: [] }],
+      });
+      renderScreen();
+      fillAndGenerate('A red fox');
+      await screen.findByText('Status: Done');
+      fillAndGenerate('A blue whale');
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(2));
+      expect(bodiesOf(fetchMock, '/api/enhance').map((body) => body.prompt)).toEqual([
+        'A red fox',
+        'A blue whale',
+      ]);
+      expect(bodiesOf(fetchMock, '/api/jobs')[1]).toMatchObject({
+        enhancedPrompt: 'A blue whale, detailed',
+      });
+    });
+
+    it('"Use my words" goes back to the exact prompt', async () => {
+      const fetchMock = stubApi({
+        enhance: () => json({ enhancedPrompt: ENHANCED }),
+        statuses: [{ status: 'succeeded', images: [] }],
+      });
+      renderScreen();
+      fillAndGenerate();
+      await screen.findByText('Status: Done');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Use my words' }));
+      expect(panel()).toBeNull();
+      expect(toggle().checked).toBe(false);
+      // Only for this visit: the remembered setting stays on.
+      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBeNull();
+      fireEvent.click(generate());
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(2));
+      expect(bodiesOf(fetchMock, '/api/jobs')[1]).not.toHaveProperty('enhancedPrompt');
+      expect(bodiesOf(fetchMock, '/api/jobs')[1]).toMatchObject({ prompt: 'A lighthouse at dusk' });
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(1);
+    });
+
+    it('sends the exact words when turned off', async () => {
+      const fetchMock = stubApi({ enhance: () => json({ enhancedPrompt: ENHANCED }) });
+      renderScreen();
+      fireEvent.click(toggle());
+      fillAndGenerate('  my exact words ');
+      await screen.findByText('Status: Queued');
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(0);
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({ prompt: 'my exact words' });
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).not.toHaveProperty('enhancedPrompt');
+      expect(panel()).toBeNull();
+    });
+
+    it('uses the user words with a notice when the output failed the checks', async () => {
+      const fetchMock = stubApi({
+        enhance: ({ prompt: text }) => json({ enhancedPrompt: text, fallback: true }),
+      });
+      renderScreen();
+      fillAndGenerate();
+      await screen.findByText('Status: Queued');
+      expect(screen.getByText(/didn't pass our checks/).getAttribute('role')).toBe('status');
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).not.toHaveProperty('enhancedPrompt');
+      expect(panel()).toBeNull();
+    });
+
+    it('carries on with the user words when the enhancer is unavailable', async () => {
+      const fetchMock = stubApi({
+        enhance: () => json({ error: 'unavailable', code: 'enhance_failed' }, 503),
+      });
+      renderScreen();
+      fillAndGenerate();
+      await screen.findByText('Status: Queued');
+      expect(screen.getByText(/isn't available right now/).getAttribute('role')).toBe('status');
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({ prompt: 'A lighthouse at dusk' });
+    });
+
+    it('stops with the reason when the prompt is blocked', async () => {
+      const fetchMock = stubApi({
+        enhance: () =>
+          json(
+            {
+              error: 'This prompt was blocked by our content policy. Try rewording it.',
+              code: 'blocked',
+            },
+            422,
+          ),
+      });
+      renderScreen();
+      fillAndGenerate();
+      expect((await screen.findByRole('alert')).textContent).toMatch(
+        /blocked by our content policy/,
+      );
+      expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(0);
+    });
   });
 
   describe('form', () => {
