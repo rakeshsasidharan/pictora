@@ -6,10 +6,11 @@ import { SAMPLE_IMAGES } from '../../../app/src/lib/sample_images.js';
 import { BEDROCK_REGION, BedrockProvider } from '../src/bedrock.js';
 import { guardProvider } from '../src/factory.js';
 import { GeminiProvider, geminiConfigFromEnv } from '../src/gemini.js';
+import { OpenAiProvider } from '../src/openai.js';
 import { providerSignal } from '../src/retry.js';
 import { secretApiKey, secretString } from '../src/secrets.js';
 import type { ImageProvider } from '../src/types.js';
-import { OpenAiCheckProvider, secretName, type LiveProvider } from './live_check.js';
+import { secretName, type LiveProvider } from './live_check.js';
 import { APP_PUBLIC_DIR, parseSampleArgs, planSamples, toSampleWebp } from './style_samples.js';
 
 /**
@@ -34,7 +35,7 @@ async function main(): Promise<number> {
   for (const provider of new Set(plans.map((plan) => plan.model.provider))) {
     if (provider === 'openai') {
       const apiKey = await secretApiKey(secretName('dev', provider), { client: secrets })();
-      adapters.openai = new OpenAiCheckProvider(apiKey);
+      adapters.openai = new OpenAiProvider({ apiKey: () => Promise.resolve(apiKey) });
     } else if (provider === 'gemini') {
       adapters.gemini = new GeminiProvider({
         config: geminiConfigFromEnv(),

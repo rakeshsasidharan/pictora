@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BEDROCK_REGION, BedrockProvider } from '../src/bedrock.js';
 import { GeminiProvider, geminiConfigFromEnv } from '../src/gemini.js';
+import { OpenAiProvider } from '../src/openai.js';
 import type { ImageProvider } from '../src/types.js';
 import {
-  OpenAiCheckProvider,
+  OpenAiModerationCheck,
   formatResults,
   parseArgs,
   runChecks,
@@ -48,9 +49,10 @@ async function main(): Promise<number> {
   const adapters: Partial<Record<LiveProvider, ImageProvider>> = {};
   const deps: CheckDeps = { adapters };
   if (used.has('openai')) {
-    const openai = new OpenAiCheckProvider(await readSecret('openai'));
-    adapters.openai = openai;
-    deps.moderate = (input, signal) => openai.moderate(input, signal);
+    const apiKey = await readSecret('openai');
+    adapters.openai = new OpenAiProvider({ apiKey: () => Promise.resolve(apiKey) });
+    const moderation = new OpenAiModerationCheck(apiKey);
+    deps.moderate = (input, signal) => moderation.moderate(input, signal);
   }
   if (used.has('gemini')) {
     // GEMINI_BACKEND (and GEMINI_VERTEX_PROJECT and GEMINI_VERTEX_LOCATION) pick the backend, as in the worker.

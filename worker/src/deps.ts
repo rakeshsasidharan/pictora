@@ -6,6 +6,7 @@ import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/regist
 import {
   DEFAULT_ADAPTERS,
   GeminiProvider,
+  OpenAiProvider,
   createModerator,
   createProviderFactory,
   geminiConfigFromEnv,
@@ -44,14 +45,14 @@ export function tableContext(env: NodeJS.ProcessEnv = process.env): TableContext
 
 /**
  * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
- * registry cached for 60 s, the provider adapters, and moderation with the OpenAI key from the secret named in
- * `OPENAI_SECRET_ID`. The Gemini adapter reads the secret named in `GEMINI_SECRET_ID` and its backend from
- * `GEMINI_BACKEND` (`geminiConfigFromEnv`).
+ * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
+ * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
+ * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`).
  */
 export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
   const table = tableContext(env);
   const bucket = required('IMAGES_BUCKET', env);
-  const openAiSecretId = required('OPENAI_SECRET_ID', env);
+  const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
   const geminiSecretId = required('GEMINI_SECRET_ID', env);
   const geminiConfig = geminiConfigFromEnv(env);
   const registry = createRegistryLoader({
@@ -66,11 +67,12 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
     provider: createProviderFactory({
       adapters: {
         ...DEFAULT_ADAPTERS,
+        openai: () => new OpenAiProvider({ apiKey: openAiKey }),
         gemini: () =>
           new GeminiProvider({ config: geminiConfig, credential: secretString(geminiSecretId) }),
       },
     }),
-    moderate: moderateImageRequests(createModerator({ apiKey: secretApiKey(openAiSecretId) })),
+    moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),
     now: () => new Date(),
     newImageId: () => ulid(),
   };

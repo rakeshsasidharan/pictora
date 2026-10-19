@@ -57,6 +57,15 @@ export {
   parseModeration,
 } from './moderation.js';
 export type { Moderate, ModerationInput, ModeratorOptions } from './moderation.js';
+export {
+  OPENAI_MAX_REFERENCE_IMAGES,
+  OPENAI_TOKEN_PRICES,
+  OpenAiProvider,
+  openAiCostCents,
+  openAiRequestParams,
+  toOpenAiError,
+} from './openai.js';
+export type { OpenAiProviderOptions, OpenAiTokenPrices } from './openai.js';
 export { PROVIDER_IDS, isProviderId } from './provider_ids.js';
 export type { ProviderId } from './provider_ids.js';
 export {
