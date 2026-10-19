@@ -31,6 +31,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.1152.0",
     "@aws-sdk/client-secrets-manager": "^3.1152.0",
     "@pictora/core": "^0.0.0",
+    "openai": "^7.38.0",
     "sharp": "^0.35.5"
   }
 }

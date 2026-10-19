@@ -9,6 +9,7 @@ import {
   type Provider,
   type Quality,
 } from '@pictora/core';
+import sharp from 'sharp';
 import { ProviderError, ProviderSafetyError } from '../src/errors.js';
 import { guardProvider } from '../src/factory.js';
 import { normalisePng } from '../src/image.js';
@@ -17,8 +18,9 @@ import type { ImageProvider, ImageRequest, ImageResult } from '../src/types.js';
 
 /**
  * The live provider check (tech design 13): one draft image per enabled model with real credentials, run by
- * hand on a laptop before a prod release. Never run in CI. OpenAI and Gemini are called through the small
- * clients below until their adapters (#14, #15) exist; Bedrock goes through its adapter.
+ * hand on a laptop before a prod release. Never run in CI. OpenAI and Bedrock go through their adapters, and
+ * models that offer transparent backgrounds get a second check that the PNG has an alpha channel (GEN-9).
+ * Gemini is called through the small client below until its adapter (#15) exists.
  */
 
 export const CHECK_PROMPT = 'A red apple on a wooden table, soft daylight';
@@ -117,49 +119,12 @@ function unsupportedEdit(model: ModelConfig): Promise<ImageResult> {
   return Promise.reject(new ProviderError(`The live check only generates (model ${model.id})`));
 }
 
-/** One OpenAI image per call via `POST /v1/images/generations`; GPT Image models return base64 PNGs. */
-export class OpenAiCheckProvider implements ImageProvider {
+/** OpenAI's moderation endpoint, checked once per run. Images go through the OpenAI adapter. */
+export class OpenAiModerationCheck {
   constructor(
     private readonly apiKey: string,
     private readonly fetchFn: FetchFn = fetch,
   ) {}
-
-  async generate(model: ModelConfig, req: ImageRequest): Promise<ImageResult> {
-    const quality = model.qualities[req.quality];
-    if (!quality) throw new ProviderError(`Model ${model.id} has no ${req.quality} quality`);
-    const { generated } = mapAspect(model, req.aspect, req.quality);
-    const response = await this.fetchFn(`${OPENAI_API_URL}/images/generations`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: model.providerModelId,
-        prompt: req.prompt,
-        size: `${generated.width}x${generated.height}`,
-        n: req.count,
-        output_format: 'png',
-        ...quality.providerParams,
-      }),
-      signal: req.signal,
-    });
-    await assertOk(response, 'OpenAI');
-    const body = (await response.json()) as { data?: { b64_json?: unknown }[] };
-    const encoded = (body.data ?? [])
-      .map((item) => item.b64_json)
-      .filter((value): value is string => typeof value === 'string' && value !== '');
-    if (encoded.length === 0) throw new ProviderError(`Model ${model.id} returned no image`);
-    const images = await Promise.all(
-      encoded.map((value) => normalisePng(new Uint8Array(Buffer.from(value, 'base64')))),
-    );
-    return {
-      images,
-      providerRequestId: response.headers.get('x-request-id') ?? undefined,
-      providerCostCents: quality.costPoints * images.length,
-    };
-  }
-
-  edit(model: ModelConfig): Promise<ImageResult> {
-    return unsupportedEdit(model);
-  }
 
   /** Runs the moderation endpoint on a harmless input; returns whether it was flagged. */
   async moderate(input: string, signal: AbortSignal): Promise<boolean> {
@@ -291,7 +256,6 @@ export async function runChecks(
   const results: CheckResult[] = [];
   for (const model of models) {
     const quality = cheapestQuality(model);
-    const started = now();
     const adapter = deps.adapters[model.provider as LiveProvider];
     if (!adapter) {
       results.push({
@@ -303,32 +267,9 @@ export async function runChecks(
       });
       continue;
     }
-    try {
-      const result = await guardProvider(adapter).generate(model, {
-        prompt: CHECK_PROMPT,
-        aspect: '1:1',
-        quality,
-        count: 1,
-        signal: providerSignal(),
-      });
-      const [image] = result.images;
-      if (!image) throw new ProviderError(`Model ${model.id} returned no image`);
-      results.push({
-        name: model.id,
-        quality,
-        ok: true,
-        detail: `${image.width}x${image.height}`,
-        ms: now() - started,
-        png: image.png,
-      });
-    } catch (error) {
-      results.push({
-        name: model.id,
-        quality,
-        ok: false,
-        detail: message(error),
-        ms: now() - started,
-      });
+    results.push(await checkImage(model, quality, adapter, false, now));
+    if (model.capabilities.transparentBackground) {
+      results.push(await checkImage(model, quality, adapter, true, now));
     }
   }
   if (deps.moderate) {
@@ -351,6 +292,46 @@ export async function runChecks(
     }
   }
   return results;
+}
+
+/**
+ * One draft image from the model. With `transparent`, it asks for a transparent background and fails unless
+ * the PNG has an alpha channel; the result is named `<model>-transparent`.
+ */
+async function checkImage(
+  model: ModelConfig,
+  quality: Quality,
+  adapter: ImageProvider,
+  transparent: boolean,
+  now: () => number,
+): Promise<CheckResult> {
+  const name = transparent ? `${model.id}-transparent` : model.id;
+  const started = now();
+  try {
+    const result = await guardProvider(adapter).generate(model, {
+      prompt: CHECK_PROMPT,
+      aspect: '1:1',
+      quality,
+      count: 1,
+      ...(transparent ? { transparentBackground: true } : {}),
+      signal: providerSignal(),
+    });
+    const [image] = result.images;
+    if (!image) throw new ProviderError(`Model ${model.id} returned no image`);
+    if (transparent && !(await sharp(image.png).metadata()).hasAlpha) {
+      throw new ProviderError('The transparent-background PNG has no alpha channel');
+    }
+    return {
+      name,
+      quality,
+      ok: true,
+      detail: `${image.width}x${image.height}${transparent ? ' with alpha' : ''}`,
+      ms: now() - started,
+      png: image.png,
+    };
+  } catch (error) {
+    return { name, quality, ok: false, detail: message(error), ms: now() - started };
+  }
 }
 
 function message(error: unknown): string {

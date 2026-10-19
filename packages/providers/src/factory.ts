@@ -8,7 +8,10 @@ import type { ImageProvider, ImageRequest, ImageResult } from './types.js';
 /** Builds the adapter for one provider. */
 export type AdapterFactory = () => ImageProvider;
 
-/** The adapters this package ships. OpenAI and Gemini join them in their own issues. */
+/**
+ * The adapters that need no configuration. OpenAI needs its key's secret, so the worker adds it
+ * (`OpenAiProvider`); Gemini joins in its own issue.
+ */
 export const DEFAULT_ADAPTERS: Partial<Record<Provider, AdapterFactory>> = {
   bedrock: () => new BedrockProvider(),
   mock: () => new MockProvider(),
