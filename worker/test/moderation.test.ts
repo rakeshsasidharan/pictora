@@ -103,7 +103,7 @@ describe('moderateImageRequests', () => {
 describe.skipIf(!DYNAMODB_ENDPOINT)('blocks', () => {
   // DynamoDB Local is reached over HTTP too, so only the moderation endpoint is intercepted.
   const server = setupServer();
-  beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
+  beforeAll(() => server.listen({ onUnhandledFrame: 'bypass' }));
   afterAll(() => server.close());
 
   let table: ReturnType<typeof localTable>;

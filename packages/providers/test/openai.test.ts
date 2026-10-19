@@ -25,7 +25,7 @@ const GENERATE_URL = `${BASE_URL}/images/generations`;
 const EDIT_URL = `${BASE_URL}/images/edits`;
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 

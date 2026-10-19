@@ -21,7 +21,7 @@ const GEMINI_URL = 'https://gemini.test/v1beta';
 const GEMINI_ENDPOINT = `${GEMINI_URL}/models/gemini-3.1-flash-lite:generateContent`;
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
