@@ -3,8 +3,6 @@ import sharp from 'sharp';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CHECK_PROMPT,
-  GEMINI_API_URL,
-  GeminiCheckProvider,
   LIVE_PROVIDERS,
   OPENAI_API_URL,
   OPENAI_MODERATION_MODEL,
@@ -18,18 +16,15 @@ import {
   type CheckResult,
   type FetchFn,
 } from '../scripts/live_check.js';
-import { ProviderSafetyError } from '../src/errors.js';
 import type { ImageProvider, ImageRequest, ImageResult } from '../src/types.js';
-import { request, seedModel, solidImage } from './helpers.js';
+import { seedModel, solidImage } from './helpers.js';
 
 const gptImage2 = seedModel('gpt-image-2');
 const gptMini = seedModel('gpt-image-1-mini');
-const geminiFlash = seedModel('gemini-3.1-flash-image');
 const geminiLite = seedModel('gemini-3.1-flash-lite-image');
 
 let png: Uint8Array;
 let alphaPng: Uint8Array;
-let pngBase64: string;
 beforeAll(async () => {
   png = await solidImage('png', 32, 32);
   alphaPng = new Uint8Array(
@@ -39,7 +34,6 @@ beforeAll(async () => {
       .png()
       .toBuffer(),
   );
-  pngBase64 = Buffer.from(png).toString('base64');
 });
 
 /** A fake `fetch` that answers every call with one JSON response, and records the calls. */
@@ -149,72 +143,6 @@ describe('OpenAiModerationCheck', () => {
     await expect(
       new OpenAiModerationCheck('sk-test', fetchFn).moderate('hi', new AbortController().signal),
     ).rejects.toThrow('OpenAI moderation returned no result');
-  });
-});
-
-describe('GeminiCheckProvider', () => {
-  const imageResponse = () => ({
-    candidates: [
-      {
-        content: {
-          parts: [
-            { text: 'Here you go' },
-            { inlineData: { mimeType: 'image/png', data: pngBase64 } },
-          ],
-        },
-        finishReason: 'STOP',
-      },
-    ],
-  });
-
-  it('sends the aspect ratio, image size and key, and returns the PNG', async () => {
-    const fetchFn = fakeFetch(imageResponse());
-    const result = await new GeminiCheckProvider('g-key', fetchFn).generate(
-      geminiFlash,
-      request({ quality: 'standard', aspect: '4:5' }),
-    );
-
-    const call = sent(fetchFn);
-    expect(call.url).toBe(`${GEMINI_API_URL}/models/gemini-3.1-flash-image:generateContent`);
-    expect(call.headers['x-goog-api-key']).toBe('g-key');
-    expect(call.body).toEqual({
-      contents: [{ parts: [{ text: 'a lighthouse at dusk' }] }],
-      generationConfig: {
-        responseModalities: ['IMAGE'],
-        imageConfig: { aspectRatio: '4:5', imageSize: '1K' },
-      },
-    });
-    expect(result.images).toEqual([{ png, width: 32, height: 32 }]);
-  });
-
-  it('maps a blocked prompt to a safety error', async () => {
-    const fetchFn = fakeFetch({ promptFeedback: { blockReason: 'SAFETY' } });
-    await expect(
-      new GeminiCheckProvider('g-key', fetchFn).generate(geminiLite, request()),
-    ).rejects.toThrow(ProviderSafetyError);
-  });
-
-  it('maps a safety finish reason to a safety error', async () => {
-    const fetchFn = fakeFetch({ candidates: [{ finishReason: 'IMAGE_SAFETY' }] });
-    await expect(
-      new GeminiCheckProvider('g-key', fetchFn).generate(geminiLite, request()),
-    ).rejects.toThrow(ProviderSafetyError);
-  });
-
-  it('names the finish reason when no image comes back', async () => {
-    const fetchFn = fakeFetch({
-      candidates: [{ content: { parts: [{ text: 'no' }] }, finishReason: 'NO_IMAGE' }],
-    });
-    await expect(
-      new GeminiCheckProvider('g-key', fetchFn).generate(geminiLite, request()),
-    ).rejects.toThrow('Model gemini-3.1-flash-lite-image returned no image (NO_IMAGE)');
-  });
-
-  it('reports an unknown model ID as an HTTP error', async () => {
-    const fetchFn = fakeFetch({ error: { message: 'models/x is not found' } }, { status: 404 });
-    await expect(
-      new GeminiCheckProvider('g-key', fetchFn).generate(geminiLite, request()),
-    ).rejects.toMatchObject({ status: 404, message: 'Gemini HTTP 404: models/x is not found' });
   });
 });
 

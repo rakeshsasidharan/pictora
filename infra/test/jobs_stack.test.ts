@@ -1,6 +1,6 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { bedrockModelIds } from '../lib/jobs_stack.js';
+import { bedrockModelIds, geminiEnvironment } from '../lib/jobs_stack.js';
 import { PLACEHOLDER_IMAGE_DIGEST } from '../lib/stage_config.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
@@ -133,6 +133,28 @@ describe('Jobs stack: worker Lambda', () => {
       IMAGES_BUCKET: expect.anything(),
       OPENAI_SECRET_ID: 'pictora/dev/openai',
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      GEMINI_BACKEND: 'api',
+    });
+    expect(workerFunction(dev).Environment.Variables).not.toHaveProperty('GEMINI_VERTEX_PROJECT');
+  });
+
+  it('passes the Vertex AI project and location only for the Vertex AI backend', () => {
+    const base = devStage.config;
+    expect(geminiEnvironment(base)).toEqual({ GEMINI_BACKEND: 'api' });
+    expect(
+      geminiEnvironment({
+        ...base,
+        geminiBackend: 'vertex',
+        geminiVertexLocation: 'us-central1',
+        geminiVertexProject: 'pictora-test',
+      }),
+    ).toEqual({
+      GEMINI_BACKEND: 'vertex',
+      GEMINI_VERTEX_LOCATION: 'us-central1',
+      GEMINI_VERTEX_PROJECT: 'pictora-test',
+    });
+    expect(geminiEnvironment({ ...base, geminiBackend: 'vertex' })).toEqual({
+      GEMINI_BACKEND: 'vertex',
     });
   });
 

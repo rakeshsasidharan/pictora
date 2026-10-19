@@ -1904,6 +1904,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         },
         "Environment": {
           "Variables": {
+            "GEMINI_BACKEND": "api",
             "GEMINI_SECRET_ID": "pictora/dev/gemini",
             "GIT_SHA": "local",
             "IMAGES_BUCKET": {

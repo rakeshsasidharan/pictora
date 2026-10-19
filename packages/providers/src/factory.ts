@@ -9,8 +9,8 @@ import type { ImageProvider, ImageRequest, ImageResult } from './types.js';
 export type AdapterFactory = () => ImageProvider;
 
 /**
- * The adapters that need no configuration. OpenAI needs its key's secret, so the worker adds it
- * (`OpenAiProvider`); Gemini joins in its own issue.
+ * The adapters that need no configuration. OpenAI needs its key's secret and Gemini its secret and backend,
+ * so the worker adds them (`OpenAiProvider`, `GeminiProvider`).
  */
 export const DEFAULT_ADAPTERS: Partial<Record<Provider, AdapterFactory>> = {
   bedrock: () => new BedrockProvider(),

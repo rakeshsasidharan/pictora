@@ -114,6 +114,29 @@ describe('stageConfig', () => {
     },
   );
 
+  it('uses the Gemini API unless the environment picks Vertex AI', () => {
+    expect(configFor(cdkJsonContext()).geminiBackend).toBe('api');
+    expect(configFor(cdkJsonContext(), 'prod').geminiBackend).toBe('api');
+    expect(configFor({ environments: { dev: devSettings } }).geminiBackend).toBe('api');
+    const vertex = configFor({
+      environments: {
+        dev: { ...devSettings, geminiBackend: 'vertex', geminiVertexLocation: 'us-central1' },
+      },
+      geminiVertexProject: 'pictora-test',
+    });
+    expect(vertex).toMatchObject({
+      geminiBackend: 'vertex',
+      geminiVertexLocation: 'us-central1',
+      geminiVertexProject: 'pictora-test',
+    });
+  });
+
+  it('rejects an unknown Gemini backend', () => {
+    expect(() =>
+      configFor({ environments: { dev: { ...devSettings, geminiBackend: 'vertexai' } } }),
+    ).toThrow(/geminiBackend must be one of api, vertex: vertexai/);
+  });
+
   it('fails clearly when the environment is missing', () => {
     expect(() => configFor({ environments: { dev: devSettings } }, 'prod')).toThrow(
       /environments.prod is missing/,

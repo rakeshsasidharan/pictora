@@ -5,10 +5,13 @@ import type { Environment } from '@pictora/core';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
 import {
   DEFAULT_ADAPTERS,
+  GeminiProvider,
   OpenAiProvider,
   createModerator,
   createProviderFactory,
+  geminiConfigFromEnv,
   secretApiKey,
+  secretString,
 } from '@pictora/providers';
 import { ulid } from 'ulid';
 import type { TableContext } from './job_store.js';
@@ -43,12 +46,15 @@ export function tableContext(env: NodeJS.ProcessEnv = process.env): TableContext
 /**
  * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
  * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
- * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes.
+ * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
+ * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`).
  */
 export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
   const table = tableContext(env);
   const bucket = required('IMAGES_BUCKET', env);
   const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
+  const geminiSecretId = required('GEMINI_SECRET_ID', env);
+  const geminiConfig = geminiConfigFromEnv(env);
   const registry = createRegistryLoader({
     source: dynamoRegistrySource(table.client, table.tableName),
     environment: workerEnvironment(env),
@@ -62,6 +68,8 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
       adapters: {
         ...DEFAULT_ADAPTERS,
         openai: () => new OpenAiProvider({ apiKey: openAiKey }),
+        gemini: () =>
+          new GeminiProvider({ config: geminiConfig, credential: secretString(geminiSecretId) }),
       },
     }),
     moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),

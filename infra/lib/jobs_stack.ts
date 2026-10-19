@@ -159,6 +159,7 @@ export class JobsStack extends Stack {
         IMAGES_BUCKET: props.imagesBucket.bucketName,
         OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
         GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+        ...geminiEnvironment(config),
       },
     });
 
@@ -269,4 +270,14 @@ export class JobsStack extends Stack {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** The worker's Gemini backend settings; the Vertex AI ones only when the backend is Vertex AI. */
+export function geminiEnvironment(config: StageConfig): Record<string, string> {
+  if (config.geminiBackend !== 'vertex') return { GEMINI_BACKEND: config.geminiBackend };
+  return {
+    GEMINI_BACKEND: 'vertex',
+    ...(config.geminiVertexLocation ? { GEMINI_VERTEX_LOCATION: config.geminiVertexLocation } : {}),
+    ...(config.geminiVertexProject ? { GEMINI_VERTEX_PROJECT: config.geminiVertexProject } : {}),
+  };
 }

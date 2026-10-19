@@ -16,6 +16,22 @@ export {
 export { createProviderFactory, DEFAULT_ADAPTERS, guardProvider } from './factory.js';
 export type { AdapterFactory, ProviderFactoryOptions } from './factory.js';
 export {
+  GEMINI_BACKENDS,
+  GEMINI_DEFAULT_VERTEX_LOCATION,
+  GEMINI_MAX_REFERENCE_IMAGES,
+  GeminiProvider,
+  geminiClientOptions,
+  geminiConfigFromEnv,
+  geminiRequest,
+  toGeminiError,
+} from './gemini.js';
+export type {
+  GeminiBackend,
+  GeminiConfig,
+  GeminiProviderOptions,
+  GeminiRequest,
+} from './gemini.js';
+export {
   centreCrop,
   isPng,
   normalisePng,
@@ -61,6 +77,6 @@ export {
   withRetry,
 } from './retry.js';
 export type { RetryOptions } from './retry.js';
-export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey } from './secrets.js';
+export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey, secretString } from './secrets.js';
 export type { SecretApiKeyOptions } from './secrets.js';
 export type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';

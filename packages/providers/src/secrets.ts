@@ -17,6 +17,15 @@ export function secretApiKey(
   secretId: string,
   options: SecretApiKeyOptions = {},
 ): () => Promise<string> {
+  const read = secretString(secretId, options);
+  return async () => apiKeyFromSecret(await read());
+}
+
+/** Reads a Secrets Manager secret's text as stored, cached for 5 minutes. Throws when it is empty. */
+export function secretString(
+  secretId: string,
+  options: SecretApiKeyOptions = {},
+): () => Promise<string> {
   const { cacheMs = SECRET_CACHE_MS, now = Date.now } = options;
   let client = options.client;
   let cached: { value: string; until: number } | undefined;
@@ -25,7 +34,8 @@ export function secretApiKey(
     if (cached && now() < cached.until) return cached.value;
     client ??= new SecretsManagerClient({});
     const result = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
-    const value = apiKeyFromSecret(result.SecretString);
+    const value = result.SecretString?.trim();
+    if (!value) throw new Error('The secret is empty');
     cached = { value, until: now() + cacheMs };
     return value;
   };

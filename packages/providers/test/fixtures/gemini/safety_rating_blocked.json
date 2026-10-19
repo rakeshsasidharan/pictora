@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": { "role": "model" },
+      "finishReason": "OTHER",
+      "safetyRatings": [
+        { "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" },
+        { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "probability": "HIGH", "blocked": true }
+      ],
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-3.1-flash-image",
+  "responseId": "resp-rating-1"
+}
