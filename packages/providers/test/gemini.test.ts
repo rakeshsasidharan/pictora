@@ -26,7 +26,7 @@ const BASE_URL = 'https://gemini.test';
 const GENERATE_URL = /^https:\/\/gemini\.test\/v1beta\/models\/([^/:]+):generateContent$/;
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
