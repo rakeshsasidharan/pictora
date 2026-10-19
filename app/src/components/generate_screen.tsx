@@ -404,6 +404,7 @@ export function GenerateScreen({
                     width={THUMBNAIL_SIZE}
                     height={THUMBNAIL_SIZE}
                     className="style-thumbnail"
+                    unoptimized
                   />
                 ) : (
                   <span className="style-thumbnail style-thumbnail-none" aria-hidden="true">

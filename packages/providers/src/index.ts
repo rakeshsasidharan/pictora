@@ -17,6 +17,22 @@ export * from './enhancer.js';
 export { createProviderFactory, DEFAULT_ADAPTERS, guardProvider } from './factory.js';
 export type { AdapterFactory, ProviderFactoryOptions } from './factory.js';
 export {
+  GEMINI_BACKENDS,
+  GEMINI_DEFAULT_VERTEX_LOCATION,
+  GEMINI_MAX_REFERENCE_IMAGES,
+  GeminiProvider,
+  geminiClientOptions,
+  geminiConfigFromEnv,
+  geminiRequest,
+  toGeminiError,
+} from './gemini.js';
+export type {
+  GeminiBackend,
+  GeminiConfig,
+  GeminiProviderOptions,
+  GeminiRequest,
+} from './gemini.js';
+export {
   centreCrop,
   isPng,
   normalisePng,
@@ -42,6 +58,15 @@ export {
   parseModeration,
 } from './moderation.js';
 export type { Moderate, ModerationInput, ModeratorOptions } from './moderation.js';
+export {
+  OPENAI_MAX_REFERENCE_IMAGES,
+  OPENAI_TOKEN_PRICES,
+  OpenAiProvider,
+  openAiCostCents,
+  openAiRequestParams,
+  toOpenAiError,
+} from './openai.js';
+export type { OpenAiProviderOptions, OpenAiTokenPrices } from './openai.js';
 export { PROVIDER_IDS, isProviderId } from './provider_ids.js';
 export type { ProviderId } from './provider_ids.js';
 export {
@@ -53,6 +78,6 @@ export {
   withRetry,
 } from './retry.js';
 export type { RetryOptions } from './retry.js';
-export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey } from './secrets.js';
+export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey, secretString } from './secrets.js';
 export type { SecretApiKeyOptions } from './secrets.js';
 export type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';

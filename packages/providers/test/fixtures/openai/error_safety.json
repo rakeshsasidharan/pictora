@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_0f3a9c.",
+    "type": "image_generation_user_error",
+    "param": null,
+    "code": "moderation_blocked"
+  }
+}

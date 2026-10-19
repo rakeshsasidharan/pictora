@@ -17,24 +17,24 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "jsdom": "^29.1.1",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1152.0",
-    "@aws-sdk/client-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
     "@aws-sdk/client-s3": "^3.1152.0",
     "@aws-sdk/client-secrets-manager": "^3.1149.0",
     "@aws-sdk/client-sqs": "^3.1152.0",
-    "@aws-sdk/client-ssm": "^3.1149.0",
-    "@aws-sdk/lib-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-ssm": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
     "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@pictora/core": "^0.0.0",
     "@pictora/providers": "^0.0.0",
     "aws-jwt-verify": "^5.2.1",
     "markdown-it": "^14.3.2",
-    "next": "^16.4.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "ulid": "^3.0.2"
   }
 }

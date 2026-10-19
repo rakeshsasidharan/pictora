@@ -8,6 +8,7 @@ import {
   type PointsLeft,
 } from '../src/components/generate_screen';
 import { modelsResponse } from '../src/lib/models_response';
+import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 
 const { models, styles } = modelsResponse(modelsForEnvironment(loadSeedRegistry(), 'dev'));
 const JOB_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
@@ -267,6 +268,14 @@ describe('GenerateScreen', () => {
   });
 
   describe('form', () => {
+    it('shows each style sample straight from /static/, not through the image optimizer', () => {
+      const { container } = renderScreen();
+      const group = screen.getByRole('group', { name: 'Style' });
+      const sources = Array.from(group.querySelectorAll('img'), (img) => img.getAttribute('src'));
+      expect(sources).toEqual(SAMPLE_IMAGES.map((sample) => sample.src));
+      expect(container.querySelector('img[src^="/_next/image"]')).toBeNull();
+    });
+
     it('limits the prompt to 2,000 characters and counts them', () => {
       renderScreen();
       expect(prompt().getAttribute('maxlength')).toBe(String(MAX_PROMPT_LENGTH));
