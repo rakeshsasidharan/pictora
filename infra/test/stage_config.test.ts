@@ -15,7 +15,6 @@ const devSettings = {
   dailyPoints: 1000,
   spendCapUsd: 20,
   queueConcurrency: 5,
-  budgetUsd: 15,
   enhancerModel: 'mock',
 };
 
@@ -105,7 +104,7 @@ describe('stageConfig', () => {
     },
   );
 
-  it.each(['dailyPoints', 'spendCapUsd', 'queueConcurrency', 'budgetUsd'])(
+  it.each(['dailyPoints', 'spendCapUsd', 'queueConcurrency'])(
     'requires %s to be a positive integer',
     (key) => {
       expect(() => configFor({ environments: { dev: { ...devSettings, [key]: 0 } } })).toThrow(key);

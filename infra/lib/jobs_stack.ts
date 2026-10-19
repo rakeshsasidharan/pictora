@@ -159,6 +159,7 @@ export class JobsStack extends Stack {
         IMAGES_BUCKET: props.imagesBucket.bucketName,
         OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
         GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+        SPEND_CAP_CENTS: String(config.spendCapUsd * 100),
         ...geminiEnvironment(config),
       },
     });

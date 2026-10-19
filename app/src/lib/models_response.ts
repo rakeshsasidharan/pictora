@@ -1,8 +1,10 @@
 import {
   QUALITIES,
   STYLE_PRESETS,
+  pausedQuality,
   suggestedModelId,
   type ModelConfig,
+  type PremiumPause,
   type StyleId,
 } from '@pictora/core';
 
@@ -13,8 +15,11 @@ export interface PublicModel {
   displayName: string;
   strengths: string[];
   capabilities: ModelConfig['capabilities'];
-  /** Points per image for each quality the model offers, in quality order. */
-  qualities: { quality: (typeof QUALITIES)[number]; costPoints: number }[];
+  /**
+   * Points per image for each quality the model offers, in quality order. `paused` marks a quality switched
+   * off because the month's platform spend reached the cap; the UI disables it.
+   */
+  qualities: { quality: (typeof QUALITIES)[number]; costPoints: number; paused?: true }[];
   defaultFor: ModelConfig['defaultFor'];
   eolDate?: string;
 }
@@ -30,10 +35,17 @@ export interface PublicStyle {
 export interface ModelsResponse {
   models: PublicModel[];
   styles: PublicStyle[];
+  /** While premium qualities are paused (tech design 4.1): when they come back, as ISO 8601 UTC. */
+  premiumPausedUntil?: string;
 }
 
-export function modelsResponse(enabled: readonly ModelConfig[]): ModelsResponse {
+/** The models as the UI sees them; during a premium pause, every quality but draft is marked paused. */
+export function modelsResponse(
+  enabled: readonly ModelConfig[],
+  pause?: PremiumPause,
+): ModelsResponse {
   return {
+    ...(pause ? { premiumPausedUntil: pause.until.toISOString() } : {}),
     models: enabled.map((model) => ({
       id: model.id,
       provider: model.provider,
@@ -42,7 +54,14 @@ export function modelsResponse(enabled: readonly ModelConfig[]): ModelsResponse 
       capabilities: model.capabilities,
       qualities: QUALITIES.flatMap((quality) => {
         const config = model.qualities[quality];
-        return config ? [{ quality, costPoints: config.costPoints }] : [];
+        if (!config) return [];
+        return [
+          {
+            quality,
+            costPoints: config.costPoints,
+            ...(pause && pausedQuality(quality) ? { paused: true as const } : {}),
+          },
+        ];
       }),
       defaultFor: model.defaultFor,
       ...(model.eolDate ? { eolDate: model.eolDate } : {}),

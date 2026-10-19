@@ -5,6 +5,7 @@ import {
   altTextFor,
   aspectRatioStyle,
   choicesForModel,
+  qualityPaused,
   costPerImage,
   generateModels,
   modelCostSummary,
@@ -54,6 +55,16 @@ describe('generate options', () => {
     const square = { ...model('mock') };
     square.capabilities = { ...square.capabilities, aspects: ['1:1'] };
     expect(choicesForModel(square, { quality: 'draft', aspect: '9:16' }).aspect).toBe('1:1');
+  });
+
+  it('skips paused qualities while another is offered', () => {
+    const paused = { ...model('gpt-image-2') };
+    paused.qualities = paused.qualities.map((option) =>
+      option.quality === 'draft' ? option : { ...option, paused: true as const },
+    );
+    expect(choicesForModel(paused, { quality: 'high', aspect: '1:1' }).quality).toBe('draft');
+    expect(qualityPaused(paused, 'high')).toBe(true);
+    expect(qualityPaused(paused, 'draft')).toBe(false);
   });
 
   it('prices a request as the cost per image times the count', () => {

@@ -22,6 +22,7 @@ import {
   modelCostSummary,
   modelForStyle,
   pointsText,
+  qualityPaused,
   requestCost,
   type ModelChoices,
 } from '../lib/generate_options';
@@ -43,6 +44,8 @@ export interface GenerateScreenProps {
   models: PublicModel[];
   styles: PublicStyle[];
   points: PointsLeft;
+  /** While premium qualities are paused because the month's budget is used up: when they return (ISO 8601). */
+  premiumPausedUntil?: string;
   /** Polling settings; tests shorten them. */
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
@@ -150,6 +153,13 @@ const COUNTS = Array.from(
 const SAMPLE_BY_STYLE = new Map(SAMPLE_IMAGES.map((sample) => [sample.style, sample]));
 const THUMBNAIL_SIZE = 72;
 
+/** For example `1 November`: when paused premium qualities return. */
+const PAUSE_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'UTC',
+});
+
 /**
  * The generate screen (GEN-1 to GEN-10, LIM-2): prompt, style, aspect ratio, quality, model and count, the
  * cost before generating, then the job's status and results.
@@ -158,6 +168,7 @@ export function GenerateScreen({
   models,
   styles,
   points: initialPoints,
+  premiumPausedUntil,
   pollIntervalMs,
   pollTimeoutMs,
 }: GenerateScreenProps) {
@@ -440,8 +451,16 @@ export function GenerateScreen({
 
         <fieldset className="quality-picker">
           <legend>Quality</legend>
+          {premiumPausedUntil && (
+            <p className="form-notice" role="status">
+              Premium models are paused until{' '}
+              {PAUSE_END_FORMAT.format(new Date(premiumPausedUntil))} because this month&apos;s
+              budget is used up. Draft quality still works.
+            </p>
+          )}
           {QUALITIES.map((quality) => {
             const perImage = costPerImage(model, quality);
+            const paused = qualityPaused(model, quality);
             return (
               <label key={quality} className="option-card">
                 <input
@@ -449,14 +468,16 @@ export function GenerateScreen({
                   name="quality"
                   value={quality}
                   checked={choices.quality === quality}
-                  disabled={perImage === undefined}
+                  disabled={perImage === undefined || paused}
                   onChange={() => setChoices({ ...choices, quality })}
                 />
                 <span>{QUALITY_LABELS[quality]}</span>
                 <span className="field-hint">
                   {perImage === undefined
                     ? `Not offered by ${model.displayName}`
-                    : `${pointsText(perImage)} per image`}
+                    : paused
+                      ? 'Paused this month'
+                      : `${pointsText(perImage)} per image`}
                 </span>
               </label>
             );

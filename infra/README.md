@@ -12,14 +12,14 @@ AWS CDK app for Pictora. It holds the `PictoraDev` and `PictoraProd` stages, and
 | ------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
 | `Certificate` | us-east-1 | ACM certificate for the site domain, DNS-validated in the `rpillai.dev` zone. Only when a domain is set     |
 | `Data`        | us-west-2 | DynamoDB table `pictora-<env>` and the images bucket                                                        |
-| `Auth`        | us-west-2 | Cognito user pool (email username, Google provider), managed login domain and the `admins` group             |
+| `Auth`        | us-west-2 | Cognito user pool (email username, Google provider), managed login domain, the `admins` group, and the pre-sign-up Lambda that flags disposable emails |
 | `Jobs`        | us-west-2 | SQS queues `pictora-<env>-openai` and `pictora-<env>-gemini`, the shared dead-letter queue `pictora-<env>-dlq`, and the worker Lambda (image by digest) that consumes both queues |
 | `Web`         | us-west-2 | App Lambda (image by digest) with a streaming Function URL, assets bucket, CloudFront, origin verify secret, DNS records, Cognito app client and the `/pictora/<env>/app-config` parameter |
-| `Monitoring`  | us-west-2 | SNS alert topic, app 5xx and dead-letter queue alarms, and the AWS budget                                   |
+| `Monitoring`  | us-west-2 | SNS alert topic, app 5xx, dead-letter queue and spend alarms, and the AWS budget                            |
 
 ### Settings
 
-Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `authDomainPrefix` (the Cognito managed login domain, `<prefix>.auth.us-west-2.amazoncognito.com`), `dailyPoints`, `spendCapUsd`, `queueConcurrency`, `budgetUsd` and `appReservedConcurrency`.
+Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `authDomainPrefix` (the Cognito managed login domain, `<prefix>.auth.us-west-2.amazoncognito.com`), `dailyPoints`, `spendCapUsd` (the monthly cap on provider spend, which the spend alarms and the AWS budget also use), `queueConcurrency` and `appReservedConcurrency`.
 
 Account-specific and per-deploy values are passed with `-c` and have placeholders, so synth works without them:
 

@@ -81,6 +81,149 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
       },
       "Type": "AWS::Cognito::UserPoolIdentityProvider",
     },
+    "PreSignUpFunction8B568BDD": {
+      "DependsOn": [
+        "PreSignUpFunctionServiceRoleDefaultPolicy7BAD922E",
+        "PreSignUpFunctionServiceRoleF660159D",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": {
+            "Fn::Sub": "cdk-hnb659fds-assets-\${AWS::AccountId}-us-west-2",
+          },
+          "S3Key": "<asset-hash>.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "Handler": "index.handler",
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "PreSignUpLogGroup3AAF4139",
+          },
+        },
+        "MemorySize": 256,
+        "Role": {
+          "Fn::GetAtt": [
+            "PreSignUpFunctionServiceRoleF660159D",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 4,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "PreSignUpFunctionServiceRoleDefaultPolicy7BAD922E": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Data",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "PreSignUpFunctionServiceRoleDefaultPolicy7BAD922E",
+        "Roles": [
+          {
+            "Ref": "PreSignUpFunctionServiceRoleF660159D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "PreSignUpFunctionServiceRoleF660159D": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "PreSignUpLogGroup3AAF4139": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "UserPool6BA7E5F2": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -101,6 +244,14 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
         "DeletionProtection": "INACTIVE",
         "EmailVerificationMessage": "The verification code to your new account is {####}",
         "EmailVerificationSubject": "Verify your new account",
+        "LambdaConfig": {
+          "PreSignUp": {
+            "Fn::GetAtt": [
+              "PreSignUpFunction8B568BDD",
+              "Arn",
+            ],
+          },
+        },
         "Schema": [
           {
             "Mutable": true,
@@ -144,6 +295,25 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
         },
       },
       "Type": "AWS::Cognito::UserPoolDomain",
+    },
+    "UserPoolPreSignUpCognito3AFF8F1F": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "PreSignUpFunction8B568BDD",
+            "Arn",
+          ],
+        },
+        "Principal": "cognito-idp.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "UserPool6BA7E5F2",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
     },
   },
   "Rules": {
@@ -1916,6 +2086,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
             },
             "OPENAI_SECRET_ID": "pictora/dev/openai",
             "PICTORA_ENV": "dev",
+            "SPEND_CAP_CENTS": "2000",
             "TABLE_NAME": {
               "Fn::GetStackOutput": {
                 "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
@@ -2460,7 +2631,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
       "Properties": {
         "Budget": {
           "BudgetLimit": {
-            "Amount": 15,
+            "Amount": 20,
             "Unit": "USD",
           },
           "BudgetName": "pictora-dev",
@@ -2569,6 +2740,66 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
         ],
         "Threshold": 0,
         "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "Spend100Alarm31A17E06": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "Provider spend this month reached 100% of the $20 platform cap; premium qualities are paused until next month",
+        "AlarmName": "pictora-dev-spend-100",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "MonthlySpendCents",
+        "Namespace": "Pictora/dev",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 2000,
+        "TreatMissingData": "ignore",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "Spend80Alarm31128DA8": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "Provider spend this month reached 80% of the $20 platform cap",
+        "AlarmName": "pictora-dev-spend-80",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "EvaluationPeriods": 1,
+        "MetricName": "MonthlySpendCents",
+        "Namespace": "Pictora/dev",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 1600,
+        "TreatMissingData": "ignore",
       },
       "Type": "AWS::CloudWatch::Alarm",
     },

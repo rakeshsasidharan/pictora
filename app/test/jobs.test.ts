@@ -64,6 +64,7 @@ function offlineDeps(overrides: Partial<JobsDeps> = {}): JobsDeps {
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
     defaultDailyPoints: 25,
+    spendCapCents: 2000,
     now: () => new Date('2026-10-15T12:00:00Z'),
     newJobId: () => '01JAAAAAAAAAAAAAAAAAAAAAAA',
     ...overrides,
@@ -170,6 +171,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
     defaultDailyPoints: 25,
+    spendCapCents: 2000,
     now: () => clock,
     newJobId: () => {
       idCounter += 1;

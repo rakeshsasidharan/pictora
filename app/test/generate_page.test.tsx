@@ -7,6 +7,7 @@ import { SESSION_HEADERS } from '../src/lib/session';
 
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 const onboarded = vi.hoisted(() => ({ current: true }));
+const pause = vi.hoisted(() => ({ current: undefined as { until: Date } | undefined }));
 
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
@@ -35,7 +36,16 @@ vi.mock('../src/lib/registry', () => ({
 }));
 
 vi.mock('../src/lib/jobs_deps', () => ({
-  jobsDeps: () => ({ hasQueue: (provider: string) => provider !== 'bedrock' }),
+  jobsDeps: () => ({ hasQueue: (provider: string) => provider !== 'bedrock', spendCapCents: 2000 }),
+}));
+
+vi.mock('../src/lib/dynamodb', () => ({
+  documentClient: () => ({}),
+  tableName: () => 'pictora-test',
+}));
+
+vi.mock('../src/lib/platform_spend', () => ({
+  readPremiumPause: async () => pause.current,
 }));
 
 vi.mock('../src/lib/jobs', () => ({
@@ -55,6 +65,7 @@ describe('generate page', () => {
   beforeEach(() => {
     requestHeaders.current = new Headers();
     onboarded.current = true;
+    pause.current = undefined;
   });
   afterEach(cleanup);
 
@@ -67,6 +78,18 @@ describe('generate page', () => {
     expect(screen.getByRole('radio', { name: /^Mock/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /^Stable Image Core/ })).toBeNull();
+  });
+
+  it('disables premium qualities while the platform cap is reached', async () => {
+    signIn();
+    pause.current = { until: new Date('2026-11-01T00:00:00.000Z') };
+    render(await GeneratePage());
+    expect(screen.getByText(/Premium models are paused until 1 November/)).toBeTruthy();
+    const draft = screen.getByRole<HTMLInputElement>('radio', { name: /^Draft/ });
+    expect(draft.disabled).toBe(false);
+    expect(draft.checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^Standard/ }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^High/ }).disabled).toBe(true);
   });
 
   it('sends users who have not accepted the current terms to onboarding', async () => {
