@@ -3,6 +3,7 @@ import { documentClient, tableName } from './dynamodb';
 import { presignImage } from './images_bucket';
 import type { JobsDeps } from './jobs';
 import { appMetrics } from './observability';
+import { spendCapCents } from './platform_spend';
 import { defaultDailyPoints } from './profile';
 import { enqueueJob, queueUrl } from './queues';
 import { registryLoader } from './registry';
@@ -17,6 +18,7 @@ export function jobsDeps(): JobsDeps {
     enqueue: enqueueJob,
     presign: presignImage,
     defaultDailyPoints: defaultDailyPoints(),
+    spendCapCents: spendCapCents(),
     now: () => new Date(),
     newJobId: () => ulid(),
     metrics: appMetrics(),

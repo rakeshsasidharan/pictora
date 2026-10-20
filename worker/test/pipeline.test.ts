@@ -290,6 +290,64 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
     expect(points().map((point) => point.name)).toEqual(['ProviderLatencyMs', 'JobsBlocked']);
   });
 
+  it('publishes the month spend after each job with a provider cost, and records the cap', async () => {
+    const { provider } = countingMock();
+    const spendDeps = deps(provider, { spend: { capCents: 2000, namespace: 'Pictora/dev' } });
+    const metric = () =>
+      vi
+        .mocked(console.log)
+        .mock.calls.map(([line]) => String(line))
+        .filter((line) => line.includes('"_aws"'))
+        .map((line) => JSON.parse(line));
+
+    const job = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'high' }),
+      pointsReserved: 3,
+    });
+    expect(await processJob(spendDeps, job.jobId)).toBe('succeeded');
+    expect(await spend()).toMatchObject({ spentCents: 3, capCents: 2000 });
+    expect(metric()).toEqual([
+      {
+        _aws: {
+          Timestamp: Date.parse('2026-10-15T12:00:30.000Z'),
+          CloudWatchMetrics: [
+            {
+              Namespace: 'Pictora/dev',
+              Dimensions: [[]],
+              Metrics: [{ Name: 'MonthlySpendCents', Unit: 'Count' }],
+            },
+          ],
+        },
+        MonthlySpendCents: 3,
+      },
+    ]);
+
+    // A failure the provider still billed for counts too; one with no cost publishes nothing.
+    const storing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'standard' }),
+      pointsReserved: 2,
+    });
+    s3.on(PutObjectCommand).rejects(new Error('S3 down'));
+    expect(await processJob(spendDeps, storing.jobId)).toBe('failed');
+    expect(metric().map((line) => line.MonthlySpendCents)).toEqual([3, 5]);
+    const failing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __fail__' }),
+    });
+    expect(await processJob(spendDeps, failing.jobId)).toBe('failed');
+    expect(metric()).toHaveLength(2);
+  });
+
+  it('publishes no spend metric without spend reporting configured', async () => {
+    const { provider } = countingMock();
+    const job = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate(),
+    });
+    expect(await processJob(deps(provider), job.jobId)).toBe('succeeded');
+    const lines = vi.mocked(console.log).mock.calls.map(([line]) => String(line));
+    expect(lines.some((line) => line.includes('MonthlySpendCents'))).toBe(false);
+    expect((await spend())?.capCents).toBeUndefined();
+  });
+
   it.each([
     ['__fail__', 'failed', 'provider_error'],
     ['__block__', 'blocked', 'blocked'],

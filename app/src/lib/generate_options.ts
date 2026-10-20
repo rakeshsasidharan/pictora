@@ -53,16 +53,23 @@ export function costPerImage(model: PublicModel, quality: Quality): number | und
   return model.qualities.find((option) => option.quality === quality)?.costPoints;
 }
 
+/** True when the quality is paused because the month's platform spend reached the cap (tech design 4.1). */
+export function qualityPaused(model: PublicModel, quality: Quality): boolean {
+  return model.qualities.some((option) => option.quality === quality && option.paused);
+}
+
 /**
  * The quality and aspect to use with a newly chosen model: the current ones when it offers them, otherwise
- * Standard (or the model's first quality) and the model's first aspect. The registry gives every model at
- * least one of each.
+ * Standard (or the model's first quality) and the model's first aspect. Paused qualities are skipped while
+ * another is offered. The registry gives every model at least one of each.
  */
 export function choicesForModel(
   model: PublicModel,
   current: { quality: Quality; aspect: Aspect },
 ): ModelChoices {
-  const offered = model.qualities.map((option) => option.quality);
+  const all = model.qualities.map((option) => option.quality);
+  const usable = model.qualities.filter((option) => !option.paused).map((option) => option.quality);
+  const offered = usable.length > 0 ? usable : all;
   const quality = offered.includes(current.quality)
     ? current.quality
     : offered.includes(DEFAULT_QUALITY)

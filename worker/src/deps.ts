@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { Environment } from '@pictora/core';
+import { metricsNamespace, type Environment } from '@pictora/core';
 import { powertoolsMetrics } from '@pictora/core/observability';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
 import {
@@ -44,11 +44,19 @@ export function tableContext(env: NodeJS.ProcessEnv = process.env): TableContext
   };
 }
 
+/** The monthly cap on platform provider spend from `SPEND_CAP_CENTS`, set per environment by CDK. */
+export function spendCapCents(env: NodeJS.ProcessEnv = process.env): number {
+  const value = Number(required('SPEND_CAP_CENTS', env));
+  if (!Number.isInteger(value) || value < 0) throw new Error('SPEND_CAP_CENTS is not valid');
+  return value;
+}
+
 /**
  * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
  * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
  * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
- * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`).
+ * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`). The month's
+ * platform spend is published to `Pictora/<PICTORA_ENV>` with the cap from `SPEND_CAP_CENTS`.
  */
 export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
   const table = tableContext(env);
@@ -75,6 +83,10 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
     }),
     moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),
     metrics: powertoolsMetrics(env),
+    spend: {
+      capCents: spendCapCents(env),
+      namespace: metricsNamespace(required('PICTORA_ENV', env)),
+    },
     now: () => new Date(),
     newImageId: () => ulid(),
   };

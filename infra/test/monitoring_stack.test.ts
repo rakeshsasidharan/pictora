@@ -140,7 +140,7 @@ describe('Monitoring stack', () => {
 
   it('sends every job alarm and its recovery to the alert topic', () => {
     const alarms = Object.values(dev.findResources('AWS::CloudWatch::Alarm'));
-    expect(alarms.length).toBe(11);
+    expect(alarms.length).toBe(13);
     for (const alarm of alarms) {
       expect(alarm.Properties.AlarmActions).toEqual([
         { Ref: expect.stringMatching(/^AlertTopic/) },
@@ -177,13 +177,46 @@ describe('Monitoring stack', () => {
     }
   });
 
-  it('budgets the environment with alerts at 50%, 80% and 100% to the alert topic', () => {
+  it.each([
+    [80, 1600],
+    [100, 2000],
+  ])('alarms when the month spend reaches %i%% of the dev cap', (percent, threshold) => {
+    dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: `pictora-dev-spend-${percent}`,
+      Namespace: 'Pictora/dev',
+      MetricName: 'MonthlySpendCents',
+      Statistic: 'Maximum',
+      Period: 300,
+      Threshold: threshold,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      EvaluationPeriods: 1,
+      TreatMissingData: 'ignore',
+      AlarmActions: [{ Ref: Match.stringLikeRegexp('^AlertTopic') }],
+    });
+  });
+
+  it('sets the prod spend alarms from the $100 cap', () => {
+    const prod = Template.fromStack(testStage('PictoraProd').monitoring);
+    prod.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'pictora-prod-spend-80',
+      Namespace: 'Pictora/prod',
+      Threshold: 8000,
+    });
+    prod.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'pictora-prod-spend-100',
+      Threshold: 10000,
+    });
+    const [budget] = Object.values(prod.findResources('AWS::Budgets::Budget'));
+    expect(budget?.Properties.Budget.BudgetLimit).toEqual({ Amount: 100, Unit: 'USD' });
+  });
+
+  it('budgets the environment at the spend cap with alerts at 50%, 80% and 100% to the alert topic', () => {
     const [budget] = Object.values(dev.findResources('AWS::Budgets::Budget'));
     expect(budget?.Properties.Budget).toMatchObject({
       BudgetName: 'pictora-dev',
       BudgetType: 'COST',
       TimeUnit: 'MONTHLY',
-      BudgetLimit: { Amount: 15, Unit: 'USD' },
+      BudgetLimit: { Amount: 20, Unit: 'USD' },
       CostFilters: { TagKeyValue: ['user:environment$dev'] },
     });
     const notifications = budget?.Properties.NotificationsWithSubscribers;

@@ -1,3 +1,18 @@
+export {
+  ABUSE_DAILY_POINTS,
+  ABUSE_FLAGS,
+  SIGN_UPS_PER_IP_PER_DAY,
+  SIGN_UP_FLAG_SK,
+  SIGN_UP_FLAG_TTL_SECONDS,
+  SIGN_UP_IP_TTL_SECONDS,
+  emailDomain,
+  isAbuseFlag,
+  isDisposableEmail,
+  normaliseEmail,
+  signUpFlagPk,
+  signUpIpPk,
+} from './abuse.js';
+export type { AbuseFlag } from './abuse.js';
 export { DELETE_CONFIRMATION, parsePurgeMessage, userObjectPrefixes } from './account.js';
 export type { PurgeMessage } from './account.js';
 export {
@@ -76,6 +91,15 @@ export type {
   ModlogItem,
   ReportReason,
 } from './moderation.js';
+export {
+  CAP_ALLOWED_QUALITY,
+  MONTHLY_SPEND_METRIC,
+  SPEND_ALARM_PERCENTS,
+  metricsNamespace,
+  pausedQuality,
+  premiumPause,
+} from './platform_cap.js';
+export type { PremiumPause } from './platform_cap.js';
 export {
   CENTS_PER_POINT,
   DEFAULT_DAILY_POINTS,

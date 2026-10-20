@@ -36,6 +36,7 @@ import {
   type TableContext,
 } from './job_store.js';
 import { log } from './log.js';
+import { reportMonthlySpend, type SpendReporting } from './spend.js';
 
 /**
  * What the moderation hook decides about a request before it reaches the provider: allowed, or blocked with
@@ -65,6 +66,8 @@ export interface PipelineDeps extends TableContext {
   providerTimeoutMs?: number;
   /** Publishes the job metrics (tech design 11) when set. */
   metrics?: EmitMetrics;
+  /** When set, the month's platform spend is published after each job with a provider cost. */
+  spend?: SpendReporting;
   now: () => Date;
   newImageId: () => string;
 }
@@ -216,6 +219,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     { name: 'JobsSucceeded', value: 1, unit: 'Count' },
     { name: 'ProviderCostCents', value: providerCostCents, unit: 'Count' },
   ]);
+  if (deps.spend && providerCostCents > 0) await reportMonthlySpend(deps, deps.spend, deps.now());
   log('INFO', 'Job succeeded', {
     ...fields,
     outcome: 'succeeded',
@@ -364,6 +368,7 @@ async function fail(
     code,
     costCents,
   });
+  if (deps.spend && costCents > 0) await reportMonthlySpend(deps, deps.spend, now);
   if (options.block) {
     try {
       const until = await applyCooldown(deps, job.userId, now);

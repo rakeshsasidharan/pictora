@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Logger } from '@aws-lambda-powertools/logger';
 import { MetricUnit, Metrics } from '@aws-lambda-powertools/metrics';
+import { metricsNamespace } from './platform_cap.js';
 
 /**
  * The custom metrics (tech design 11), in namespace `Pictora/<env>`. Every metric carries the dimension
@@ -22,10 +23,7 @@ export type MetricName = (typeof METRIC_NAMES)[number];
 /** The `service` dimension on every metric. */
 export const METRICS_SERVICE = 'pictora';
 
-/** The metrics namespace for an environment, `Pictora/<env>`. */
-export function metricsNamespace(envName: string): string {
-  return `Pictora/${envName}`;
-}
+export { metricsNamespace };
 
 /** One data point; a metric with dimensions beyond `service` is published on its own. */
 export interface MetricPoint {

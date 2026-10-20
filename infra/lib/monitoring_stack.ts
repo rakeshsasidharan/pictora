@@ -18,7 +18,12 @@ import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import type { IQueue } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
-import { METRICS_SERVICE, metricsNamespace } from '../../packages/core/src/observability.js';
+import { METRICS_SERVICE } from '../../packages/core/src/observability.js';
+import {
+  MONTHLY_SPEND_METRIC,
+  SPEND_ALARM_PERCENTS,
+  metricsNamespace,
+} from '../../packages/core/src/platform_cap.js';
 import { QUEUE_PROVIDERS, type QueueProvider } from './jobs_stack.js';
 import type { StageConfig } from './stage_config.js';
 
@@ -32,9 +37,6 @@ export const APP_5XX_PERCENT_THRESHOLD = 1;
 export const FAILURE_RATE_PERCENT_THRESHOLD = 5;
 export const P95_LATENCY_THRESHOLD_MS = 60_000;
 export const OLDEST_MESSAGE_THRESHOLD_SECONDS = 5 * 60;
-
-/** The worker's month-to-date spend gauge, published after each job with a provider cost. */
-export const MONTHLY_SPEND_METRIC = 'MonthlySpendCents';
 
 /** Cost allocation tag that splits the budget by environment; it must be activated in Billing once. */
 export const ENVIRONMENT_TAG = 'environment';
@@ -54,7 +56,7 @@ export interface MonitoringStackProps extends StackProps {
 /**
  * Observability for one environment (tech design 11): the alert topic, the `pictora-<env>` dashboard, alarms
  * to email (failure rate, p95 provider latency, dead-letter queue, oldest queued message, app 5xx, model
- * health), and the AWS budget.
+ * health, platform spend), and the AWS budget.
  */
 export class MonitoringStack extends Stack {
   readonly alertTopic: Topic;
@@ -65,6 +67,8 @@ export class MonitoringStack extends Stack {
   readonly oldestMessageAlarms: Alarm[];
   readonly modelHealthAlarm: Alarm;
   readonly dashboard: Dashboard;
+  /** The month's provider spend at 80% and at 100% of the platform cap. */
+  readonly spendAlarms: Alarm[];
 
   constructor(scope: Construct, id: string, props: MonitoringStackProps) {
     super(scope, id, props);
@@ -330,6 +334,31 @@ export class MonitoringStack extends Stack {
       ],
     });
 
+    // The worker publishes the month's spend so far after every job with a provider cost. Between jobs there
+    // is no data, which keeps the alarm in its last state rather than flapping back to OK.
+    const capCents = config.spendCapUsd * 100;
+    const monthlySpend = new Metric({
+      namespace: metricsNamespace(config.envName),
+      metricName: MONTHLY_SPEND_METRIC,
+      statistic: 'Maximum',
+      period: Duration.minutes(5),
+    });
+    this.spendAlarms = SPEND_ALARM_PERCENTS.map((percent) => {
+      const alarm = new Alarm(this, `Spend${percent}Alarm`, {
+        alarmName: `pictora-${config.envName}-spend-${percent}`,
+        alarmDescription:
+          `Provider spend this month reached ${percent}% of the $${config.spendCapUsd} platform cap` +
+          (percent >= 100 ? '; premium qualities are paused until next month' : ''),
+        metric: monthlySpend,
+        threshold: (capCents * percent) / 100,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        evaluationPeriods: 1,
+        treatMissingData: TreatMissingData.IGNORE,
+      });
+      alarm.addAlarmAction(new SnsAction(this.alertTopic));
+      return alarm;
+    });
+
     this.alertTopic.addToResourcePolicy(
       new PolicyStatement({
         sid: 'AllowBudgetsToPublish',
@@ -344,7 +373,9 @@ export class MonitoringStack extends Stack {
         budgetName: `pictora-${config.envName}`,
         budgetType: 'COST',
         timeUnit: 'MONTHLY',
-        budgetLimit: { amount: config.budgetUsd, unit: 'USD' },
+        // The same total as the platform cap, so AWS spend (Bedrock included) alerts at the same levels as
+        // the OpenAI and Google billing alerts (PRD, Global safeguards).
+        budgetLimit: { amount: config.spendCapUsd, unit: 'USD' },
         costFilters: { TagKeyValue: [`user:${ENVIRONMENT_TAG}$${config.envName}`] },
       },
       notificationsWithSubscribers: BUDGET_THRESHOLDS.map((threshold) => ({

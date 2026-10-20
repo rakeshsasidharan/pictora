@@ -1,5 +1,20 @@
-import { GetCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { DEFAULT_DAILY_POINTS, PROFILE_SK, TOS_VERSION, userPk } from '@pictora/core';
+import {
+  DeleteCommand,
+  GetCommand,
+  UpdateCommand,
+  type DynamoDBDocumentClient,
+} from '@aws-sdk/lib-dynamodb';
+import {
+  ABUSE_DAILY_POINTS,
+  DEFAULT_DAILY_POINTS,
+  PROFILE_SK,
+  SIGN_UP_FLAG_SK,
+  TOS_VERSION,
+  isAbuseFlag,
+  signUpFlagPk,
+  userPk,
+  type AbuseFlag,
+} from '@pictora/core';
 import type { Session } from './session';
 
 /** `deleting` from the moment a user asks to delete their account until the purge removes the profile (AUTH-3). */
@@ -23,11 +38,14 @@ export interface Profile {
   tosVersion?: string;
   /** They confirmed they are 13 or older. */
   ageConfirmed?: boolean;
+  /** An abuse signal at sign-up, which lowers the daily allowance to 5 points (PRD, Cost control). */
+  abuseFlag?: AbuseFlag;
 }
 
 /**
  * Returns the user's profile, creating it on first use with the email and `createdAt` (tech design 8). One
- * conditional-free update both creates and reads it; the email follows the latest verified token.
+ * conditional-free update both creates and reads it; the email follows the latest verified token. When this
+ * call created it, an abuse flag the pre-sign-up trigger left for the email is copied onto it.
  */
 export async function ensureProfile(
   client: DynamoDBDocumentClient,
@@ -59,7 +77,38 @@ export async function ensureProfile(
       ReturnValues: 'ALL_NEW',
     }),
   );
-  return profileFromItem(session.sub, result.Attributes ?? {});
+  const profile = profileFromItem(session.sub, result.Attributes ?? {});
+  if (profile.createdAt !== values[':now'] || !session.email) return profile;
+  const abuseFlag = await takeSignUpFlag(client, tableName, session.sub, session.email);
+  return abuseFlag ? { ...profile, abuseFlag: profile.abuseFlag ?? abuseFlag } : profile;
+}
+
+/**
+ * Moves the pre-sign-up trigger's `SIGNUP#<email>` marker onto the new profile as `abuseFlag`, never replacing
+ * one already set, then deletes the marker. Returns the flag, or undefined when the sign-up wasn't flagged.
+ */
+async function takeSignUpFlag(
+  client: DynamoDBDocumentClient,
+  tableName: string,
+  sub: string,
+  email: string,
+): Promise<AbuseFlag | undefined> {
+  const key = { PK: signUpFlagPk(email), SK: SIGN_UP_FLAG_SK };
+  const marker = await client.send(
+    new GetCommand({ TableName: tableName, Key: key, ConsistentRead: true }),
+  );
+  const abuseFlag = marker.Item?.abuseFlag;
+  if (!isAbuseFlag(abuseFlag)) return undefined;
+  await client.send(
+    new UpdateCommand({
+      TableName: tableName,
+      Key: { PK: userPk(sub), SK: PROFILE_SK },
+      UpdateExpression: 'SET abuseFlag = if_not_exists(abuseFlag, :flag)',
+      ExpressionAttributeValues: { ':flag': abuseFlag },
+    }),
+  );
+  await client.send(new DeleteCommand({ TableName: tableName, Key: key }));
+  return abuseFlag;
 }
 
 /** The profile as stored, read consistently; undefined when the user has none yet. */
@@ -94,6 +143,7 @@ function profileFromItem(sub: string, item: Record<string, unknown>): Profile {
     tosAcceptedAt: typeof item.tosAcceptedAt === 'string' ? item.tosAcceptedAt : undefined,
     tosVersion: typeof item.tosVersion === 'string' ? item.tosVersion : undefined,
     ageConfirmed: item.ageConfirmed === true,
+    abuseFlag: isAbuseFlag(item.abuseFlag) ? item.abuseFlag : undefined,
   };
 }
 
@@ -112,9 +162,16 @@ export function onboardingComplete(
   );
 }
 
-/** The user's daily allowance: their `dailyPoints` override, else the environment default (LIM-1, ADM-5). */
-export function dailyLimit(profile: Pick<Profile, 'dailyPoints'>, defaultPoints: number): number {
-  return profile.dailyPoints ?? defaultPoints;
+/**
+ * The user's daily allowance (LIM-1): their `dailyPoints` override (ADM-5) wins; else 5 points for a flagged
+ * account (never more than the default); else the environment default.
+ */
+export function dailyLimit(
+  profile: Pick<Profile, 'dailyPoints' | 'abuseFlag'>,
+  defaultPoints: number,
+): number {
+  if (profile.dailyPoints !== undefined) return profile.dailyPoints;
+  return profile.abuseFlag ? Math.min(ABUSE_DAILY_POINTS, defaultPoints) : defaultPoints;
 }
 
 /** True while a cooldown is in force at `now`. */

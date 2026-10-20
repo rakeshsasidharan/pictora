@@ -125,7 +125,7 @@ describe('Jobs stack: worker Lambda', () => {
     );
   });
 
-  it('passes the table, bucket, secret names and commit SHA', () => {
+  it('passes the table, bucket, secret names, spend cap and commit SHA', () => {
     expect(workerFunction(dev).Environment.Variables).toMatchObject({
       PICTORA_ENV: 'dev',
       GIT_SHA: 'abc123',
@@ -133,6 +133,7 @@ describe('Jobs stack: worker Lambda', () => {
       IMAGES_BUCKET: expect.anything(),
       OPENAI_SECRET_ID: 'pictora/dev/openai',
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      SPEND_CAP_CENTS: '2000',
       GEMINI_BACKEND: 'api',
     });
     expect(workerFunction(dev).Environment.Variables).not.toHaveProperty('GEMINI_VERTEX_PROJECT');

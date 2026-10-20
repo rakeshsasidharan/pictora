@@ -46,7 +46,7 @@ export class PictoraStage extends Stage {
       });
     }
     this.data = new DataStack(this, 'Data', { config });
-    this.auth = new AuthStack(this, 'Auth', { config });
+    this.auth = new AuthStack(this, 'Auth', { config, table: this.data.table });
     this.jobs = new JobsStack(this, 'Jobs', {
       config,
       table: this.data.table,
