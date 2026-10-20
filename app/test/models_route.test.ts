@@ -12,6 +12,22 @@ vi.mock('../src/lib/registry', async (importOriginal) => ({
   registryLoader: () => loaderFor.current,
 }));
 
+const pauseFor = vi.hoisted(() => ({ current: undefined as { until: Date } | undefined }));
+const spendRead = vi.hoisted(() => vi.fn());
+
+vi.mock('../src/lib/dynamodb', () => ({
+  documentClient: () => ({}),
+  tableName: () => 'pictora-test',
+}));
+
+vi.mock('../src/lib/platform_spend', () => ({
+  spendCapCents: () => 2000,
+  readPremiumPause: async (...args: unknown[]) => {
+    spendRead(...args);
+    return pauseFor.current;
+  },
+}));
+
 const { GET } = await import('../src/app/api/models/route');
 
 function useRegistry(models: ModelConfig[], environment: 'dev' | 'prod') {
@@ -20,6 +36,7 @@ function useRegistry(models: ModelConfig[], environment: 'dev' | 'prod') {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  pauseFor.current = undefined;
 });
 
 describe('GET /api/models', () => {
@@ -49,6 +66,27 @@ describe('GET /api/models', () => {
       name: 'Line art',
       suggestedModelId: 'gpt-image-2',
     });
+  });
+
+  it('marks every quality but draft paused once the platform cap is reached', async () => {
+    useRegistry(seed, 'dev');
+    pauseFor.current = { until: new Date('2026-11-01T00:00:00.000Z') };
+    const body = await (await GET()).json();
+
+    expect(spendRead).toHaveBeenCalledWith({}, 'pictora-test', 2000, expect.any(Date));
+    expect(body.premiumPausedUntil).toBe('2026-11-01T00:00:00.000Z');
+    expect(body.models[0].qualities).toEqual([
+      { quality: 'draft', costPoints: 1 },
+      { quality: 'standard', costPoints: 6, paused: true },
+      { quality: 'high', costPoints: 22, paused: true },
+    ]);
+  });
+
+  it('marks nothing paused below the cap', async () => {
+    useRegistry(seed, 'dev');
+    const body = await (await GET()).json();
+    expect(body.premiumPausedUntil).toBeUndefined();
+    expect(JSON.stringify(body.models)).not.toContain('paused');
   });
 
   it('never exposes provider settings', async () => {

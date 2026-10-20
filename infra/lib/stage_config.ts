@@ -45,12 +45,13 @@ export interface EnvironmentSettings {
   readonly authDomainPrefix: string;
   /** Points each user gets per UTC day, unless their profile overrides it. */
   readonly dailyPoints: number;
-  /** Monthly platform cap on provider spend, in US dollars. */
+  /**
+   * Monthly platform cap on provider spend, in US dollars. At it, only draft quality works; the spend alarms
+   * fire at 80% and 100% of it, and the AWS budget uses the same total.
+   */
   readonly spendCapUsd: number;
   /** Maximum concurrent worker invocations per provider queue. */
   readonly queueConcurrency: number;
-  /** Monthly AWS Budgets amount for this environment's infrastructure, in US dollars. */
-  readonly budgetUsd: number;
   /** Reserved concurrency for the app Lambda, as a cost guard. Unset means unreserved. */
   readonly appReservedConcurrency?: number;
   /** The prompt enhancer model (tech design 6.3): `bedrock:<id>`, `gemini:<id>` or `mock`. */
@@ -136,7 +137,6 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     dailyPoints: positiveInteger(raw, 'dailyPoints', where),
     spendCapUsd: positiveInteger(raw, 'spendCapUsd', where),
     queueConcurrency: positiveInteger(raw, 'queueConcurrency', where),
-    budgetUsd: positiveInteger(raw, 'budgetUsd', where),
     appReservedConcurrency:
       raw.appReservedConcurrency === undefined
         ? undefined

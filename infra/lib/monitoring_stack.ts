@@ -14,6 +14,11 @@ import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import type { IQueue } from 'aws-cdk-lib/aws-sqs';
 import type { Construct } from 'constructs';
+import {
+  MONTHLY_SPEND_METRIC,
+  SPEND_ALARM_PERCENTS,
+  metricsNamespace,
+} from '../../packages/core/src/platform_cap.js';
 import type { StageConfig } from './stage_config.js';
 
 /** Budget alerts as a percentage of the monthly budget (tech design 11). */
@@ -33,13 +38,15 @@ export interface MonitoringStackProps extends StackProps {
 }
 
 /**
- * Alert topic, the app 5xx and dead-letter queue alarms, and the AWS budget (tech design 11). The dashboard and
- * the other job alarms come later.
+ * Alert topic, the app 5xx, dead-letter queue and platform spend alarms, and the AWS budget (tech design 11).
+ * The dashboard and the other job alarms come later.
  */
 export class MonitoringStack extends Stack {
   readonly alertTopic: Topic;
   readonly app5xxAlarm: Alarm;
   readonly deadLetterAlarm: Alarm;
+  /** The month's provider spend at 80% and at 100% of the platform cap. */
+  readonly spendAlarms: Alarm[];
 
   constructor(scope: Construct, id: string, props: MonitoringStackProps) {
     super(scope, id, props);
@@ -96,6 +103,31 @@ export class MonitoringStack extends Stack {
     this.deadLetterAlarm.addAlarmAction(new SnsAction(this.alertTopic));
     this.deadLetterAlarm.addOkAction(new SnsAction(this.alertTopic));
 
+    // The worker publishes the month's spend so far after every job with a provider cost. Between jobs there
+    // is no data, which keeps the alarm in its last state rather than flapping back to OK.
+    const capCents = config.spendCapUsd * 100;
+    const monthlySpend = new Metric({
+      namespace: metricsNamespace(config.envName),
+      metricName: MONTHLY_SPEND_METRIC,
+      statistic: 'Maximum',
+      period: Duration.minutes(5),
+    });
+    this.spendAlarms = SPEND_ALARM_PERCENTS.map((percent) => {
+      const alarm = new Alarm(this, `Spend${percent}Alarm`, {
+        alarmName: `pictora-${config.envName}-spend-${percent}`,
+        alarmDescription:
+          `Provider spend this month reached ${percent}% of the $${config.spendCapUsd} platform cap` +
+          (percent >= 100 ? '; premium qualities are paused until next month' : ''),
+        metric: monthlySpend,
+        threshold: (capCents * percent) / 100,
+        comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        evaluationPeriods: 1,
+        treatMissingData: TreatMissingData.IGNORE,
+      });
+      alarm.addAlarmAction(new SnsAction(this.alertTopic));
+      return alarm;
+    });
+
     this.alertTopic.addToResourcePolicy(
       new PolicyStatement({
         sid: 'AllowBudgetsToPublish',
@@ -110,7 +142,9 @@ export class MonitoringStack extends Stack {
         budgetName: `pictora-${config.envName}`,
         budgetType: 'COST',
         timeUnit: 'MONTHLY',
-        budgetLimit: { amount: config.budgetUsd, unit: 'USD' },
+        // The same total as the platform cap, so AWS spend (Bedrock included) alerts at the same levels as
+        // the OpenAI and Google billing alerts (PRD, Global safeguards).
+        budgetLimit: { amount: config.spendCapUsd, unit: 'USD' },
         costFilters: { TagKeyValue: [`user:${ENVIRONMENT_TAG}$${config.envName}`] },
       },
       notificationsWithSubscribers: BUDGET_THRESHOLDS.map((threshold) => ({

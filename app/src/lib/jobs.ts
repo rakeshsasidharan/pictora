@@ -8,6 +8,7 @@ import {
   estimatePoints,
   jobError,
   jobPk,
+  pausedQuality,
   ttlAfter,
   utcDate,
   type GenerateJobRequest,
@@ -17,6 +18,7 @@ import {
   type Provider,
 } from '@pictora/core';
 import { failQueuedJob, readJob, readUsedPoints, reserveJob } from './job_store';
+import { premiumPausedMessage, readPremiumPause } from './platform_spend';
 import {
   dailyLimit,
   ensureProfile,
@@ -40,6 +42,8 @@ export interface JobsDeps {
   /** A presigned GET URL for an object in the images bucket; with a download name, it saves as that file. */
   presign: (key: string, downloadName?: string) => Promise<string>;
   defaultDailyPoints: number;
+  /** The monthly cap on platform provider spend, in cents (tech design 4.1). */
+  spendCapCents: number;
   now: () => Date;
   newJobId: () => string;
 }
@@ -63,6 +67,7 @@ export const API_ERROR_STATUS = {
   blocked: 422,
   out_of_points: 402,
   suspended: 403,
+  premium_paused: 403,
   account_deleting: 403,
   onboarding_required: 403,
   cooldown: 403,
@@ -130,6 +135,10 @@ export async function createJob(
   const points = estimatePoints(model, request.quality, request.aspect, request.count);
 
   const now = deps.now();
+  if (pausedQuality(request.quality)) {
+    const pause = await readPremiumPause(deps.client, deps.tableName, deps.spendCapCents, now);
+    if (pause) return apiError('premium_paused', premiumPausedMessage(pause));
+  }
   const profile = await ensureProfile(deps.client, deps.tableName, session, now);
   const blocked = profileRefusal(profile, now);
   if (blocked) return blocked;

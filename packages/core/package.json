@@ -14,6 +14,10 @@
       "types": "./dist/src/registry_store.d.ts",
       "default": "./dist/src/registry_store.js"
     },
+    "./abuse-store": {
+      "types": "./dist/src/abuse_store.d.ts",
+      "default": "./dist/src/abuse_store.js"
+    },
     "./block-store": {
       "types": "./dist/src/block_store.d.ts",
       "default": "./dist/src/block_store.js"

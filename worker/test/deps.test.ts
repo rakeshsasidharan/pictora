@@ -36,13 +36,25 @@ describe('worker deps', () => {
       }),
     ).toThrow('GEMINI_SECRET_ID is not set');
     const env = {
+      PICTORA_ENV: 'dev',
       TABLE_NAME: 'pictora-dev',
       IMAGES_BUCKET: 'images',
       OPENAI_SECRET_ID: 'pictora/dev/openai',
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      SPEND_CAP_CENTS: '2000',
     };
+    expect(() => pipelineDeps({ ...env, SPEND_CAP_CENTS: undefined })).toThrow(
+      'SPEND_CAP_CENTS is not set',
+    );
+    expect(() => pipelineDeps({ ...env, SPEND_CAP_CENTS: 'lots' })).toThrow(
+      'SPEND_CAP_CENTS is not valid',
+    );
     const deps = pipelineDeps(env);
-    expect(deps).toMatchObject({ tableName: 'pictora-dev', bucket: 'images' });
+    expect(deps).toMatchObject({
+      tableName: 'pictora-dev',
+      bucket: 'images',
+      spend: { capCents: 2000, namespace: 'Pictora/dev' },
+    });
     expect(deps.moderate).toBeTypeOf('function');
     const openai = deps.provider(seedModel('gpt-image-2'));
     expect(openai.generate).toBeTypeOf('function');

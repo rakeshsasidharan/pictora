@@ -110,7 +110,9 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId (or uploadId for a blocked upload), createdAt | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
-| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents | — |
+| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents (the configured cap, recorded by the worker) | — |
+| Sign-up flag | `SIGNUP#<email in lower case>` | `ABUSE` | abuseFlag, createdAt; written by the pre-sign-up trigger, moved onto the profile when the app creates it | 30 days |
+| Sign-up IP counter | `SIGNUPIP#<yyyy-mm-dd>` | `<sha-256 of the source IP, 32 hex>` | count | 2 days |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
 | Enhancer stats | `STATS#<yyyy-mm-dd>` | `ENHANCER#<enhancer model>` | calls, inputTokens, outputTokens, costCents (overhead, never charged to users), fallbacks (output failed moderation), failures | 400 days |
 | Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key | 90 days |
@@ -135,14 +137,14 @@ Points are integers, and 1 point is $0.01 of provider list price.
 
 - **Estimate:** `points = model.qualities[quality].costPoints × count` (`estimatePoints` in `packages/core`). Each quality fixes the output size tier (Gemini `imageSize` 1K, 2K or 4K; OpenAI quality at 1024²), so its cost is the price of one image at that size; the aspect ratio doesn't change it.
 - **Reserve** (in the create-job API), as one `TransactWriteItems` call:
-  1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? DEFAULT_DAILY_POINTS` (25).
+  1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? (profile.abuseFlag ? 5 : DEFAULT_DAILY_POINTS)` (25).
   2. Update `PROFILE`: `ADD activeJobs :1`, on condition `activeJobs < :2` and `status = active` and no cooldown in force (LIM-3).
   3. Put `JOB#<id>` with condition `attribute_not_exists(PK)`.
 - **Settle** (worker, on success): the user pays the actual cost rounded up to points, capped at the returned images' share of the reservation, so a partial success (fewer images than requested) charges only for the images returned (`settleJobPoints`). If that is lower than the reservation, `ADD used :negativeDiff` on the job's `usageDate`. Then increment `PLATFORM/SPEND#<month>` and `STATS#…` by the actual cost, and decrement `activeJobs`.
 - **Refund** (failure or block): `ADD used :-p` and decrement `activeJobs`, in the same transaction that sets the job's final status, and count the failure or block in `STATS#…`. If the provider had already answered (for example, storing the images failed), its cost is still added to the platform spend.
 - **Rate limit:** 10 jobs a minute, via `ADD count :1` on `RATE#<minute>` with the condition `count < 10`, as a fourth item of the reserve transaction. A transaction cancelled by a concurrent one (`TransactionConflict`) is retried.
 - **Errors:** error answers are `{ error, code }`, where `error` is a plain-language message for the user (GEN-10).
-- **Platform cap:** at job creation, read `PLATFORM/SPEND#<month>`. If `spentCents ≥ capCents` ($100), reject any model whose quality tier isn't `draft`. At 80%, an alarm emails the admin. A small overrun from jobs already in flight is accepted.
+- **Platform cap:** at job creation, a request for a quality other than `draft` reads `PLATFORM/SPEND#<month>`. If `spentCents` has reached the cap (`SPEND_CAP_CENTS` from `spendCapUsd` in config: $100 in prod, $20 in dev), it is refused with 403 `premium_paused` and the message "Premium models are paused until <1st of next month>…". `GET /api/models` and the generate page mark those qualities `paused`, and the UI disables them. After each job with a provider cost, the worker records the cap on the spend item and publishes the month's total as the `MonthlySpendCents` metric (Embedded Metric Format, namespace `Pictora/<env>`); alarms at 80% and 100% of the cap email the admin. A small overrun from jobs already in flight is accepted.
 - The reset at 00:00 UTC comes for free, because the usage key is per day.
 
 ## 5. Job pipeline
@@ -309,12 +311,12 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | Method | Path | Purpose | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Readiness and smoke test | Public; no downstream calls |
-| GET | `/api/models` | Enabled models, styles, costs | Cached 60 s |
+| GET | `/api/models` | Enabled models, styles, costs | Cached 60 s; once the platform cap is reached, non-draft qualities carry `paused: true` and the body has `premiumPausedUntil` |
 | GET | `/api/me` | Profile, points left today, limits | Creates the profile on first use; returns `dailyLimit`, `pointsUsed`, `pointsLeft`, `activeJobs` |
 | POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | `{ ageConfirmed: true, termsAccepted: true, tosVersion }`; 409 `terms_changed` for an older version. Needed before the first job: until then `POST /api/jobs` and `POST /api/enhance` answer 403 `onboarding_required` |
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
 | POST | `/api/enhance` | Rewrite a prompt | `{ prompt, style, modelId }` → `{ enhancedPrompt, fallback? }`. Moderated on input (422 `blocked`) and output (fallback to the user's words); rate-limited with jobs (429); 503 `enhance_failed` when the enhancer is unavailable |
-| POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down |
+| POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
 | GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
 | POST | `/api/uploads` | Presigned POST for an upload (EDIT-2) | `{ contentType, size }` → `{ uploadId, url, fields, expiresAt }`; 10 MB, JPEG/PNG/WebP; counted in the job rate window |
 | POST | `/api/uploads/:id/complete` | Check, moderate and store an upload as a new image | 201 `{ image }`, 200 when already completed; 404 for a missing or another user's upload, 413 over 10 MB, 400 `not_an_image`, 422 `blocked`, 503 `moderation_failed` |
@@ -337,7 +339,7 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 - **First login:** a profile is created on first API call. Until the profile has `ageConfirmed`, `tosAcceptedAt` and the current `TOS_VERSION`, the home page sends the user to `/onboarding`, which collects the age confirmation and terms acceptance (AUTH-4); pages that create or show images use `requireOnboarding` from `app/src/lib/onboarding.ts`. A new version asks users to accept again.
 - **Account deletion (AUTH-3):** `/account` shows the email, sign-in method, member-since date and today's points, and a "Delete account" confirmation that needs "DELETE" typed. Sessions carry the Cognito `username` (from the access token) for the admin calls; Google users' usernames start with `google_`. Access tokens already issued stay valid until they expire (at most 1 hour), but the cookies are cleared, the refresh tokens revoked, and the profile is `deleting`, so no new jobs start.
 - **Public pages:** `/` is the landing page for signed-out visitors (AUTH-2) and redirects signed-in users to `/generate`. `/terms`, `/content-policy` and `/privacy` are rendered on the server from the Markdown in `app/content/legal/` with `markdown-it` (raw HTML disabled), once per server instance; they ship no page-specific client code. They can't be prerendered at build time, because the root layout reads the session for the header.
-- **Abuse signals:** a Cognito pre-sign-up Lambda checks the email domain against a disposable-domain list. A match sets `abuseFlag`, which lowers `dailyPoints` to 5.
+- **Abuse signals:** a Cognito pre-sign-up Lambda (every sign-up, email or Google) checks the email domain, and its parent domains, against a disposable-domain list (the npm package `disposable-email-domains-js`, kept current by Dependabot). When Cognito passes the source IP (`userContextData`, only with threat protection), it also counts sign-ups per IP per day, and flags any after the third. A flagged sign-up gets a `SIGNUP#<email>` marker, because a federated user has no `sub` yet; when the app creates the profile, it moves the marker onto it as `abuseFlag` (`disposable_email` or `many_accounts`). A flagged account gets 5 daily points unless `dailyPoints` is set (ADM-5 wins). The trigger never blocks a sign-up: if the check fails, the sign-up goes through unflagged. The README says how to clear a flag by hand.
 - **CSRF:** state-changing routes require the `Origin` header to match the site domain, on top of the SameSite cookies.
 
 ## 9. Storage (S3)
@@ -370,8 +372,8 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 - **Logs:** Powertools Logger, as JSON, with `jobId`, `userSub` (hashed), `modelId`, `provider`, `latencyMs`, `costCents` and `outcome`. Retention: 30 days in dev, 90 days in prod.
 - **Metrics:** Powertools Metrics (EMF), under namespace `Pictora/<env>`: `JobsCreated`, `JobsSucceeded`, `JobsFailed`, `JobsBlocked`, `ProviderLatencyMs` (per provider), `ProviderCostCents`, `PointsReserved`, `EnhancerLatencyMs`.
 - **Dashboard:** jobs by status, p50 and p95 latency per provider, error rate, queue depth and age, dead-letter queue depth, spend for today and this month.
-- **Alarms** (sent to SNS, then email): failure rate above 5% over 15 min, p95 latency above 60 s, dead-letter queue above 0, oldest queue message older than 5 min, app 5xx above 1%, monthly spend at 80% of the cap, and model health failures.
-- **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget. Set OpenAI and Google billing alerts at the same levels by hand.
+- **Alarms** (sent to SNS, then email): failure rate above 5% over 15 min, p95 latency above 60 s, dead-letter queue above 0, oldest queue message older than 5 min, app 5xx above 1%, monthly spend at 80% and 100% of the cap (`MonthlySpendCents`), and model health failures.
+- **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget, which is the platform cap (`spendCapUsd`), so AWS spend (Bedrock included) alerts at the same levels as provider spend. Set OpenAI and Google billing alerts at the same levels by hand.
 
 ## 12. Security
 

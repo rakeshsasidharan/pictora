@@ -35,6 +35,7 @@ import {
   type TableContext,
 } from './job_store.js';
 import { log } from './log.js';
+import { reportMonthlySpend, type SpendReporting } from './spend.js';
 
 /**
  * What the moderation hook decides about a request before it reaches the provider: allowed, or blocked with
@@ -62,6 +63,8 @@ export interface PipelineDeps extends TableContext {
   moderate?: ModerateRequest;
   /** How long the provider gets, retry included; 120 s unless a test shortens it. */
   providerTimeoutMs?: number;
+  /** When set, the month's platform spend is published after each job with a provider cost. */
+  spend?: SpendReporting;
   now: () => Date;
   newImageId: () => string;
 }
@@ -205,6 +208,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     log('WARN', 'Job was failed by the sweeper before it could be recorded', fields);
     return 'skipped';
   }
+  if (deps.spend && providerCostCents > 0) await reportMonthlySpend(deps, deps.spend, deps.now());
   log('INFO', 'Job succeeded', {
     ...fields,
     outcome: 'succeeded',
@@ -328,6 +332,9 @@ async function fail(
     return 'skipped';
   }
   log('INFO', 'Job refunded', { jobId: job.jobId, modelId: job.modelId, outcome: status, code });
+  if (deps.spend && (options.providerCostCents ?? 0) > 0) {
+    await reportMonthlySpend(deps, deps.spend, now);
+  }
   if (options.block) {
     try {
       const until = await applyCooldown(deps, job.userId, now);
