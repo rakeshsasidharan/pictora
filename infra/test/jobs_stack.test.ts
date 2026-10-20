@@ -321,12 +321,12 @@ describe('Jobs stack: sweeper', () => {
       Object.values(dev.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([30, 30, 30]);
+    ).toEqual([30, 30, 30, 30]);
     expect(
       Object.values(prod.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([90, 90, 90]);
+    ).toEqual([90, 90, 90, 90]);
   });
 
   it('can use the table and its indexes, and nothing else', () => {
@@ -393,5 +393,46 @@ describe('bedrockModelIds', () => {
       'stability.stable-image-core-v1:1',
       'stability.stable-image-ultra-v1:1',
     ]);
+  });
+});
+
+describe('Jobs stack: model health', () => {
+  const functionId = () =>
+    logicalId(dev, 'AWS::Lambda::Function', { ImageConfig: { Command: ['model_health.handler'] } });
+
+  it('runs the model_health handler from the worker image with the registry and secret names', () => {
+    const props = imageFunction(dev, 'model_health.handler');
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.Timeout).toBe(120);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: expect.anything(),
+      OPENAI_SECRET_ID: 'pictora/dev/openai',
+      GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      GEMINI_BACKEND: 'api',
+    });
+  });
+
+  it('runs daily at 06:00 UTC, without retrying a failed run', () => {
+    dev.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'cron(0 6 * * ? *)',
+      State: 'ENABLED',
+      Targets: [
+        Match.objectLike({
+          Arn: { 'Fn::GetAtt': [functionId(), 'Arn'] },
+          RetryPolicy: { MaximumRetryAttempts: 0 },
+        }),
+      ],
+    });
+  });
+
+  it('may read the table and the provider secrets, and list Bedrock models', () => {
+    const statements = policyStatements(dev, 'ModelHealthFunctionServiceRole');
+    const actions = statements.flatMap((statement) => [statement.Action].flat());
+    expect(actions).toEqual(expect.arrayContaining(['bedrock:ListFoundationModels']));
+    expect(actions).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem']));
+    expect(actions).not.toContain('dynamodb:PutItem');
+    expect(actions).not.toContain('bedrock:InvokeModel');
+    expect(JSON.stringify(statements)).toContain('secretsmanager:GetSecretValue');
   });
 });

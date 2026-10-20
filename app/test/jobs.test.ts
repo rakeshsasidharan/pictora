@@ -12,6 +12,7 @@ import {
   type JobItem,
   type ModelConfig,
 } from '@pictora/core';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { modelsAvailableIn } from '@pictora/core/registry-store';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createJob, getJobStatus, getMe, unsupportedOption, type JobsDeps } from '../src/lib/jobs';
@@ -216,7 +217,16 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
 
   it('creates the profile, reserves the points, records the queued job and queues it', async () => {
     const session = await onboardedSession();
-    const result = await createJob(deps(), session, generate({ quality: 'high', count: 2 }));
+    const metrics = vi.fn<EmitMetrics>();
+    const result = await createJob(
+      deps({ metrics }),
+      session,
+      generate({ quality: 'high', count: 2 }),
+    );
+    expect(metrics).toHaveBeenCalledWith([
+      { name: 'JobsCreated', value: 1, unit: 'Count' },
+      { name: 'PointsReserved', value: 6, unit: 'Count' },
+    ]);
     expect(result.status).toBe(202);
     const { jobId } = result.body as { jobId: string };
     expect(result.body).toEqual({ jobId, status: 'queued', pointsReserved: 6 });

@@ -67,6 +67,13 @@ export {
   toOpenAiError,
 } from './openai.js';
 export type { OpenAiProviderOptions, OpenAiTokenPrices } from './openai.js';
+export {
+  BEDROCK_MODEL_PROVIDER,
+  bedrockModelCatalogue,
+  geminiModelCatalogue,
+  openAiModelCatalogue,
+} from './model_catalogue.js';
+export type { CatalogueEntry, ModelCatalogue } from './model_catalogue.js';
 export { PROVIDER_IDS, isProviderId } from './provider_ids.js';
 export type { ProviderId } from './provider_ids.js';
 export {

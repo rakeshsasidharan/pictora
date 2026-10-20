@@ -17,6 +17,7 @@ import {
   utcMinute,
   type ModelConfig,
 } from '@pictora/core';
+import type { EmitMetrics } from '@pictora/core/observability';
 import type { Enhance, Moderate } from '@pictora/providers/text';
 import { apiError, logError, profileRefusal, type ApiResult } from './jobs';
 import { ensureProfile } from './profile';
@@ -33,6 +34,8 @@ export interface EnhanceDeps {
   /** The enhancer model as configured (`ENHANCER_MODEL`), for the stats. */
   enhancerModel: string;
   now: () => Date;
+  /** Publishes `EnhancerLatencyMs` (tech design 11) when set. */
+  metrics?: EmitMetrics;
 }
 
 /** The `POST /api/enhance` body. `fallback` means the output failed moderation, so it is the user's words. */
@@ -91,6 +94,7 @@ export async function enhancePrompt(
       model,
     });
     enhancedPrompt = result.enhancedPrompt;
+    deps.metrics?.([{ name: 'EnhancerLatencyMs', value: result.latencyMs, unit: 'Milliseconds' }]);
     const flagged = await outputFlagged(deps, enhancedPrompt);
     await recordEnhancerStats(deps, now, { ...result, fallback: flagged });
     if (flagged) return { status: 200, body: { enhancedPrompt: prompt, fallback: true } };

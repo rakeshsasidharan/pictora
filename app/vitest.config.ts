@@ -10,6 +10,7 @@ export default defineConfig({
     alias: [
       { find: /^@pictora\/core$/, replacement: coreSource('index.ts') },
       { find: /^@pictora\/core\/registry-store$/, replacement: coreSource('registry_store.ts') },
+      { find: /^@pictora\/core\/observability$/, replacement: coreSource('observability.ts') },
       {
         find: /^@pictora\/providers\/text$/,
         replacement: fileURLToPath(new URL('../packages/providers/src/text.ts', import.meta.url)),
@@ -17,6 +18,8 @@ export default defineConfig({
     ],
   },
   test: {
+    // Powertools would write log lines and metrics to stdout; tests capture what they need themselves.
+    env: { POWERTOOLS_LOG_LEVEL: 'SILENT', POWERTOOLS_METRICS_DISABLED: 'true' },
     include: ['test/**/*.test.{ts,tsx}'],
   },
 });

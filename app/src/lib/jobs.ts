@@ -16,6 +16,7 @@ import {
   type ModelConfig,
   type Provider,
 } from '@pictora/core';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { failQueuedJob, readJob, readUsedPoints, reserveJob } from './job_store';
 import {
   dailyLimit,
@@ -25,6 +26,7 @@ import {
   readProfile,
   type Profile,
 } from './profile';
+import { log } from './observability';
 import type { Session } from './session';
 
 /** What the job API needs, so tests can swap the queues, S3 and the clock. */
@@ -42,6 +44,8 @@ export interface JobsDeps {
   defaultDailyPoints: number;
   now: () => Date;
   newJobId: () => string;
+  /** Publishes `JobsCreated` and `PointsReserved` (tech design 11) when set. */
+  metrics?: EmitMetrics;
 }
 
 /** A route handler's answer: an HTTP status and a JSON body. */
@@ -184,6 +188,18 @@ export async function createJob(
     }
     return apiError('enqueue_failed', failure.message);
   }
+  deps.metrics?.([
+    { name: 'JobsCreated', value: 1, unit: 'Count' },
+    { name: 'PointsReserved', value: points, unit: 'Count' },
+  ]);
+  log('INFO', 'Job created', {
+    jobId,
+    userSub: session.sub,
+    modelId: model.id,
+    provider: model.provider,
+    pointsReserved: points,
+    outcome: 'queued',
+  });
   return { status: 202, body: { jobId, status: 'queued', pointsReserved: points } };
 }
 
@@ -361,15 +377,7 @@ function plural(count: number, word: string): string {
   return count === 1 ? word : `${word}s`;
 }
 
-/** Logs an error as one JSON line, with the error's message. */
+/** Logs an error as one JSON line through the app's Powertools logger, with the error's message. */
 export function logError(message: string, fields: Record<string, unknown>): void {
-  const { error, ...rest } = fields;
-  console.error(
-    JSON.stringify({
-      level: 'ERROR',
-      message,
-      ...rest,
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
+  log('ERROR', message, fields);
 }

@@ -986,6 +986,14 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
     },
+    "PublishOutputFnGetAttBedrockQueue897D9489QueueNameC69C9A80": {
+      "Value": {
+        "Fn::GetAtt": [
+          "BedrockQueue897D9489",
+          "QueueName",
+        ],
+      },
+    },
     "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350": {
       "Value": {
         "Fn::GetAtt": [
@@ -1002,11 +1010,27 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
     },
+    "PublishOutputFnGetAttGeminiQueue107AFA75QueueNameD3775EA9": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GeminiQueue107AFA75",
+          "QueueName",
+        ],
+      },
+    },
     "PublishOutputFnGetAttOpenaiQueue9426766EArnB4FDB08E": {
       "Value": {
         "Fn::GetAtt": [
           "OpenaiQueue9426766E",
           "Arn",
+        ],
+      },
+    },
+    "PublishOutputFnGetAttOpenaiQueue9426766EQueueNameC70B11E5": {
+      "Value": {
+        "Fn::GetAtt": [
+          "OpenaiQueue9426766E",
+          "QueueName",
         ],
       },
     },
@@ -1018,6 +1042,14 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
     },
+    "PublishOutputFnGetAttPurgeQueueDB15AA5EQueueName194774FC": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PurgeQueueDB15AA5E",
+          "QueueName",
+        ],
+      },
+    },
     "PublishOutputRefBedrockQueue897D9489A89EE611": {
       "Value": {
         "Ref": "BedrockQueue897D9489",
@@ -1026,6 +1058,11 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
     "PublishOutputRefGeminiQueue107AFA754FBDA33C": {
       "Value": {
         "Ref": "GeminiQueue107AFA75",
+      },
+    },
+    "PublishOutputRefModelHealthFunction9CDDF0038E3F9C7D": {
+      "Value": {
+        "Ref": "ModelHealthFunction9CDDF003",
       },
     },
     "PublishOutputRefOpenaiQueue9426766EC8AD9BB1": {
@@ -1223,6 +1260,281 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
         ],
       },
       "Type": "AWS::SQS::QueuePolicy",
+    },
+    "ModelHealthFunction9CDDF003": {
+      "DependsOn": [
+        "ModelHealthFunctionServiceRoleDefaultPolicy4A42599C",
+        "ModelHealthFunctionServiceRole899D1D57",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GEMINI_BACKEND": "api",
+            "GEMINI_SECRET_ID": "pictora/dev/gemini",
+            "GIT_SHA": "local",
+            "OPENAI_SECRET_ID": "pictora/dev/openai",
+            "PICTORA_ENV": "dev",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "model_health.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "ModelHealthLogGroup74BBD730",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "ModelHealthFunctionServiceRole899D1D57",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "ModelHealthFunctionServiceRole899D1D57": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ModelHealthFunctionServiceRoleDefaultPolicy4A42599C": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/gemini-??????",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/openai-??????",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:ListFoundationModels",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ModelHealthFunctionServiceRoleDefaultPolicy4A42599C",
+        "Roles": [
+          {
+            "Ref": "ModelHealthFunctionServiceRole899D1D57",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ModelHealthLogGroup74BBD730": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "ModelHealthSchedule035CE19B": {
+      "Properties": {
+        "Description": "Checks every enabled Pictora model still exists with its provider",
+        "ScheduleExpression": "cron(0 6 * * ? *)",
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "ModelHealthFunction9CDDF003",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "ModelHealthScheduleAllowEventRulePictoraDevJobsModelHealthFunction1526DA86B903A4E6": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ModelHealthFunction9CDDF003",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "ModelHealthSchedule035CE19B",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
     },
     "OpenaiQueue9426766E": {
       "DeletionPolicy": "Delete",
@@ -2456,6 +2768,98 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
+    "BedrockLatencyAlarmDB03ADD8": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "p95 bedrock latency was over 60 s for 15 minutes",
+        "AlarmName": "pictora-dev-bedrock-p95-latency",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "provider",
+            "Value": "bedrock",
+          },
+          {
+            "Name": "service",
+            "Value": "pictora",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "ExtendedStatistic": "p95",
+        "MetricName": "ProviderLatencyMs",
+        "Namespace": "Pictora/dev",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 900,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 60000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "BedrockOldestMessageAlarmD2AD3289": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "A message has waited in the bedrock queue for over 5 minutes",
+        "AlarmName": "pictora-dev-bedrock-oldest-message",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttBedrockQueue897D9489QueueNameC69C9A80",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Namespace": "AWS/SQS",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 300,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
     "Budget": {
       "Properties": {
         "Budget": {
@@ -2525,6 +2929,162 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
       },
       "Type": "AWS::Budgets::Budget",
     },
+    "Dashboard9E4231ED": {
+      "Properties": {
+        "DashboardBody": {
+          "Fn::Join": [
+            "",
+            [
+              "{"widgets":[{"type":"metric","width":8,"height":6,"x":0,"y":0,"properties":{"view":"timeSeries","title":"Jobs by status","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","JobsCreated","service","pictora",{"label":"Created","stat":"Sum"}],["Pictora/dev","JobsSucceeded","service","pictora",{"label":"Succeeded","stat":"Sum"}],["Pictora/dev","JobsFailed","service","pictora",{"label":"Failed","stat":"Sum"}],["Pictora/dev","JobsBlocked","service","pictora",{"label":"Blocked","stat":"Sum"}]],"yAxis":{}}},{"type":"metric","width":8,"height":6,"x":8,"y":0,"properties":{"view":"timeSeries","title":"Job error rate (%)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[[{"label":"Failed jobs %","expression":"IF(FILL(s, 0) + FILL(f, 0) + FILL(b, 0) > 0, 100 * FILL(f, 0) / (FILL(s, 0) + FILL(f, 0) + FILL(b, 0)), 0)"}],["Pictora/dev","JobsSucceeded","service","pictora",{"id":"s","visible":false,"stat":"Sum"}],["Pictora/dev","JobsFailed","service","pictora",{"id":"f","visible":false,"stat":"Sum"}],["Pictora/dev","JobsBlocked","service","pictora",{"id":"b","visible":false,"stat":"Sum"}]],"annotations":{"horizontal":[{"value":5,"label":"Alarm","yAxis":"left"}]},"yAxis":{}}},{"type":"metric","width":8,"height":6,"x":16,"y":0,"properties":{"view":"timeSeries","title":"App 5xx (%)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[[{"label":"App 5xx %","expression":"IF(requests > 0, 100 * errors / requests, 0)"}],["AWS/Lambda","Url5xxCount","FunctionName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputRefAppFunction05AF654E19932940",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Web",
+                },
+              },
+              "",{"id":"errors","visible":false,"stat":"Sum"}],["AWS/Lambda","UrlRequestCount","FunctionName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputRefAppFunction05AF654E19932940",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Web",
+                },
+              },
+              "",{"id":"requests","visible":false,"stat":"Sum"}]],"annotations":{"horizontal":[{"value":1,"label":"Alarm","yAxis":"left"}]},"yAxis":{}}},{"type":"metric","width":12,"height":6,"x":0,"y":6,"properties":{"view":"timeSeries","title":"Provider latency p50 (ms)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","ProviderLatencyMs","provider","openai","service","pictora",{"label":"openai","stat":"p50"}],["Pictora/dev","ProviderLatencyMs","provider","gemini","service","pictora",{"label":"gemini","stat":"p50"}],["Pictora/dev","ProviderLatencyMs","provider","bedrock","service","pictora",{"label":"bedrock","stat":"p50"}]],"yAxis":{}}},{"type":"metric","width":12,"height":6,"x":12,"y":6,"properties":{"view":"timeSeries","title":"Provider latency p95 (ms)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","ProviderLatencyMs","provider","openai","service","pictora",{"label":"openai","stat":"p95"}],["Pictora/dev","ProviderLatencyMs","provider","gemini","service","pictora",{"label":"gemini","stat":"p95"}],["Pictora/dev","ProviderLatencyMs","provider","bedrock","service","pictora",{"label":"bedrock","stat":"p95"}]],"annotations":{"horizontal":[{"value":60000,"label":"Alarm","yAxis":"left"}]},"yAxis":{}}},{"type":"metric","width":8,"height":6,"x":0,"y":12,"properties":{"view":"timeSeries","title":"Queue depth","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttOpenaiQueue9426766EQueueNameC70B11E5",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"openai","stat":"Maximum"}],["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttGeminiQueue107AFA75QueueNameD3775EA9",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"gemini","stat":"Maximum"}],["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttBedrockQueue897D9489QueueNameC69C9A80",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"bedrock","stat":"Maximum"}],["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttPurgeQueueDB15AA5EQueueName194774FC",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"purge","stat":"Maximum"}]],"yAxis":{}}},{"type":"metric","width":8,"height":6,"x":8,"y":12,"properties":{"view":"timeSeries","title":"Oldest message age (s)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttOpenaiQueue9426766EQueueNameC70B11E5",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"openai","stat":"Maximum"}],["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttGeminiQueue107AFA75QueueNameD3775EA9",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"gemini","stat":"Maximum"}],["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttBedrockQueue897D9489QueueNameC69C9A80",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"bedrock","stat":"Maximum"}],["AWS/SQS","ApproximateAgeOfOldestMessage","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttPurgeQueueDB15AA5EQueueName194774FC",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"label":"purge","stat":"Maximum"}]],"yAxis":{}}},{"type":"metric","width":8,"height":6,"x":16,"y":12,"properties":{"view":"timeSeries","title":"Dead-letter queue depth","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","",
+              {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttDeadLetterQueue9F481546QueueName1ED4E350",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Jobs",
+                },
+              },
+              "",{"stat":"Maximum"}]],"yAxis":{}}},{"type":"metric","width":8,"height":3,"x":0,"y":18,"properties":{"view":"singleValue","title":"Spend today (cents)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","ProviderCostCents","service","pictora",{"period":86400,"stat":"Sum"}]]}},{"type":"metric","width":8,"height":3,"x":8,"y":18,"properties":{"view":"singleValue","title":"Spend this month (cents)","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","MonthlySpendCents",{"period":86400,"stat":"Maximum"}]]}},{"type":"metric","width":8,"height":3,"x":16,"y":18,"properties":{"view":"singleValue","title":"Points reserved today","region":"",
+              {
+                "Ref": "AWS::Region",
+              },
+              "","metrics":[["Pictora/dev","PointsReserved","service","pictora",{"period":86400,"stat":"Sum"}]]}}]}",
+            ],
+          ],
+        },
+        "DashboardName": "pictora-dev",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::CloudWatch::Dashboard",
+    },
     "DeadLetterAlarmBB7AE56D": {
       "Properties": {
         "AlarmActions": [
@@ -2568,6 +3128,411 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
           },
         ],
         "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "FailureRateAlarm96A96B19": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "Over 5% of finished jobs failed in 15 minutes",
+        "AlarmName": "pictora-dev-failure-rate",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "IF(FILL(s, 0) + FILL(f, 0) + FILL(b, 0) > 0, 100 * FILL(f, 0) / (FILL(s, 0) + FILL(f, 0) + FILL(b, 0)), 0)",
+            "Id": "expr_1",
+            "Label": "Failed jobs %",
+            "ReturnData": true,
+          },
+          {
+            "Id": "s",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "service",
+                    "Value": "pictora",
+                  },
+                ],
+                "MetricName": "JobsSucceeded",
+                "Namespace": "Pictora/dev",
+              },
+              "Period": 900,
+              "Stat": "Sum",
+            },
+            "ReturnData": false,
+          },
+          {
+            "Id": "f",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "service",
+                    "Value": "pictora",
+                  },
+                ],
+                "MetricName": "JobsFailed",
+                "Namespace": "Pictora/dev",
+              },
+              "Period": 900,
+              "Stat": "Sum",
+            },
+            "ReturnData": false,
+          },
+          {
+            "Id": "b",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "service",
+                    "Value": "pictora",
+                  },
+                ],
+                "MetricName": "JobsBlocked",
+                "Namespace": "Pictora/dev",
+              },
+              "Period": 900,
+              "Stat": "Sum",
+            },
+            "ReturnData": false,
+          },
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 5,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "GeminiLatencyAlarm34D5A79B": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "p95 gemini latency was over 60 s for 15 minutes",
+        "AlarmName": "pictora-dev-gemini-p95-latency",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "provider",
+            "Value": "gemini",
+          },
+          {
+            "Name": "service",
+            "Value": "pictora",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "ExtendedStatistic": "p95",
+        "MetricName": "ProviderLatencyMs",
+        "Namespace": "Pictora/dev",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 900,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 60000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "GeminiOldestMessageAlarmFBDE5658": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "A message has waited in the gemini queue for over 5 minutes",
+        "AlarmName": "pictora-dev-gemini-oldest-message",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttGeminiQueue107AFA75QueueNameD3775EA9",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Namespace": "AWS/SQS",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 300,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ModelHealthAlarm56D3343B": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "A registered model is missing at its provider, deprecated, or retires within 60 days, or the check failed. The model_health logs name the model.",
+        "AlarmName": "pictora-dev-model-health",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "EvaluationPeriods": 1,
+        "Metrics": [
+          {
+            "Expression": "FILL(problems, 0) + FILL(errors, 0)",
+            "Id": "expr_1",
+            "Label": "Model health problems",
+            "ReturnData": true,
+          },
+          {
+            "Id": "problems",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "service",
+                    "Value": "pictora",
+                  },
+                ],
+                "MetricName": "ModelHealthProblems",
+                "Namespace": "Pictora/dev",
+              },
+              "Period": 86400,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
+          },
+          {
+            "Id": "errors",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "FunctionName",
+                    "Value": {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefModelHealthFunction9CDDF0038E3F9C7D",
+                        "Region": "us-west-2",
+                        "StackName": "PictoraDev-Jobs",
+                      },
+                    },
+                  },
+                ],
+                "MetricName": "Errors",
+                "Namespace": "AWS/Lambda",
+              },
+              "Period": 86400,
+              "Stat": "Sum",
+            },
+            "ReturnData": false,
+          },
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 0,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "OpenaiLatencyAlarmA47F9C1A": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "p95 openai latency was over 60 s for 15 minutes",
+        "AlarmName": "pictora-dev-openai-p95-latency",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "provider",
+            "Value": "openai",
+          },
+          {
+            "Name": "service",
+            "Value": "pictora",
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "ExtendedStatistic": "p95",
+        "MetricName": "ProviderLatencyMs",
+        "Namespace": "Pictora/dev",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 900,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 60000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "OpenaiOldestMessageAlarm258C8C95": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "A message has waited in the openai queue for over 5 minutes",
+        "AlarmName": "pictora-dev-openai-oldest-message",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttOpenaiQueue9426766EQueueNameC70B11E5",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Namespace": "AWS/SQS",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 300,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "PurgeOldestMessageAlarmC3ADAC73": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "AlarmDescription": "A message has waited in the purge queue for over 5 minutes",
+        "AlarmName": "pictora-dev-purge-oldest-message",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputFnGetAttPurgeQueueDB15AA5EQueueName194774FC",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Jobs",
+              },
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateAgeOfOldestMessage",
+        "Namespace": "AWS/SQS",
+        "OKActions": [
+          {
+            "Ref": "AlertTopic2720D535",
+          },
+        ],
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Threshold": 300,
         "TreatMissingData": "notBreaching",
       },
       "Type": "AWS::CloudWatch::Alarm",
@@ -3123,6 +4088,24 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",
     },
+    "AssetDeploymentLogGroup7391561E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "AssetsBucket5CB76180": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -3360,6 +4343,11 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
             "Ref": "DeployNextStaticAwsCliLayer5AC88BED",
           },
         ],
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "AssetDeploymentLogGroup7391561E",
+          },
+        },
         "MemorySize": 512,
         "Role": {
           "Fn::GetAtt": [
@@ -3381,35 +4369,6 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         "Timeout": 900,
       },
       "Type": "AWS::Lambda::Function",
-    },
-    "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBLogGroup4F3F55A8": {
-      "DeletionPolicy": "Retain",
-      "Properties": {
-        "LogGroupName": {
-          "Fn::Join": [
-            "",
-            [
-              "/aws/lambda/",
-              {
-                "Ref": "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiB6723FB92",
-              },
-            ],
-          ],
-        },
-        "RetentionInDays": 731,
-        "Tags": [
-          {
-            "Key": "environment",
-            "Value": "dev",
-          },
-          {
-            "Key": "project",
-            "Value": "pictora",
-          },
-        ],
-      },
-      "Type": "AWS::Logs::LogGroup",
-      "UpdateReplacePolicy": "Retain",
     },
     "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C512MiBServiceRoleBA21DBC1": {
       "Properties": {

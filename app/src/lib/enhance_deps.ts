@@ -9,6 +9,7 @@ import {
 } from '@pictora/providers/text';
 import { documentClient, tableName } from './dynamodb';
 import type { EnhanceDeps } from './enhance';
+import { appMetrics } from './observability';
 import { registryLoader } from './registry';
 
 let moderate: Moderate | undefined;
@@ -42,5 +43,6 @@ export function enhanceDeps(): EnhanceDeps {
     enhance,
     enhancerModel: enhancerModelName(model),
     now: () => new Date(),
+    metrics: appMetrics(),
   };
 }

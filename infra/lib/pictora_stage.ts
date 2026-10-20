@@ -68,6 +68,9 @@ export class PictoraStage extends Stage {
       config,
       appFunction: this.web.appFunction,
       deadLetterQueue: this.jobs.deadLetterQueue,
+      queues: this.jobs.queues,
+      purgeQueue: this.jobs.purgeQueue,
+      modelHealthFunction: this.jobs.modelHealthFunction,
     });
   }
 }

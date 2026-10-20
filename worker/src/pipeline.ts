@@ -23,6 +23,7 @@ import {
   type ImageRequest,
   type ImageResult,
 } from '@pictora/providers';
+import type { EmitMetrics, MetricPoint } from '@pictora/core/observability';
 import { ulid } from 'ulid';
 import {
   applyCooldown,
@@ -62,6 +63,8 @@ export interface PipelineDeps extends TableContext {
   moderate?: ModerateRequest;
   /** How long the provider gets, retry included; 120 s unless a test shortens it. */
   providerTimeoutMs?: number;
+  /** Publishes the job metrics (tech design 11) when set. */
+  metrics?: EmitMetrics;
   now: () => Date;
   newImageId: () => string;
 }
@@ -96,7 +99,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     log('INFO', 'Job claimed by another delivery; acknowledging the message', { jobId });
     return 'skipped';
   }
-  const fields = { jobId, modelId: job.modelId, provider: job.provider };
+  const fields = { jobId, userSub: job.userId, modelId: job.modelId, provider: job.provider };
 
   if (job.request.type !== 'generate') {
     log('ERROR', 'Job type not handled by the generate pipeline', { ...fields, type: job.type });
@@ -150,10 +153,12 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     result = await deps.provider(model).generate(model, imageRequest);
   } catch (error) {
     const code = errorCode(error);
+    const latencyMs = Date.now() - started;
+    deps.metrics?.([providerLatency(job, latencyMs)]);
     log(code === 'blocked' ? 'INFO' : 'ERROR', 'Provider call failed', {
       ...fields,
       outcome: code,
-      latencyMs: Date.now() - started,
+      latencyMs,
       error,
     });
     return fail(deps, job, code, {
@@ -168,6 +173,8 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
         : {}),
     });
   }
+  const latencyMs = Date.now() - started;
+  deps.metrics?.([providerLatency(job, latencyMs)]);
   const providerCostCents = result.providerCostCents;
   const images = result.images.slice(0, request.count);
   if (images.length === 0) {
@@ -205,6 +212,10 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     log('WARN', 'Job was failed by the sweeper before it could be recorded', fields);
     return 'skipped';
   }
+  deps.metrics?.([
+    { name: 'JobsSucceeded', value: 1, unit: 'Count' },
+    { name: 'ProviderCostCents', value: providerCostCents, unit: 'Count' },
+  ]);
   log('INFO', 'Job succeeded', {
     ...fields,
     outcome: 'succeeded',
@@ -212,9 +223,19 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     requested: request.count,
     pointsCharged: settlement.chargedPoints,
     costCents: providerCostCents,
-    latencyMs: Date.now() - started,
+    latencyMs,
   });
   return 'succeeded';
+}
+
+/** The provider's latency, with the provider as a dimension so the dashboard can split it. */
+function providerLatency(job: JobItem, latencyMs: number): MetricPoint {
+  return {
+    name: 'ProviderLatencyMs',
+    value: latencyMs,
+    unit: 'Milliseconds',
+    dimensions: { provider: job.provider },
+  };
 }
 
 /**
@@ -327,7 +348,22 @@ async function fail(
     log('WARN', 'Job was failed by the sweeper first', { jobId: job.jobId });
     return 'skipped';
   }
-  log('INFO', 'Job refunded', { jobId: job.jobId, modelId: job.modelId, outcome: status, code });
+  const costCents = options.providerCostCents ?? 0;
+  deps.metrics?.([
+    { name: status === 'blocked' ? 'JobsBlocked' : 'JobsFailed', value: 1, unit: 'Count' },
+    ...(costCents > 0
+      ? [{ name: 'ProviderCostCents' as const, value: costCents, unit: 'Count' as const }]
+      : []),
+  ]);
+  log('INFO', 'Job refunded', {
+    jobId: job.jobId,
+    userSub: job.userId,
+    modelId: job.modelId,
+    provider: job.provider,
+    outcome: status,
+    code,
+    costCents,
+  });
   if (options.block) {
     try {
       const until = await applyCooldown(deps, job.userId, now);

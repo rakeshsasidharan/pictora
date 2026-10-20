@@ -93,7 +93,7 @@ flowchart LR
 - Visibility timeout 1,080 s (6 × the function timeout, as AWS recommends). `maxReceiveCount` 3, then the dead-letter queue, which has an alarm.
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min, or in `queued` for over 10 min, as `failed`, refunds points, and frees the concurrency slot. It finds them through the active-jobs index (section 4), and each refund is conditional on the job still being in the status it was found in.
-  - `model_health` (daily): checks every enabled registry model still exists with its provider. A missing model or a deprecation notice triggers an SNS alert, which covers the model-retirement risk in the PRD.
+  - `model_health` (daily, 06:00 UTC): checks every enabled registry model against its provider's models list: OpenAI's models list, the Gemini models list (same `@google/genai` backend as the adapter), and Bedrock `ListFoundationModels` for Stability AI (`bedrock:ListFoundationModels`). A model that is missing, marked legacy by Bedrock, or retiring within 60 days (the registry's `eolDate` or Bedrock's end of life) is logged by name and counted in `ModelHealthProblems`; the model health alarm emails the admin, which covers the model-retirement risk in the PRD. A provider whose list can't be read is logged and skipped, never flagged.
 - Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
 
 ## 4. Data model (DynamoDB)
@@ -366,10 +366,10 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 
 ## 11. Observability
 
-- **Logs:** Powertools Logger, as JSON, with `jobId`, `userSub` (hashed), `modelId`, `provider`, `latencyMs`, `costCents` and `outcome`. Retention: 30 days in dev, 90 days in prod.
-- **Metrics:** Powertools Metrics (EMF), under namespace `Pictora/<env>`: `JobsCreated`, `JobsSucceeded`, `JobsFailed`, `JobsBlocked`, `ProviderLatencyMs` (per provider), `ProviderCostCents`, `PointsReserved`, `EnhancerLatencyMs`.
-- **Dashboard:** jobs by status, p50 and p95 latency per provider, error rate, queue depth and age, dead-letter queue depth, spend for today and this month.
-- **Alarms** (sent to SNS, then email): failure rate above 5% over 15 min, p95 latency above 60 s, dead-letter queue above 0, oldest queue message older than 5 min, app 5xx above 1%, monthly spend at 80% of the cap, and model health failures.
+- **Logs:** Powertools Logger (`createLog` in `@pictora/core/observability`; service `pictora-app` or `pictora-worker`), as JSON, with `jobId`, `userSub` (a 16-character SHA-256), `modelId`, `provider`, `latencyMs`, `costCents` and `outcome`. Prompt fields (`prompt`, `enhancedPrompt`, `sentPrompt`, `avoid`, `negativePrompt`, `instruction`, `editInstruction`) are dropped from every line below debug level. Retention: 30 days in dev, 90 days in prod, for every function's log group (CDK's dev-only bucket auto-delete helper aside).
+- **Metrics:** Powertools Metrics (EMF), under namespace `Pictora/<env>`, each with the dimension `service = pictora`: `JobsCreated` and `PointsReserved` (app), `JobsSucceeded`, `JobsFailed` (the sweeper's too), `JobsBlocked`, `ProviderLatencyMs` (with a `provider` dimension), `ProviderCostCents` (worker), `EnhancerLatencyMs` (app), and `ModelHealthProblems` (model health).
+- **Dashboard** (`pictora-<env>`): jobs by status, job error rate, app 5xx, p50 and p95 latency per provider, queue depth and oldest message age per queue, dead-letter queue depth, spend today (`ProviderCostCents`), spend this month (`MonthlySpendCents`), and points reserved today.
+- **Alarms** (sent to SNS, then email, with recovery notices): failed jobs above 5% of finished jobs over 15 min, p95 latency above 60 s per provider, dead-letter queue above 0, oldest message older than 5 min in any provider queue or the purge queue, app 5xx above 1%, monthly spend at 80% of the cap, and model health problems or a failed model health run.
 - **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget. Set OpenAI and Google billing alerts at the same levels by hand.
 
 ## 12. Security

@@ -24,6 +24,7 @@ import {
   type ImageProvider,
 } from '@pictora/providers';
 import { mockClient } from 'aws-sdk-client-mock';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { refundJob } from '../src/job_store.js';
 import {
@@ -251,6 +252,42 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
     const day = await stats();
     expect(day).toMatchObject({ images: 3, points: 6, providerCostCents: 6, failures: 1 });
     expect(day?.ttl).toBe(Math.floor(Date.parse('2026-10-15T12:00:30Z') / 1000) + 400 * 86_400);
+  });
+
+  it('publishes job metrics: success with cost and latency, failure and block', async () => {
+    const { provider } = countingMock();
+    const metrics = vi.fn<EmitMetrics>();
+    const points = () => metrics.mock.calls.flatMap(([batch]) => batch);
+
+    const ok = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'high' }),
+      pointsReserved: 3,
+    });
+    expect(await processJob(deps(provider, { metrics }), ok.jobId)).toBe('succeeded');
+    expect(points()).toEqual([
+      {
+        name: 'ProviderLatencyMs',
+        value: expect.any(Number),
+        unit: 'Milliseconds',
+        dimensions: { provider: 'mock' },
+      },
+      { name: 'JobsSucceeded', value: 1, unit: 'Count' },
+      { name: 'ProviderCostCents', value: 3, unit: 'Count' },
+    ]);
+
+    metrics.mockClear();
+    const failing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __fail__' }),
+    });
+    expect(await processJob(deps(provider, { metrics }), failing.jobId)).toBe('failed');
+    expect(points().map((point) => point.name)).toEqual(['ProviderLatencyMs', 'JobsFailed']);
+
+    metrics.mockClear();
+    const blocked = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __block__' }),
+    });
+    expect(await processJob(deps(provider, { metrics }), blocked.jobId)).toBe('blocked');
+    expect(points().map((point) => point.name)).toEqual(['ProviderLatencyMs', 'JobsBlocked']);
   });
 
   it.each([
