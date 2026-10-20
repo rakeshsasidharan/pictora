@@ -12,6 +12,7 @@ export default defineConfig({
         find: /^@pictora\/core\/registry-store$/,
         replacement: source('core/src/registry_store.ts'),
       },
+      { find: /^@pictora\/core\/block-store$/, replacement: source('core/src/block_store.ts') },
       { find: /^@pictora\/providers$/, replacement: source('providers/src/index.ts') },
     ],
   },

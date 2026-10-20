@@ -15,7 +15,7 @@ import {
 } from 'aws-cdk-lib/aws-s3';
 import { Provider } from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
-import type { StageConfig } from './stage_config.js';
+import { CLOUDFRONT_ORIGIN, LOCAL_DEV_URL, type StageConfig } from './stage_config.js';
 
 /** Unused uploads expire after a day (tech design 5.3). */
 export const UPLOADS_PREFIX = 'uploads/';
@@ -77,17 +77,20 @@ export class DataStack extends Stack {
       enforceSSL: true,
       objectOwnership: ObjectOwnership.BUCKET_OWNER_ENFORCED,
       versioned: prod,
-      // Browsers upload with presigned POST and read with presigned GET from the site only.
-      cors: domain
-        ? [
-            {
-              allowedOrigins: [`https://${domain}`],
-              allowedMethods: [HttpMethods.GET, HttpMethods.HEAD, HttpMethods.POST],
-              allowedHeaders: ['*'],
-              maxAge: 3000,
-            },
-          ]
-        : undefined,
+      // Browsers upload with presigned POST and read with presigned GET from the site (EDIT-2). Without a custom
+      // domain the site is on its CloudFront domain, which this stack can't know (the Web stack depends on it),
+      // so any CloudFront origin is allowed; the presigned POST's signed policy still fixes what can be uploaded.
+      cors: [
+        {
+          allowedOrigins: [
+            domain ? `https://${domain}` : CLOUDFRONT_ORIGIN,
+            ...(envName === 'dev' ? [LOCAL_DEV_URL] : []),
+          ],
+          allowedMethods: [HttpMethods.GET, HttpMethods.HEAD, HttpMethods.POST],
+          allowedHeaders: ['*'],
+          maxAge: 3000,
+        },
+      ],
       lifecycleRules: [
         {
           id: 'expire-unused-uploads',

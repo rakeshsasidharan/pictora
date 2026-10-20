@@ -9,6 +9,8 @@ export const MAX_PROMPT_LENGTH = 2000;
 export const MAX_AVOID_LENGTH = 500;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const UPLOAD_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+/** A presigned upload POST is valid for 5 minutes (EDIT-2). */
+export const UPLOAD_POST_EXPIRY_SECONDS = 5 * 60;
 
 const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 

@@ -180,6 +180,11 @@ export function imageKey(sub: string, imageId: string, version: number): string 
   return `users/${sub}/${imageId}/v${version}.png`;
 }
 
+/** Where the browser uploads an image to edit (EDIT-2, tech design 9); unused uploads expire after a day. */
+export function uploadKey(sub: string, uploadId: string): string {
+  return `uploads/${sub}/${uploadId}`;
+}
+
 /** Where the worker stores the WebP thumbnail of version `version` of an image (tech design 9). */
 export function thumbnailKey(sub: string, imageId: string, version: number): string {
   return `users/${sub}/${imageId}/v${version}_thumb.webp`;

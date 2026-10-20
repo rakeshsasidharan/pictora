@@ -18,6 +18,10 @@
       "types": "./dist/src/abuse_store.d.ts",
       "default": "./dist/src/abuse_store.js"
     },
+    "./block-store": {
+      "types": "./dist/src/block_store.d.ts",
+      "default": "./dist/src/block_store.js"
+    },
     "./models.json": "./models.json"
   },
   "files": [

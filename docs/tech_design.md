@@ -105,9 +105,9 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), ageConfirmed, status (`active` \| `suspended` \| `deleting`), deletionRequestedAt, `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
-| Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt), latestVersion, versionCount, style, modelId, createdAt, thumbKey | — |
-| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
-| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId, createdAt | 24 h |
+| Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt, or `Uploaded image`), latestVersion, versionCount, style, modelId, source (`upload` for an uploaded image), createdAt, thumbKey | — |
+| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, source (`upload` for an uploaded version 1), parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
+| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId (or uploadId for a blocked upload), createdAt | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
 | Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents (the configured cap, recorded by the worker) | — |
@@ -212,7 +212,7 @@ stateDiagram-v2
 - An edit is a job of type `edit`, with `parentImageId`, `parentVersion` and an `instruction`. It can carry up to 3 `referenceKeys`, uploaded images in S3.
 - Edits are **stateless**: each one sends the parent version's PNG plus the instruction to the provider. No provider chat history is kept, so edits are reproducible, provider-independent, and survive model changes.
 - The result is stored as version `n+1` of the same image. Earlier versions are never overwritten (EDIT-3).
-- **Uploads (EDIT-2):** the browser asks `POST /api/uploads` for a presigned POST. Its conditions are `content-length-range` up to 10 MB and a content type of JPEG, PNG or WebP. The browser uploads straight to `uploads/<sub>/<ulid>`. The worker moderates the image before using it, then stores it as version 1 of a new image. Uploads that are never used expire after 1 day (lifecycle rule).
+- **Uploads (EDIT-2):** the `/edit` page checks the file's type and size, then asks `POST /api/uploads` for a presigned POST. Its conditions are the exact key, `content-length-range` 1 byte to 10 MB, the content type the browser asked for (JPEG, PNG or WebP), and a 5-minute expiry. The browser uploads straight to `uploads/<sub>/<ulid>`, then calls `POST /api/uploads/:id/complete`. The app checks the object exists and is at most 10 MB, decodes it with `sharp`, and moderates a 1024 px copy. A flagged upload is deleted and recorded as a block (`BLOCK#` with `uploadId`, and a `MODLOG#` entry), which counts towards the cooldown. An allowed one is turned upright, stripped of its metadata, scaled down to fit 4096 px, and stored as a PNG with a thumbnail: version 1 of a new image whose ID is the upload ID (`source: 'upload'`), so completing twice is safe. The upload object is then deleted. Uploads cost no points. Uploads that are never completed expire after 1 day (lifecycle rule).
 
 ## 6. Model registry and provider adapters
 
@@ -318,7 +318,8 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | POST | `/api/enhance` | Rewrite a prompt | `{ prompt, style, modelId }` → `{ enhancedPrompt, fallback? }`. Moderated on input (422 `blocked`) and output (fallback to the user's words); rate-limited with jobs (429); 503 `enhance_failed` when the enhancer is unavailable |
 | POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
 | GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
-| POST | `/api/uploads` | Presigned POST for an upload | 10 MB, JPEG/PNG/WebP |
+| POST | `/api/uploads` | Presigned POST for an upload (EDIT-2) | `{ contentType, size }` → `{ uploadId, url, fields, expiresAt }`; 10 MB, JPEG/PNG/WebP; counted in the job rate window |
+| POST | `/api/uploads/:id/complete` | Check, moderate and store an upload as a new image | 201 `{ image }`, 200 when already completed; 404 for a missing or another user's upload, 413 over 10 MB, 400 `not_an_image`, 422 `blocked`, 503 `moderation_failed` |
 | GET | `/api/images` | Gallery page (cursor) | Thumbnails as presigned URLs |
 | GET | `/api/images/:id` | Image detail + versions | |
 | DELETE | `/api/images/:id` | Delete an image and all its versions | |
@@ -345,7 +346,7 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 
 | Bucket | Contents | Settings |
 | --- | --- | --- |
-| `pictora-<env>-images-<account-id>` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain, versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
+| `pictora-<env>-images-<account-id>` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain (any `*.cloudfront.net` origin while the environment has no custom domain, plus `http://localhost:3000` in dev), versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
 | `pictora-<env>-assets-<account-id>` | Next.js static files | Block public access; read only through CloudFront Origin Access Control |
 
 - Thumbnails (512 px WebP) are made by the worker with `sharp`, for fast gallery loads. Downloads always serve the original PNG (GEN-7).

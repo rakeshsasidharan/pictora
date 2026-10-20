@@ -553,6 +553,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
               ],
               "AllowedOrigins": [
                 "https://pictora.rpillai.dev",
+                "http://localhost:3000",
               ],
               "MaxAge": 3000,
             },
