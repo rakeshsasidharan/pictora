@@ -35,7 +35,9 @@ import {
   versionSk,
   type ActiveJobStatus,
   type BlockItem,
+  type Aspect,
   type BlockStage,
+  type EditJobRequest,
   type GenerateJobRequest,
   type JobError,
   type JobImage,
@@ -228,6 +230,192 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
     }),
     ...imageItems,
   ]);
+}
+
+/** The fields of a `VER#<imageId>#<n>` item an edit starts from. */
+export interface SourceVersion {
+  imageId: string;
+  version: number;
+  s3Key: string;
+  width: number;
+  height: number;
+  aspect?: Aspect;
+}
+
+/** A version of one of the user's images, or undefined when the image or the version doesn't exist. */
+export async function loadVersion(
+  { client, tableName }: TableContext,
+  sub: string,
+  imageId: string,
+  version: number,
+): Promise<SourceVersion | undefined> {
+  const result = await client.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: { PK: userPk(sub), SK: versionSk(imageId, version) },
+      ConsistentRead: true,
+    }),
+  );
+  return result.Item as SourceVersion | undefined;
+}
+
+/**
+ * Claims the next version number of an image for an edit's result (EDIT-3), with a counter on the `IMG#` item
+ * that starts from `latestVersion`. Each claim gets its own number, so concurrent edits never write the same
+ * `v<n>.png`; a claim whose job then fails leaves a gap in the numbers. Undefined when the image is gone.
+ */
+export async function claimVersion(
+  { client, tableName }: TableContext,
+  sub: string,
+  imageId: string,
+): Promise<number | undefined> {
+  try {
+    const result = await client.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: userPk(sub), SK: imageSk(imageId) },
+        UpdateExpression:
+          'SET versionsClaimed = if_not_exists(versionsClaimed, latestVersion) + :one',
+        ConditionExpression: 'attribute_exists(PK)',
+        ExpressionAttributeValues: { ':one': 1 },
+        ReturnValues: 'UPDATED_NEW',
+      }),
+    );
+    const claimed = result.Attributes?.versionsClaimed;
+    return typeof claimed === 'number' ? claimed : undefined;
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return undefined;
+    throw error;
+  }
+}
+
+export interface CompleteEditInput {
+  /** The running job, as `claimJob` returned it. */
+  job: JobItem;
+  request: EditJobRequest;
+  /** The new version, stored in S3 under the number `claimVersion` gave it. */
+  image: StoredImage & { version: number };
+  /** The aspect the provider was asked for, nearest the parent's shape. */
+  aspect: Aspect;
+  settlement: PointsSettlement;
+  providerCostCents: number;
+  now: Date;
+}
+
+/** How recording an edit ended: recorded, the job swept first, or the image deleted while the job ran. */
+export type EditCompletion = 'completed' | 'swept' | 'image_gone';
+
+/**
+ * Records a succeeded edit in one transaction (tech design 5.3): the new `VER#<imageId>#<n>` item with its parent
+ * and instruction, the image's `versionCount` and (unless a later-numbered edit finished first) `latestVersion`
+ * and thumbnail, and the job, points, slot, spend and stats as for a generate job. Earlier versions are never
+ * touched (EDIT-3).
+ */
+export async function completeEditJob(
+  ctx: TableContext,
+  input: CompleteEditInput,
+): Promise<EditCompletion> {
+  const { job, request, image, settlement, providerCostCents, now } = input;
+  const at = now.toISOString();
+  const pk = userPk(job.userId);
+  const jobImages: JobImage[] = [
+    { imageId: image.imageId, version: image.version, s3Key: image.s3Key },
+  ];
+  const common: TransactItem[] = [
+    {
+      Update: {
+        TableName: ctx.tableName,
+        Key: { PK: jobPk(job.jobId), SK: JOB_SK },
+        UpdateExpression:
+          'SET #status = :succeeded, images = :images, pointsCharged = :charged,' +
+          ' providerCostCents = :cost, finishedAt = :now REMOVE GSI1PK, GSI1SK',
+        ConditionExpression: '#status = :running AND GSI1SK = :since',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':succeeded': 'succeeded',
+          ':running': 'running',
+          ':since': job.GSI1SK,
+          ':images': jobImages,
+          ':charged': settlement.chargedPoints,
+          ':cost': providerCostCents,
+          ':now': at,
+        },
+      },
+    },
+    usageUpdate(ctx.tableName, job, settlement.usageDelta),
+    slotRelease(ctx.tableName, job),
+    spendUpdate(ctx.tableName, now, providerCostCents),
+    statsUpdate(ctx.tableName, job, now, {
+      images: 1,
+      points: settlement.chargedPoints,
+      providerCostCents,
+    }),
+    {
+      Put: {
+        TableName: ctx.tableName,
+        Item: {
+          PK: pk,
+          SK: versionSk(image.imageId, image.version),
+          imageId: image.imageId,
+          version: image.version,
+          s3Key: image.s3Key,
+          thumbKey: image.thumbKey,
+          width: image.width,
+          height: image.height,
+          parentVersion: request.parentVersion,
+          editInstruction: request.instruction,
+          modelId: job.modelId,
+          quality: request.quality,
+          aspect: input.aspect,
+          ...(request.referenceKeys?.length
+            ? { referenceCount: request.referenceKeys.length }
+            : {}),
+          jobId: job.jobId,
+          costPoints: image.costPoints,
+          createdAt: at,
+        },
+        ConditionExpression: 'attribute_not_exists(PK)',
+      },
+    },
+  ];
+  const imageKeyAttrs = { PK: pk, SK: imageSk(image.imageId) };
+  const asLatest: TransactItem = {
+    Update: {
+      TableName: ctx.tableName,
+      Key: imageKeyAttrs,
+      UpdateExpression: 'ADD versionCount :one SET latestVersion = :n, thumbKey = :thumb',
+      ConditionExpression: 'attribute_exists(PK) AND latestVersion < :n',
+      ExpressionAttributeValues: { ':one': 1, ':n': image.version, ':thumb': image.thumbKey },
+    },
+  };
+  // A later-numbered edit of the same image finished first: count this version without making it the latest.
+  const asEarlier: TransactItem = {
+    Update: {
+      TableName: ctx.tableName,
+      Key: imageKeyAttrs,
+      UpdateExpression: 'ADD versionCount :one',
+      ConditionExpression: 'attribute_exists(PK)',
+      ExpressionAttributeValues: { ':one': 1 },
+    },
+  };
+
+  for (const imageUpdate of [asLatest, asEarlier]) {
+    try {
+      await ctx.client.send(new TransactWriteCommand({ TransactItems: [...common, imageUpdate] }));
+    } catch (error) {
+      if (!(error instanceof TransactionCanceledException)) throw error;
+      const codes = (error.CancellationReasons ?? []).map((reason) => reason.Code);
+      if (codes[0] === 'ConditionalCheckFailed') return 'swept';
+      if (codes[common.length] === 'ConditionalCheckFailed') {
+        if (imageUpdate === asLatest) continue;
+        return 'image_gone';
+      }
+      throw error;
+    }
+    await syncUsageRank(ctx, job.userId, job.usageDate);
+    return 'completed';
+  }
+  return 'image_gone';
 }
 
 export interface RefundInput {

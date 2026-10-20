@@ -31,6 +31,7 @@ export const JOB_ERROR_CODES = [
   'provider_error',
   'enqueue_failed',
   'stuck',
+  'source_missing',
 ] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
@@ -43,6 +44,8 @@ export const JOB_ERROR_MESSAGES: Readonly<Record<JobErrorCode, string>> = {
     'The image model ran into a problem. Your points have been refunded. Please try again, or pick another model.',
   enqueue_failed: "We couldn't start your job. Your points have been refunded. Please try again.",
   stuck: "Your job didn't finish in time. Your points have been refunded. Please try again.",
+  source_missing:
+    'The image you were editing, or one of its reference images, is no longer available. Your points have been refunded.',
 };
 
 export interface JobError {

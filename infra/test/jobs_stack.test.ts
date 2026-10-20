@@ -221,13 +221,17 @@ describe('Jobs stack: worker IAM', () => {
     expect(actionsOf(statement ?? {})).not.toContain('dynamodb:DeleteTable');
   });
 
-  it('can only put objects in the images bucket', () => {
+  it('puts objects in the images bucket, and reads only image and upload objects', () => {
     const s3Statements = statements.filter((s) => actionsOf(s).some((a) => a.startsWith('s3:')));
-    expect(s3Statements).toHaveLength(1);
-    const [statement] = s3Statements;
-    expect(actionsOf(statement ?? {})).toContain('s3:PutObject');
-    expect(actionsOf(statement ?? {}).filter((a) => /^s3:(Get|Delete|List)/.test(a))).toEqual([]);
-    expect(JSON.stringify(statement?.Resource)).toMatch(/ImagesBucket.*Arn.*\/\*/);
+    expect(s3Statements).toHaveLength(2);
+    const put = s3Statements.find((s) => actionsOf(s).includes('s3:PutObject'));
+    expect(actionsOf(put ?? {}).filter((a) => /^s3:(Get|Delete|List)/.test(a))).toEqual([]);
+    expect(JSON.stringify(put?.Resource)).toMatch(/ImagesBucket.*Arn.*\/\*/);
+    const read = s3Statements.find((s) => actionsOf(s).includes('s3:GetObject'));
+    expect(actionsOf(read ?? {})).toEqual(['s3:GetObject']);
+    const resources = JSON.stringify(read?.Resource);
+    expect(resources).toContain('/users/*');
+    expect(resources).toContain('/uploads/*');
   });
 
   it('reads only the openai and gemini secrets of its environment, by name', () => {

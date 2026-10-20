@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useRef, useState, type DragEvent } from 'react';
-import { COMING_SOON, type ComingSoonFeature } from '../lib/coming_soon';
+import Link from 'next/link';
+import { useRef, useState, type DragEvent } from 'react';
+import { editImagePath } from '../lib/site';
 import {
   browserUploadClient,
   UploadError,
@@ -9,7 +10,6 @@ import {
   type UploadedImage,
 } from '../lib/upload_client';
 import { UPLOAD_ACCEPT, uploadFileError } from '../lib/upload_files';
-import { ComingSoonToast } from './coming_soon_toast';
 
 type UploadState =
   | { phase: 'idle' }
@@ -27,8 +27,6 @@ export function UploadImage({ client = browserUploadClient }: { client?: UploadC
   const input = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>({ phase: 'idle' });
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState<ComingSoonFeature>();
-  const closeToast = useCallback(() => setToast(undefined), []);
   const busy = state.phase === 'uploading' || state.phase === 'checking';
 
   async function upload(file: File) {
@@ -141,20 +139,15 @@ export function UploadImage({ client = browserUploadClient }: { client?: UploadC
             Uploaded. It&apos;s saved as version 1 of a new image.
           </figcaption>
           <div className="result-actions">
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => setToast(COMING_SOON.edit)}
-            >
+            <Link className="button button-primary" href={editImagePath(state.image.imageId)}>
               Edit this image
-            </button>
+            </Link>
             <a className="button" href={state.image.downloadUrl}>
               Download PNG
             </a>
           </div>
         </figure>
       )}
-      {toast && <ComingSoonToast feature={toast} onClose={closeToast} />}
     </section>
   );
 }

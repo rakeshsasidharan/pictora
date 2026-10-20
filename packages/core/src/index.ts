@@ -119,6 +119,7 @@ export {
   MODEL_ID_PATTERN,
   PROVIDERS,
   QUALITIES,
+  DEFAULT_EDIT_MODEL_ID,
   RegistryValidationError,
   findModel,
   isAspect,
@@ -150,6 +151,7 @@ export {
   enhanceRequestSchema,
   generateJobRequestSchema,
   onboardingRequestSchema,
+  parseReferenceKey,
   qualitySchema,
   reportRequestSchema,
   styleIdSchema,
@@ -161,6 +163,7 @@ export type {
   EnhanceRequest,
   GenerateJobRequest,
   OnboardingRequest,
+  ReferenceKey,
   ReportRequest,
   UploadRequest,
 } from './schemas.js';
@@ -173,6 +176,7 @@ export {
   centreCropSize,
   mapAspect,
   mapToNearestSize,
+  nearestAspect,
 } from './size_mapping.js';
 export type { GeminiImageSize, Size, SizeMapping } from './size_mapping.js';
 export {

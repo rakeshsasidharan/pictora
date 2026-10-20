@@ -16,6 +16,9 @@ export type Provider = (typeof PROVIDERS)[number];
 export const ENVIRONMENTS = ['dev', 'prod'] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
+/** The model the edit panel starts with (EDIT-4): Gemini 3.1 Flash Image, with GPT Image 2 as the alternative. */
+export const DEFAULT_EDIT_MODEL_ID = 'gemini-3.1-flash-image';
+
 /** Most reference images any request may carry (EDIT-5). */
 export const MAX_REFERENCE_IMAGES = 3;
 

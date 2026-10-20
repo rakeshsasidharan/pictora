@@ -1,6 +1,8 @@
 /** The presigned POST `POST /api/uploads` answers with. */
 export interface UploadTicket {
   uploadId: string;
+  /** The object the file goes to; an edit sends it as a reference image without completing the upload. */
+  key: string;
   url: string;
   fields: Record<string, string>;
 }

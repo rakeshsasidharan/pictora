@@ -15,6 +15,7 @@ import { TOO_LARGE_MESSAGE, WRONG_TYPE_MESSAGE } from '../src/lib/upload_files';
 
 const TICKET: UploadTicket = {
   uploadId: '01JAPKAD0000000000000000AA',
+  key: 'uploads/sub/01JAPKAD0000000000000000AA',
   url: 'https://bucket.s3.us-west-2.amazonaws.com/',
   fields: { key: 'uploads/sub/01JAPKAD0000000000000000AA', 'Content-Type': 'image/jpeg' },
 };
@@ -128,11 +129,11 @@ describe('UploadImage', () => {
     );
   });
 
-  it('says edit is coming soon', async () => {
+  it('opens the edit panel for the new image', async () => {
     render(<UploadImage client={fakeClient()} />);
     pick(file('photo.png', 'image/png'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit this image' }));
-    expect(screen.getByText('Edit coming soon.')).toBeTruthy();
+    const link = await screen.findByRole('link', { name: 'Edit this image' });
+    expect(link.getAttribute('href')).toBe(`/edit/${IMAGE.imageId}`);
   });
 
   it('shows why a blocked upload was refused', async () => {

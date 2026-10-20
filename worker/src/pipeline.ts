@@ -6,7 +6,9 @@ import {
   jobError,
   settleJobPoints,
   thumbnailKey,
+  type Aspect,
   type BlockStage,
+  type EditJobRequest,
   type GenerateJobRequest,
   type JobErrorCode,
   type JobItem,
@@ -26,8 +28,11 @@ import {
 import type { EmitMetrics, MetricPoint } from '@pictora/core/observability';
 import { applyCooldown } from '@pictora/core/block-store';
 import { ulid } from 'ulid';
+import { EditSourceError, loadEditInputs, type EditInputs } from './edit.js';
 import {
   claimJob,
+  claimVersion,
+  completeEditJob,
   completeJob,
   loadJob,
   refundJob,
@@ -79,8 +84,9 @@ export type JobOutcome = 'succeeded' | 'failed' | 'blocked' | 'skipped';
 export const MAX_TITLE_LENGTH = 80;
 
 /**
- * Runs one generate job (tech design 5.1): claims it exactly once, calls the provider with a 120 s deadline,
- * stores each image as a PNG and a WebP thumbnail, and records the result with the points settled. A failed,
+ * Runs one generate or edit job (tech design 5.1, 5.3): claims it exactly once, calls the provider with a 120 s
+ * deadline, stores each image as a PNG and a WebP thumbnail, and records the result with the points settled. An
+ * edit loads its parent version and references first, and its result becomes the image's next version. A failed,
  * timed-out or refused call fails or blocks the job with a full refund. A job that isn't queued (a redelivered
  * message, or a job the sweeper already failed) is acknowledged without touching the provider.
  */
@@ -104,12 +110,6 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
   }
   const fields = { jobId, userSub: job.userId, modelId: job.modelId, provider: job.provider };
 
-  if (job.request.type !== 'generate') {
-    log('ERROR', 'Job type not handled by the generate pipeline', { ...fields, type: job.type });
-    return fail(deps, job, 'provider_error');
-  }
-  const request = job.request;
-
   let model: ModelConfig | undefined;
   try {
     model = (await deps.models()).find((candidate) => candidate.id === job.modelId);
@@ -122,11 +122,22 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     return fail(deps, job, 'provider_error');
   }
 
-  const imageRequest = buildImageRequest(
-    request,
-    model,
-    providerSignal(undefined, deps.providerTimeoutMs ?? PROVIDER_TIMEOUT_MS),
-  );
+  const signal = providerSignal(undefined, deps.providerTimeoutMs ?? PROVIDER_TIMEOUT_MS);
+  const request = job.request;
+  let imageRequest: ImageRequest;
+  let edit: EditInputs | undefined;
+  if (request.type === 'edit') {
+    try {
+      edit = await loadEditInputs(deps, job.userId, request, model);
+    } catch (error) {
+      const missing = error instanceof EditSourceError;
+      log(missing ? 'WARN' : 'ERROR', 'Edit inputs could not be loaded', { ...fields, error });
+      return fail(deps, job, missing ? 'source_missing' : 'provider_error');
+    }
+    imageRequest = buildEditRequest(request, edit, signal);
+  } else {
+    imageRequest = buildImageRequest(request, model, signal);
+  }
 
   if (deps.moderate) {
     let verdict: ModerationVerdict;
@@ -153,7 +164,10 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
   const started = Date.now();
   let result: ImageResult;
   try {
-    result = await deps.provider(model).generate(model, imageRequest);
+    const adapter = deps.provider(model);
+    result = edit
+      ? await adapter.edit(model, imageRequest)
+      : await adapter.generate(model, imageRequest);
   } catch (error) {
     const code = errorCode(error);
     const latencyMs = Date.now() - started;
@@ -179,7 +193,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
   const latencyMs = Date.now() - started;
   deps.metrics?.([providerLatency(job, latencyMs)]);
   const providerCostCents = result.providerCostCents;
-  const images = result.images.slice(0, request.count);
+  const images = result.images.slice(0, imageRequest.count);
   if (images.length === 0) {
     log('ERROR', 'Provider returned no images', { ...fields, providerCostCents });
     return fail(deps, job, 'provider_error', { providerCostCents });
@@ -187,31 +201,50 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
 
   const settlement = settleJobPoints(
     job.pointsReserved,
-    request.count,
+    imageRequest.count,
     images.length,
     providerCostCents,
   );
-  let completed: boolean;
+  let recorded: 'completed' | 'swept' | 'image_gone';
   try {
-    const shares = splitPoints(settlement.chargedPoints, images.length);
-    const stored = await Promise.all(
-      images.map((image, index) => storeImage(deps, job, image, shares[index] ?? 0)),
-    );
-    completed = await completeJob(deps, {
-      job,
-      request,
-      images: stored,
-      settlement,
-      providerCostCents,
-      sentPrompt: imageRequest.prompt,
-      title: imageTitle(request.prompt),
-      now: deps.now(),
-    });
+    if (request.type === 'edit') {
+      const [image] = images;
+      // An edit always has its inputs and at least one image here; the checks only narrow the types.
+      recorded =
+        edit && image
+          ? await recordEdit(deps, job, request, edit.aspect, image, {
+              settlement,
+              providerCostCents,
+            })
+          : 'image_gone';
+    } else {
+      const shares = splitPoints(settlement.chargedPoints, images.length);
+      const stored = await Promise.all(
+        images.map((image, index) =>
+          storeImage(deps, job.userId, deps.newImageId(), 1, image, shares[index] ?? 0),
+        ),
+      );
+      const completed = await completeJob(deps, {
+        job,
+        request,
+        images: stored,
+        settlement,
+        providerCostCents,
+        sentPrompt: imageRequest.prompt,
+        title: imageTitle(request.prompt),
+        now: deps.now(),
+      });
+      recorded = completed ? 'completed' : 'swept';
+    }
   } catch (error) {
     log('ERROR', 'Storing the result failed', { ...fields, error });
     return fail(deps, job, 'provider_error', { providerCostCents });
   }
-  if (!completed) {
+  if (recorded === 'image_gone') {
+    log('WARN', 'Image deleted while its edit ran', fields);
+    return fail(deps, job, 'source_missing', { providerCostCents });
+  }
+  if (recorded === 'swept') {
     log('WARN', 'Job was failed by the sweeper before it could be recorded', fields);
     return 'skipped';
   }
@@ -224,12 +257,45 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     ...fields,
     outcome: 'succeeded',
     images: images.length,
-    requested: request.count,
+    requested: imageRequest.count,
     pointsCharged: settlement.chargedPoints,
     costCents: providerCostCents,
     latencyMs,
   });
   return 'succeeded';
+}
+
+/**
+ * Stores an edit's result as the image's next version (EDIT-3): claims the version number, writes
+ * `v<n>.png` and its thumbnail, and records the version with its parent and instruction.
+ */
+async function recordEdit(
+  deps: PipelineDeps,
+  job: JobItem,
+  request: EditJobRequest,
+  aspect: Aspect,
+  image: ImageResult['images'][number],
+  charge: { settlement: ReturnType<typeof settleJobPoints>; providerCostCents: number },
+): Promise<'completed' | 'swept' | 'image_gone'> {
+  const version = await claimVersion(deps, job.userId, request.imageId);
+  if (version === undefined) return 'image_gone';
+  const stored = await storeImage(
+    deps,
+    job.userId,
+    request.imageId,
+    version,
+    image,
+    charge.settlement.chargedPoints,
+  );
+  return completeEditJob(deps, {
+    job,
+    request,
+    image: { ...stored, version },
+    aspect,
+    settlement: charge.settlement,
+    providerCostCents: charge.providerCostCents,
+    now: deps.now(),
+  });
 }
 
 /** The provider's latency, with the provider as a dimension so the dashboard can split it. */
@@ -264,6 +330,27 @@ export function buildImageRequest(
   };
 }
 
+/**
+ * The provider request for an edit (tech design 5.3): the instruction as the prompt, the parent version's PNG as
+ * the input image, the references after it, and one image at the aspect nearest the parent's shape. Edits are
+ * stateless, so nothing else from earlier versions is sent.
+ */
+export function buildEditRequest(
+  request: EditJobRequest,
+  inputs: EditInputs,
+  signal: AbortSignal,
+): ImageRequest {
+  return {
+    prompt: request.instruction,
+    aspect: inputs.aspect,
+    quality: request.quality,
+    count: 1,
+    inputImage: inputs.parent,
+    ...(inputs.references.length > 0 ? { referenceImages: inputs.references } : {}),
+    signal,
+  };
+}
+
 /** The job error for a provider failure: a safety refusal blocks the job, a timeout and anything else fail it. */
 export function errorCode(error: unknown): JobErrorCode {
   if (error instanceof ProviderSafetyError) return 'blocked';
@@ -287,17 +374,19 @@ export function splitPoints(points: number, count: number): number[] {
   return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0));
 }
 
+/** Writes version `version` of an image to S3 as a PNG and a WebP thumbnail. */
 async function storeImage(
   deps: PipelineDeps,
-  job: JobItem,
+  sub: string,
+  imageId: string,
+  version: number,
   image: ImageResult['images'][number],
   costPoints: number,
 ): Promise<StoredImage> {
-  const imageId = deps.newImageId();
   const png = await normalisePng(image.png);
   const thumb = await thumbnail(png.png);
-  const s3Key = imageKey(job.userId, imageId, 1);
-  const thumbKey = thumbnailKey(job.userId, imageId, 1);
+  const s3Key = imageKey(sub, imageId, version);
+  const thumbKey = thumbnailKey(sub, imageId, version);
   await Promise.all([
     deps.s3.send(
       new PutObjectCommand({

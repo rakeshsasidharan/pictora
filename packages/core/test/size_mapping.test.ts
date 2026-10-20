@@ -9,6 +9,7 @@ import {
   type Aspect,
   type ModelConfig,
   type Size,
+  nearestAspect,
 } from '../src/index.js';
 
 const models = loadSeedRegistry();
@@ -144,5 +145,22 @@ describe('centreCropSize', () => {
       width: 1024,
       height: 576,
     });
+  });
+});
+
+describe('nearestAspect', () => {
+  it('picks the aspect closest to the image shape', () => {
+    expect(nearestAspect({ width: 1024, height: 1024 }, ASPECTS)).toBe('1:1');
+    expect(nearestAspect({ width: 1920, height: 1080 }, ASPECTS)).toBe('16:9');
+    expect(nearestAspect({ width: 3000, height: 4000 }, ASPECTS)).toBe('4:5');
+    expect(nearestAspect({ width: 832, height: 1216 }, ASPECTS)).toBe('2:3');
+  });
+
+  it('only picks from the aspects given', () => {
+    expect(nearestAspect({ width: 1920, height: 1080 }, ['1:1', '3:2', '2:3'])).toBe('3:2');
+  });
+
+  it('throws without aspects', () => {
+    expect(() => nearestAspect({ width: 1, height: 1 }, [])).toThrow();
   });
 });

@@ -64,6 +64,7 @@ function offlineDeps(overrides: Partial<JobsDeps> = {}): JobsDeps {
     enqueue: async () => undefined,
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
+    objectSize: async () => undefined,
     defaultDailyPoints: 25,
     spendCapCents: 2000,
     now: () => new Date('2026-10-15T12:00:00Z'),
@@ -80,18 +81,6 @@ describe('createJob: request checks', () => {
     expect(result.status).toBe(400);
     expect(result.body).toMatchObject({ code: 'invalid_request' });
     expect(result.body.error).toMatch(/isn't valid/);
-  });
-
-  it('rejects edits, which arrive with #22', async () => {
-    const result = await createJob(offlineDeps(), session, {
-      type: 'edit',
-      imageId: '01JAAAAAAAAAAAAAAAAAAAAAAA',
-      parentVersion: 1,
-      instruction: 'Make it blue',
-      modelId: 'mock',
-      quality: 'draft',
-    });
-    expect(result).toMatchObject({ status: 400, body: { code: 'edit_unavailable' } });
   });
 
   it('rejects a model that is not in the registry', async () => {
@@ -171,6 +160,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     enqueue,
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
+    objectSize: async () => undefined,
     defaultDailyPoints: 25,
     spendCapCents: 2000,
     now: () => clock,
