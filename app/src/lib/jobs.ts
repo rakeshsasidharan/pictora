@@ -30,6 +30,7 @@ import {
 } from './profile';
 import { log } from './observability';
 import type { Session } from './session';
+import { CONTACT_EMAIL } from './site';
 
 /** What the job API needs, so tests can swap the queues, S3 and the clock. */
 export interface JobsDeps {
@@ -70,6 +71,7 @@ export const API_ERROR_STATUS = {
   upload_too_large: 413,
   blocked: 422,
   out_of_points: 402,
+  forbidden: 403,
   suspended: 403,
   premium_paused: 403,
   account_deleting: 403,
@@ -77,6 +79,7 @@ export const API_ERROR_STATUS = {
   cooldown: 403,
   not_found: 404,
   terms_changed: 409,
+  invalid_state: 409,
   rate_limited: 429,
   too_many_jobs: 429,
   enqueue_failed: 503,
@@ -244,7 +247,10 @@ export function unsupportedOption(
  */
 export function profileRefusal(profile: Profile, now: Date): ApiResult | undefined {
   if (profile.status === 'suspended') {
-    return apiError('suspended', "Your account is suspended, so you can't create images.");
+    return apiError(
+      'suspended',
+      `Your account is suspended, so you can't create images. If you think this is a mistake, email ${CONTACT_EMAIL}.`,
+    );
   }
   if (profile.status === 'deleting') {
     return apiError('account_deleting', 'Your account is being deleted.');

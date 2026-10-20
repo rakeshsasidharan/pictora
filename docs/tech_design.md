@@ -114,8 +114,9 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Sign-up flag | `SIGNUP#<email in lower case>` | `ABUSE` | abuseFlag, createdAt; written by the pre-sign-up trigger, moved onto the profile when the app creates it | 30 days |
 | Sign-up IP counter | `SIGNUPIP#<yyyy-mm-dd>` | `<sha-256 of the source IP, 32 hex>` | count | 2 days |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
+| Moderation review stats | `STATS#<yyyy-mm-dd>` | `MODERATION` | blocksReviewed, falseBlocks (blocks reviewed `ok`, for the false-block metric), reportsReviewed; counted on the day of the entries reviewed (ADM-4) | 400 days |
 | Enhancer stats | `STATS#<yyyy-mm-dd>` | `ENHANCER#<enhancer model>` | calls, inputTokens, outputTokens, costCents (overhead, never charged to users), fallbacks (output failed moderation), failures | 400 days |
-| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key | 90 days |
+| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report` \| `admin_action`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key. Blocks and reports, once reviewed (ADM-4): review (`ok` \| `confirmed`), reviewedBy, reviewedAt. Admin actions: userId is the admin's sub, action (`suspend` \| `unsuspend` \| `review`), targetUserId, and for a review entryDate, entryId, verdict | 90 days |
 
 **Access patterns**
 
@@ -129,6 +130,8 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending. The worker writes `GSI1SK` (10 digits) after each settle or refund |
 | Stuck jobs (sweeper) | Query GSI1 `GSI1PK=JOBS#running`, `GSI1SK < now − 5 min`, and `GSI1PK=JOBS#queued`, `GSI1SK < now − 10 min` |
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
+| Admin stats for a range (ADM-3) | Query `PK=STATS#<date>` for each day (at most 92), GetItem `PLATFORM/SPEND#<month>` |
+| Moderation review queue (ADM-4) | Query `PK=MODLOG#<date>`, descending, filtered to blocks and reports |
 | Account deletion (AUTH-3) | Query all items under `USER#<sub>` and delete them in batches; delete the S3 prefix `users/<sub>/` |
 
 ### 4.1 Points and limits
@@ -325,10 +328,13 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | DELETE | `/api/images/:id` | Delete an image and all its versions | |
 | GET | `/api/images/:id/versions/:n/download` | Redirect to a presigned original PNG | `Content-Disposition: attachment` |
 | POST | `/api/reports` | Report an output | `{ imageId, version, reason }`; 201 with `reportId`. Writes a `MODLOG` entry of type `report`; owner only (404 otherwise) |
-| GET | `/api/admin/stats` | Spend and blocks dashboard (ADM-3) | `admins` Cognito group only |
-| POST | `/api/admin/users/:sub/suspend` | Suspend a user (ADM-4) | Admins only |
+| GET | `/api/admin/stats?from=&to=` | Spend and usage dashboard (ADM-3) | `admins` Cognito group only. Range defaults to the 14 days ending today, at most 92 days. Spend by day and provider (the provider comes from the registry), totals per model, enhancer overhead, today's spend, images, failure rate (failed jobs ÷ failed jobs + images) and blocks (from today's `MODLOG`), month-to-date spend against the cap, false blocks among reviewed blocks, and the top 20 users by points today (GSI1 on `USAGE#<today>`) with email and status |
+| GET | `/api/admin/moderation?date=` | Blocks and reports for review (ADM-4) | Admins only; the day's `MODLOG` blocks and reports, newest first, with a presigned thumbnail for reported images |
+| POST | `/api/admin/moderation/:date/:id/review` | Mark an entry reviewed (ADM-4) | Admins only; `{ verdict: 'ok' \| 'confirmed' }`. One transaction records the verdict, moves the `STATS#<date>/MODERATION` counts, and logs an `admin_action` |
+| GET | `/api/admin/users/:sub` | A user's profile and today's points | Admins only |
+| POST | `/api/admin/users/:sub/suspend`, `/unsuspend` | Suspend or reinstate a user (ADM-4) | Admins only; sets the profile status and logs an `admin_action` in one transaction. A suspended user's job, enhance and upload requests answer 403 `suspended` with the contact address. Admins can't suspend themselves; an account being deleted answers 409 |
 
-Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in DynamoDB through the console or CLI in v1, as the PRD says.
+The proxy answers 403 to signed-in users outside the `admins` group on `/admin` pages and `/api/admin/*`, and each admin route and the admin layout check the group again. The admin pages are `/admin` (dashboard), `/admin/moderation` and `/admin/users/<sub>`. Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in DynamoDB through the console or CLI in v1, as the PRD says; the dashboard links to the commands in the README.
 
 ## 8. Authentication
 
