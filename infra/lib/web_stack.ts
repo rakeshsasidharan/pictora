@@ -322,6 +322,14 @@ export class WebStack extends Stack {
    * content hashed, so they're cached for a year and never pruned: pages still open keep loading old chunks.
    */
   private deployAssets(config: StageConfig): void {
+    // Both deployments share one handler, so they share its log group, kept as long as every other one.
+    const prod = config.envName === 'prod';
+    let logGroup: LogGroup | undefined;
+    const deploymentLogGroup = () =>
+      (logGroup ??= new LogGroup(this, 'AssetDeploymentLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }));
     if (existsSync(config.appStaticDir)) {
       new BucketDeployment(this, 'DeployNextStatic', {
         sources: [Source.asset(config.appStaticDir)],
@@ -334,6 +342,7 @@ export class WebStack extends Stack {
         ],
         prune: false,
         memoryLimit: 512,
+        logGroup: deploymentLogGroup(),
       });
     }
 
@@ -347,6 +356,7 @@ export class WebStack extends Stack {
         cacheControl: [CacheControl.setPublic(), CacheControl.maxAge(Duration.hours(1))],
         prune: false,
         memoryLimit: 512,
+        logGroup: deploymentLogGroup(),
       });
     }
   }

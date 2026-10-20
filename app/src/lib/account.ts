@@ -7,7 +7,7 @@ import {
   userPk,
   type PurgeMessage,
 } from '@pictora/core';
-import { apiError, type ApiResult } from './jobs';
+import { apiError, logError, type ApiResult } from './jobs';
 import { ensureProfile } from './profile';
 import type { Session } from './session';
 
@@ -138,16 +138,4 @@ export async function deleteAccount(deps: AccountDeps, session: Session): Promis
     }
   }
   return { status: 202, body: { status: 'deleting' } };
-}
-
-function logError(message: string, fields: Record<string, unknown>): void {
-  const { error, ...rest } = fields;
-  console.error(
-    JSON.stringify({
-      level: 'ERROR',
-      message,
-      ...rest,
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
 }

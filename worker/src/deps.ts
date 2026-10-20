@@ -2,6 +2,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { metricsNamespace, type Environment } from '@pictora/core';
+import { powertoolsMetrics } from '@pictora/core/observability';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
 import {
   DEFAULT_ADAPTERS,
@@ -81,6 +82,7 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
       },
     }),
     moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),
+    metrics: powertoolsMetrics(env),
     spend: {
       capCents: spendCapCents(env),
       namespace: metricsNamespace(required('PICTORA_ENV', env)),

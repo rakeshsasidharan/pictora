@@ -1,6 +1,9 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { log } from '../src/log.js';
 import { reportMonthlySpend, spendMetricLine } from '../src/spend.js';
+
+vi.mock('../src/log.js', () => ({ log: vi.fn() }));
 
 describe('spendMetricLine', () => {
   it('is an Embedded Metric Format line with no dimensions', () => {
@@ -25,8 +28,7 @@ describe('reportMonthlySpend', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('logs a warning instead of throwing when DynamoDB fails', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const client = {
       send: vi.fn(async () => {
         throw new Error('throttled');
@@ -40,7 +42,11 @@ describe('reportMonthlySpend', () => {
         new Date('2026-10-19T00:00:00Z'),
       ),
     ).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Monthly spend not reported'));
-    expect(log).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'WARN',
+      'Monthly spend not reported',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+    expect(stdout).not.toHaveBeenCalled();
   });
 });

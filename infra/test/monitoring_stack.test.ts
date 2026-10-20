@@ -58,6 +58,125 @@ describe('Monitoring stack', () => {
     });
   });
 
+  it('alarms when over 5% of finished jobs fail in 15 minutes', () => {
+    const [alarm] = Object.values(
+      dev.findResources('AWS::CloudWatch::Alarm', {
+        Properties: { AlarmName: 'pictora-dev-failure-rate' },
+      }),
+    );
+    expect(alarm?.Properties).toMatchObject({
+      Threshold: 5,
+      ComparisonOperator: 'GreaterThanThreshold',
+      EvaluationPeriods: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: expect.stringMatching(/^AlertTopic/) }],
+    });
+    const metrics = alarm?.Properties.Metrics;
+    expect(metrics.find((m: { Expression?: string }) => m.Expression).Expression).toContain(
+      '100 * FILL(f, 0)',
+    );
+    const names = metrics
+      .filter((m: { MetricStat?: unknown }) => m.MetricStat)
+      .map((m: { MetricStat: { Metric: { MetricName: string }; Period: number } }) => [
+        m.MetricStat.Metric.MetricName,
+        m.MetricStat.Period,
+      ]);
+    expect(names).toEqual([
+      ['JobsSucceeded', 900],
+      ['JobsFailed', 900],
+      ['JobsBlocked', 900],
+    ]);
+    expect(JSON.stringify(metrics)).toContain('Pictora/dev');
+  });
+
+  it.each(['openai', 'gemini', 'bedrock'])(
+    'alarms when p95 %s latency is over 60 s',
+    (provider) => {
+      dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: `pictora-dev-${provider}-p95-latency`,
+        Namespace: 'Pictora/dev',
+        MetricName: 'ProviderLatencyMs',
+        Dimensions: Match.arrayWith([
+          { Name: 'provider', Value: provider },
+          { Name: 'service', Value: 'pictora' },
+        ]),
+        ExtendedStatistic: 'p95',
+        Period: 900,
+        Threshold: 60_000,
+        ComparisonOperator: 'GreaterThanThreshold',
+      });
+    },
+  );
+
+  it.each(['openai', 'gemini', 'bedrock', 'purge'])(
+    'alarms when a message waits in the %s queue for over 5 minutes',
+    (queue) => {
+      dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: `pictora-dev-${queue}-oldest-message`,
+        Namespace: 'AWS/SQS',
+        MetricName: 'ApproximateAgeOfOldestMessage',
+        Statistic: 'Maximum',
+        Threshold: 300,
+        ComparisonOperator: 'GreaterThanThreshold',
+      });
+    },
+  );
+
+  it('alarms on a model health problem or a failed check', () => {
+    const [alarm] = Object.values(
+      dev.findResources('AWS::CloudWatch::Alarm', {
+        Properties: { AlarmName: 'pictora-dev-model-health' },
+      }),
+    );
+    expect(alarm?.Properties).toMatchObject({
+      Threshold: 0,
+      ComparisonOperator: 'GreaterThanThreshold',
+      AlarmActions: [{ Ref: expect.stringMatching(/^AlertTopic/) }],
+    });
+    const text = JSON.stringify(alarm?.Properties.Metrics);
+    expect(text).toContain('ModelHealthProblems');
+    expect(text).toContain('"MetricName":"Errors"');
+  });
+
+  it('sends every job alarm and its recovery to the alert topic', () => {
+    const alarms = Object.values(dev.findResources('AWS::CloudWatch::Alarm'));
+    expect(alarms.length).toBe(13);
+    for (const alarm of alarms) {
+      expect(alarm.Properties.AlarmActions).toEqual([
+        { Ref: expect.stringMatching(/^AlertTopic/) },
+      ]);
+    }
+  });
+
+  it('builds the dashboard: jobs, error rate, 5xx, latency, queues, dead letters and spend', () => {
+    const [dashboard] = Object.values(dev.findResources('AWS::CloudWatch::Dashboard'));
+    expect(dashboard?.Properties.DashboardName).toBe('pictora-dev');
+    const body = JSON.stringify(dashboard?.Properties.DashboardBody);
+    for (const title of [
+      'Jobs by status',
+      'Job error rate (%)',
+      'App 5xx (%)',
+      'Provider latency p50 (ms)',
+      'Provider latency p95 (ms)',
+      'Queue depth',
+      'Oldest message age (s)',
+      'Dead-letter queue depth',
+      'Spend today (cents)',
+      'Spend this month (cents)',
+    ]) {
+      expect(body).toContain(title);
+    }
+    for (const metric of [
+      'JobsCreated',
+      'ProviderLatencyMs',
+      'ApproximateNumberOfMessagesVisible',
+      'ProviderCostCents',
+      'MonthlySpendCents',
+    ]) {
+      expect(body).toContain(metric);
+    }
+  });
+
   it.each([
     [80, 1600],
     [100, 2000],

@@ -11,6 +11,7 @@ import {
   utcMinute,
   type ModerationResult,
 } from '@pictora/core';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { modelsAvailableIn } from '@pictora/core/registry-store';
 import type { Enhance, Moderate } from '@pictora/providers/text';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -128,7 +129,11 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('enhancePrompt against DynamoDB Local', () =
 
   it('moderates the input, enhances it for the model and style, moderates the output', async () => {
     const before = await stats();
-    const result = await enhancePrompt(deps(), await onboardedSession(), request);
+    const metrics = vi.fn<EmitMetrics>();
+    const result = await enhancePrompt(deps({ metrics }), await onboardedSession(), request);
+    expect(metrics).toHaveBeenCalledWith([
+      { name: 'EnhancerLatencyMs', value: 900, unit: 'Milliseconds' },
+    ]);
 
     expect(result).toEqual({ status: 200, body: { enhancedPrompt: ENHANCED } });
     expect(moderate.mock.calls.map(([input]) => input)).toEqual([
