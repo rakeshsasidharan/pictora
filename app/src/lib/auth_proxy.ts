@@ -18,6 +18,7 @@ export const PUBLIC_API_PATHS = ['/api/health'];
 /** Pages that need a signed-in user; visitors are sent to sign in and brought back. */
 export const PROTECTED_PAGE_PREFIXES = [
   '/generate',
+  '/edit',
   '/gallery',
   '/images',
   '/admin',
