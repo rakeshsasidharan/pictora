@@ -11,9 +11,6 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import {
   BLOCK_TTL_SECONDS,
-  BLOCK_WINDOW_MS,
-  COOLDOWN_BLOCKS,
-  COOLDOWN_MS,
   JOB_SK,
   MODLOG_TTL_DAYS,
   PLATFORM_PK,
@@ -334,56 +331,6 @@ function blockItems(
     { Put: { TableName: tableName, Item: blockItem } },
     { Put: { TableName: tableName, Item: logItem } },
   ];
-}
-
-/**
- * Counts the user's blocks in the last 24 hours, and at 3 or more cools the account down until 24 hours from
- * now (PRD, Trust and safety): `cooldownUntil` on the profile, which job creation checks. Returns the new
- * `cooldownUntil`, or undefined when no cooldown was set. A later cooldown is never shortened.
- */
-export async function applyCooldown(
-  { client, tableName }: TableContext,
-  sub: string,
-  now: Date,
-): Promise<string | undefined> {
-  const since = new Date(now.getTime() - BLOCK_WINDOW_MS).toISOString();
-  let blocks = 0;
-  let exclusiveStartKey: Record<string, unknown> | undefined;
-  do {
-    const page = await client.send(
-      new QueryCommand({
-        TableName: tableName,
-        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-        // Expired items can linger until DynamoDB removes them, so the window is checked too.
-        FilterExpression: 'createdAt >= :since',
-        ExpressionAttributeValues: { ':pk': userPk(sub), ':prefix': blockSk(''), ':since': since },
-        Select: 'COUNT',
-        ConsistentRead: true,
-        ExclusiveStartKey: exclusiveStartKey,
-      }),
-    );
-    blocks += page.Count ?? 0;
-    exclusiveStartKey = page.LastEvaluatedKey;
-  } while (exclusiveStartKey);
-  if (blocks < COOLDOWN_BLOCKS) return undefined;
-
-  const until = new Date(now.getTime() + COOLDOWN_MS).toISOString();
-  try {
-    await client.send(
-      new UpdateCommand({
-        TableName: tableName,
-        Key: { PK: userPk(sub), SK: PROFILE_SK },
-        UpdateExpression: 'SET cooldownUntil = :until',
-        ConditionExpression:
-          'attribute_exists(PK) AND (attribute_not_exists(cooldownUntil) OR cooldownUntil < :until)',
-        ExpressionAttributeValues: { ':until': until },
-      }),
-    );
-  } catch (error) {
-    if (error instanceof ConditionalCheckFailedException) return undefined;
-    throw error;
-  }
-  return until;
 }
 
 type TransactItem = NonNullable<

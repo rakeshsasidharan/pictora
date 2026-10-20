@@ -9,6 +9,7 @@ import {
   type StyleId,
 } from '@pictora/core';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useCallback, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { ComingSoonFeature } from '../lib/coming_soon';
 import {
@@ -28,6 +29,7 @@ import {
 import type { MeBody } from '../lib/jobs';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
 import { SAMPLE_IMAGES } from '../lib/sample_images';
+import { EDIT_PATH } from '../lib/site';
 import { useJobStatus } from '../lib/use_job_status';
 import { ComingSoonToast } from './coming_soon_toast';
 import { JobProgress } from './job_progress';
@@ -340,6 +342,7 @@ export function GenerateScreen({
         <p className="points-display" aria-live="polite">
           {points.left} of {points.limit} points left today
         </p>
+        <Link href={EDIT_PATH}>Upload an image to edit</Link>
       </div>
 
       <form className="generate-form" onSubmit={submit} noValidate>

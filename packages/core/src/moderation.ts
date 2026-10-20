@@ -99,13 +99,17 @@ export function promptExcerpt(prompt: string): string {
   return prompt.replace(/\s+/g, ' ').trim().slice(0, PROMPT_EXCERPT_LENGTH);
 }
 
-/** The `USER#<sub>` / `BLOCK#<ulid>` item, kept for 24 hours to count recent blocks. */
+/**
+ * The `USER#<sub>` / `BLOCK#<ulid>` item, kept for 24 hours to count recent blocks. A blocked job carries its
+ * `jobId`; a blocked upload (EDIT-2), which has no job, carries its `uploadId`.
+ */
 export interface BlockItem {
   PK: string;
   SK: string;
   stage: BlockStage;
   category: string;
-  jobId: string;
+  jobId?: string;
+  uploadId?: string;
   createdAt: string;
   ttl: number;
 }
@@ -123,9 +127,11 @@ export type ModlogItem = {
       stage: BlockStage;
       category: string;
       promptExcerpt: string;
-      provider: string;
-      modelId: string;
-      jobId: string;
+      /** A blocked job's model; a blocked upload has none. */
+      provider?: string;
+      modelId?: string;
+      jobId?: string;
+      uploadId?: string;
     }
   | {
       type: 'report';
@@ -134,6 +140,7 @@ export type ModlogItem = {
       version: number;
       s3Key: string;
       promptExcerpt: string;
-      modelId: string;
+      /** The version's model; an uploaded image has none. */
+      modelId?: string;
     }
 );

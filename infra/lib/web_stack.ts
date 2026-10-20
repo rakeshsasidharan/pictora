@@ -54,7 +54,7 @@ import {
   type QueueProvider,
   type SecretProvider,
 } from './jobs_stack.js';
-import { HOSTED_ZONE_NAME, type StageConfig } from './stage_config.js';
+import { HOSTED_ZONE_NAME, LOCAL_DEV_URL, type StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the app image to (`PictoraCicd` stack). */
 export const APP_REPOSITORY_NAME = 'pictora-app';
@@ -72,9 +72,6 @@ export const APP_TIMEOUT_SECONDS = 30;
 /** Sign-in callback and sign-out landing paths in the app. */
 export const AUTH_CALLBACK_PATH = '/auth/callback';
 export const SIGNED_OUT_PATH = '/';
-
-/** Local `next dev`, allowed as a callback in dev only. */
-export const LOCAL_DEV_URL = 'http://localhost:3000';
 
 /** The app environment variable with a provider queue's URL, for example `OPENAI_QUEUE_URL`. */
 export function queueUrlVariable(provider: QueueProvider): string {

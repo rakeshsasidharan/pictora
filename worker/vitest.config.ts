@@ -16,6 +16,7 @@ export default defineConfig({
         find: /^@pictora\/core\/observability$/,
         replacement: source('core/src/observability.ts'),
       },
+      { find: /^@pictora\/core\/block-store$/, replacement: source('core/src/block_store.ts') },
       { find: /^@pictora\/providers$/, replacement: source('providers/src/index.ts') },
     ],
   },

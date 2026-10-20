@@ -8,7 +8,9 @@
       "@pictora/core": ["../packages/core/src/index.ts"],
       "@pictora/core/registry-store": ["../packages/core/src/registry_store.ts"],
       "@pictora/core/observability": ["../packages/core/src/observability.ts"],
-      "@pictora/providers/text": ["../packages/providers/src/text.ts"]
+      "@pictora/core/block-store": ["../packages/core/src/block_store.ts"],
+      "@pictora/providers/text": ["../packages/providers/src/text.ts"],
+      "@pictora/providers/image": ["../packages/providers/src/image.ts"]
     }
   }
 }

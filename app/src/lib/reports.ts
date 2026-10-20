@@ -27,7 +27,8 @@ interface VersionItem {
   s3Key: string;
   prompt?: string;
   editInstruction?: string;
-  modelId: string;
+  /** An uploaded image has no model. */
+  modelId?: string;
 }
 
 /**

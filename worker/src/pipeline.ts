@@ -24,9 +24,9 @@ import {
   type ImageResult,
 } from '@pictora/providers';
 import type { EmitMetrics, MetricPoint } from '@pictora/core/observability';
+import { applyCooldown } from '@pictora/core/block-store';
 import { ulid } from 'ulid';
 import {
-  applyCooldown,
   claimJob,
   completeJob,
   loadJob,

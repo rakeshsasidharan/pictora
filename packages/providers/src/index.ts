@@ -35,12 +35,18 @@ export type {
 export {
   centreCrop,
   isPng,
+  MODERATION_COPY_PX,
   normalisePng,
+  NotAnImageError,
+  prepareUpload,
   thumbnail,
   THUMBNAIL_MAX_PX,
   THUMBNAIL_WEBP_QUALITY,
+  UPLOAD_FORMATS,
+  UPLOAD_MAX_INPUT_PIXELS,
+  UPLOAD_MAX_PX,
 } from './image.js';
-export type { NormalisedImage, Thumbnail } from './image.js';
+export type { NormalisedImage, PreparedUpload, Thumbnail } from './image.js';
 export {
   MOCK_BLOCK_KEYWORD,
   MOCK_DEFAULT_DELAY_MS,
