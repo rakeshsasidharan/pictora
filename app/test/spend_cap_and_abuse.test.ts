@@ -63,6 +63,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('platform cap and abuse flags with DynamoDB 
     hasQueue: () => true,
     enqueue,
     presign: async (key) => `https://signed.example/${key}`,
+    objectSize: async () => undefined,
     defaultDailyPoints: 25,
     spendCapCents: 2000,
     now: () => NOW,

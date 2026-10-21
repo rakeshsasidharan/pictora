@@ -245,6 +245,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('uploads with DynamoDB Local', () => {
       );
       expect(result.body).toMatchObject({
         url: expect.any(String),
+        key: `uploads/${session.sub}/${uploadId}`,
         fields: { key: `uploads/${session.sub}/${uploadId}` },
         expiresAt: '2026-10-19T10:05:00.000Z',
       });

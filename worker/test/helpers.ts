@@ -11,6 +11,8 @@ import {
   ttlAfter,
   usageSk,
   userPk,
+  type CreateJobRequest,
+  type EditJobRequest,
   type GenerateJobRequest,
   type JobItem,
   type ModelConfig,
@@ -49,8 +51,21 @@ export function newUser(): string {
   return `user-${userCounter}-${Date.now()}`;
 }
 
+/** An edit of version 1 of `imageId` with the mock model at draft quality (1 point). */
+export function edit(imageId: string, overrides: Partial<EditJobRequest> = {}): EditJobRequest {
+  return {
+    type: 'edit',
+    imageId,
+    parentVersion: 1,
+    instruction: 'Make it night',
+    modelId: 'mock',
+    quality: 'draft',
+    ...overrides,
+  };
+}
+
 export interface SeedOptions {
-  request?: GenerateJobRequest;
+  request?: CreateJobRequest;
   pointsReserved?: number;
   usageDate?: string;
   createdAt?: string;
@@ -72,7 +87,7 @@ export async function seedJob(
   options: SeedOptions = {},
 ): Promise<JobItem> {
   const request = options.request ?? generate();
-  const pointsReserved = options.pointsReserved ?? request.count;
+  const pointsReserved = options.pointsReserved ?? (request.type === 'edit' ? 1 : request.count);
   const usageDate = options.usageDate ?? '2026-10-15';
   const createdAt = options.createdAt ?? '2026-10-15T12:00:00.000Z';
   const status = options.status ?? 'queued';
@@ -82,7 +97,7 @@ export async function seedJob(
     SK: JOB_SK,
     jobId,
     userId: sub,
-    type: 'generate',
+    type: request.type,
     status,
     request,
     modelId: request.modelId,

@@ -173,6 +173,16 @@ export class JobsStack extends Stack {
 
     props.table.grantReadWriteData(this.workerFunction);
     props.imagesBucket.grantPut(this.workerFunction);
+    // Edits read the parent version and their reference images (tech design 5.3); nothing else is listed or read.
+    this.workerFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject'],
+        resources: [
+          props.imagesBucket.arnForObjects('users/*'),
+          props.imagesBucket.arnForObjects('uploads/*'),
+        ],
+      }),
+    );
     for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.workerFunction);
     }

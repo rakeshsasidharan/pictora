@@ -7,6 +7,7 @@ import {
   editJobRequestSchema,
   enhanceRequestSchema,
   generateJobRequestSchema,
+  parseReferenceKey,
   uploadRequestSchema,
 } from '../src/index.js';
 
@@ -155,11 +156,19 @@ describe('editJobRequestSchema', () => {
     expect(editJobRequestSchema.safeParse(request).success).toBe(false);
   });
 
-  it('rejects reference keys outside the uploads prefix', () => {
+  it('accepts gallery image versions as reference images', () => {
+    const request = { ...validEdit, referenceKeys: [`users/abc-123/${IMAGE_ID}/v2.png`] };
+    expect(editJobRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it('rejects reference keys that are neither an upload nor an image version', () => {
     for (const key of [
-      `users/abc/${IMAGE_ID}/v1.png`,
+      `users/abc/${IMAGE_ID}/v0.png`,
+      `users/abc/${IMAGE_ID}/v1_thumb.webp`,
+      `users/abc/../${IMAGE_ID}/v1.png`,
       'uploads/abc/not-a-ulid',
       `uploads/../${IMAGE_ID}`,
+      `other/abc/${IMAGE_ID}`,
     ]) {
       expect(editJobRequestSchema.safeParse({ ...validEdit, referenceKeys: [key] }).success).toBe(
         false,
@@ -183,6 +192,30 @@ describe('editJobRequestSchema', () => {
     expect(
       editJobRequestSchema.safeParse({ ...validEdit, instruction: 'a'.repeat(2001) }).success,
     ).toBe(false);
+  });
+});
+
+describe('parseReferenceKey', () => {
+  it('reads an upload key', () => {
+    expect(parseReferenceKey(UPLOAD_KEY)).toEqual({
+      kind: 'upload',
+      sub: '3f1c2a9e-1b2c-4d5e-8f90-a1b2c3d4e5f6',
+      uploadId: IMAGE_ID,
+    });
+  });
+
+  it('reads an image version key, including a Google user sub', () => {
+    expect(parseReferenceKey(`users/google_123/${IMAGE_ID}/v12.png`)).toEqual({
+      kind: 'version',
+      sub: 'google_123',
+      imageId: IMAGE_ID,
+      version: 12,
+    });
+  });
+
+  it('returns undefined for anything else', () => {
+    expect(parseReferenceKey(`users/abc/${IMAGE_ID}`)).toBeUndefined();
+    expect(parseReferenceKey('')).toBeUndefined();
   });
 });
 

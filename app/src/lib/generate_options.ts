@@ -113,3 +113,15 @@ export function altTextFor(prompt: string): string {
   if (trimmed.length <= MAX_ALT_TEXT_LENGTH) return trimmed;
   return `${trimmed.slice(0, MAX_ALT_TEXT_LENGTH - 1).trimEnd()}…`;
 }
+
+/** For example `1 November`: when paused premium qualities return. */
+const PAUSE_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'UTC',
+});
+
+/** The notice shown while premium qualities are paused until `until` (ISO 8601), tech design 4.1. */
+export function premiumPausedText(until: string): string {
+  return `Premium models are paused until ${PAUSE_END_FORMAT.format(new Date(until))} because this month's budget is used up. Draft quality still works.`;
+}

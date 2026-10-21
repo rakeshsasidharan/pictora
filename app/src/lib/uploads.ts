@@ -56,6 +56,8 @@ const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 /** The `POST /api/uploads` body: where and how to POST the file, and the ID to complete it with. */
 export interface UploadTicketBody {
   uploadId: string;
+  /** The object the file goes to, `uploads/<sub>/<uploadId>`: an edit can use it as a reference image as is. */
+  key: string;
   url: string;
   fields: Record<string, string>;
   expiresAt: string;
@@ -99,12 +101,11 @@ export async function createUpload(
   }
 
   const uploadId = deps.newId();
-  const { url, fields } = await deps.storage.presignUpload(
-    uploadKey(session.sub, uploadId),
-    contentType,
-  );
+  const key = uploadKey(session.sub, uploadId);
+  const { url, fields } = await deps.storage.presignUpload(key, contentType);
   const body: UploadTicketBody = {
     uploadId,
+    key,
     url,
     fields,
     expiresAt: new Date(now.getTime() + UPLOAD_POST_EXPIRY_SECONDS * 1000).toISOString(),

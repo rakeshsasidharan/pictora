@@ -36,6 +36,7 @@ export {
   centreCrop,
   isPng,
   MODERATION_COPY_PX,
+  moderationCopy,
   normalisePng,
   NotAnImageError,
   prepareUpload,
