@@ -2,6 +2,7 @@ import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   JOB_ERROR_MESSAGES,
   JOB_SK,
+  PLATFORM_PK,
   PROFILE_SK,
   TOS_VERSION,
   jobPk,
@@ -207,6 +208,111 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     enqueue = vi.fn<JobsDeps['enqueue']>(async () => undefined);
   });
 
+  describe('Auto (smart routing)', () => {
+    const auto = (overrides: Partial<GenerateJobRequest> = {}) =>
+      generate({ modelId: 'auto', quality: 'standard', ...overrides });
+    const jobOf = async (result: { body: Record<string, unknown> }) =>
+      (await getItem(jobPk(result.body.jobId as string), JOB_SK)) as JobItem;
+
+    it("routes to the style's default model and records the model it picked", async () => {
+      const session = await onboardedSession();
+      const result = await createJob(deps(), session, auto({ style: 'photorealistic' }));
+      expect(result).toMatchObject({
+        status: 202,
+        body: { modelId: 'gemini-3-pro-image', pointsReserved: 14 },
+      });
+      const job = await jobOf(result);
+      expect(job).toMatchObject({ modelId: 'gemini-3-pro-image', provider: 'gemini' });
+      expect(job.request).toMatchObject({ modelId: 'gemini-3-pro-image', quality: 'standard' });
+      expect(enqueue).toHaveBeenCalledWith('gemini', job.jobId);
+    });
+
+    it('falls back when the default model is switched off or has no queue', async () => {
+      const session = await onboardedSession();
+      const switchedOff = devModels.map((candidate) =>
+        candidate.id === 'gemini-3-pro-image' ? { ...candidate, enabled: false } : candidate,
+      );
+      const result = await createJob(
+        deps({ models: async () => switchedOff, hasQueue: (provider) => provider !== 'bedrock' }),
+        session,
+        auto({ style: 'photorealistic' }),
+      );
+      expect(result.body).toMatchObject({ modelId: 'gpt-image-2', pointsReserved: 6 });
+    });
+
+    it('picks an affordable model, then a lower quality, when points are low', async () => {
+      const session = await onboardedSession();
+      await client.send(
+        new PutCommand({
+          TableName: tableName,
+          Item: { PK: userPk(session.sub), SK: usageSk('2026-10-15'), used: 20 },
+        }),
+      );
+      const result = await createJob(
+        deps({ hasQueue: (provider) => provider !== 'bedrock' && provider !== 'mock' }),
+        session,
+        auto({ style: 'photorealistic' }),
+      );
+      expect(result.body).toMatchObject({ modelId: 'gpt-image-2', pointsReserved: 1 });
+      expect((await jobOf(result)).request).toMatchObject({ quality: 'draft' });
+    });
+
+    it('prefers a text model when the prompt asks for words', async () => {
+      const session = await onboardedSession();
+      const result = await createJob(
+        deps(),
+        session,
+        auto({ style: 'watercolour', prompt: 'A poster that says "Summer Fair"' }),
+      );
+      expect(result.body).toMatchObject({ modelId: 'gpt-image-2' });
+    });
+
+    it('stays at draft quality while premium qualities are paused', async () => {
+      const session = await onboardedSession();
+      const paused = await createJob(
+        deps({
+          client: {
+            send: async (command: { input: { Key?: { PK?: string } } }) =>
+              command.input.Key?.PK === PLATFORM_PK
+                ? { Item: { spentCents: 5000 } }
+                : client.send(command as never),
+          } as unknown as JobsDeps['client'],
+          hasQueue: (provider) => provider !== 'mock',
+        }),
+        session,
+        auto({ style: 'anime' }),
+      );
+      expect(paused).toMatchObject({ status: 202, body: { pointsReserved: 1 } });
+      expect((await jobOf(paused)).request).toMatchObject({ quality: 'draft' });
+    });
+
+    it("drops options the picked model can't take", async () => {
+      const session = await onboardedSession();
+      const result = await createJob(
+        deps({ hasQueue: (provider) => provider !== 'bedrock' }),
+        session,
+        auto({ style: 'none', avoid: 'blur', seed: 9 }),
+      );
+      expect(result.body).toMatchObject({ modelId: 'gpt-image-2' });
+      const { request } = await jobOf(result);
+      expect(request).not.toHaveProperty('avoid');
+      expect(request).not.toHaveProperty('seed');
+    });
+
+    it('refuses when no model can make a transparent background', async () => {
+      const session = await onboardedSession();
+      const result = await createJob(
+        deps({
+          models: async () => devModels.filter((candidate) => candidate.provider === 'gemini'),
+        }),
+        session,
+        auto({ transparentBackground: true }),
+      );
+      expect(result).toMatchObject({ status: 400, body: { code: 'unsupported_option' } });
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+  });
+
   it('creates the profile, reserves the points, records the queued job and queues it', async () => {
     const session = await onboardedSession();
     const metrics = vi.fn<EmitMetrics>();
@@ -221,7 +327,12 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     ]);
     expect(result.status).toBe(202);
     const { jobId } = result.body as { jobId: string };
-    expect(result.body).toEqual({ jobId, status: 'queued', pointsReserved: 6 });
+    expect(result.body).toEqual({
+      jobId,
+      status: 'queued',
+      pointsReserved: 6,
+      modelId: 'mock',
+    });
     expect(enqueue).toHaveBeenCalledWith('mock', jobId);
 
     expect(await profileOf(session.sub)).toMatchObject({

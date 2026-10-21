@@ -1,7 +1,9 @@
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
+  AUTO_MODEL_ID,
   JOB_SK,
   MAX_UPLOAD_BYTES,
+  QUALITIES,
   JOB_TTL_DAYS,
   SECONDS_PER_DAY,
   activeJobsGsiPk,
@@ -12,6 +14,8 @@ import {
   nearestAspect,
   parseReferenceKey,
   pausedQuality,
+  promptAsksForText,
+  routeModel,
   ttlAfter,
   userPk,
   utcDate,
@@ -131,7 +135,12 @@ export async function createJob(
       "Something in the request isn't valid. Check the prompt and options, then try again.",
     );
   }
-  const request = parsed.data;
+  let request = parsed.data;
+  if (request.type === 'generate' && request.modelId === AUTO_MODEL_ID) {
+    const routed = await routeAuto(deps, session, request);
+    if ('status' in routed) return routed;
+    request = routed;
+  }
 
   const model = (await deps.models()).find((candidate) => candidate.id === request.modelId);
   if (!model) {
@@ -231,7 +240,62 @@ export async function createJob(
     pointsReserved: points,
     outcome: 'queued',
   });
-  return { status: 202, body: { jobId, status: 'queued', pointsReserved: points } };
+  return {
+    status: 202,
+    body: { jobId, status: 'queued', pointsReserved: points, modelId: model.id },
+  };
+}
+
+/**
+ * Resolves `modelId: 'auto'` (smart routing): the model and quality `routeModel` picks for the style, quality,
+ * aspect, transparency and a prompt that asks for words, among the enabled models with a queue, within the
+ * points the user has left and outside any premium pause. Options the picked model can't take (avoid text, a
+ * seed) are dropped rather than refused, since the user didn't pick the model.
+ */
+async function routeAuto(
+  deps: JobsDeps,
+  session: Session,
+  request: GenerateJobRequest,
+): Promise<GenerateJobRequest | ApiResult> {
+  const now = deps.now();
+  const [models, pause, profile, used] = await Promise.all([
+    deps.models(),
+    readPremiumPause(deps.client, deps.tableName, deps.spendCapCents, now),
+    readProfile(deps.client, deps.tableName, session.sub),
+    readUsedPoints(deps.client, deps.tableName, session.sub, utcDate(now)),
+  ]);
+  const limit = profile ? dailyLimit(profile, deps.defaultDailyPoints) : deps.defaultDailyPoints;
+  const enabled = models.filter((model) => model.enabled && deps.hasQueue(model.provider));
+  const route = routeModel({
+    style: request.style,
+    quality: request.quality,
+    aspect: request.aspect,
+    needs: {
+      transparentBackground: request.transparentBackground,
+      text: promptAsksForText(request.prompt),
+    },
+    pointsLeft: Math.max(0, limit - used),
+    count: request.count,
+    models: enabled,
+    pausedQualities: pause ? QUALITIES.filter(pausedQuality) : [],
+  });
+  const model = route && enabled.find((candidate) => candidate.id === route.modelId);
+  if (!route || !model) {
+    return apiError(
+      'unsupported_option',
+      request.transparentBackground
+        ? 'No model can make a transparent background right now. Turn the option off or try again later.'
+        : 'No image model is available right now. Please try again later.',
+    );
+  }
+  const { avoid, seed, ...rest } = request;
+  return {
+    ...rest,
+    modelId: model.id,
+    quality: route.quality,
+    ...(avoid !== undefined && model.capabilities.negativePrompt ? { avoid } : {}),
+    ...(seed !== undefined && model.capabilities.seed ? { seed } : {}),
+  };
 }
 
 /** Why the model can't take this request, in words for the user; undefined when it can. */

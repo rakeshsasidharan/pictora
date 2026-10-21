@@ -1,11 +1,16 @@
 'use client';
 
 import {
+  ASPECTS,
+  AUTO_MODEL_ID,
   MAX_AVOID_LENGTH,
   MAX_IMAGE_COUNT,
   MAX_PROMPT_LENGTH,
   MIN_IMAGE_COUNT,
   QUALITIES,
+  promptAsksForText,
+  routeModel,
+  type Quality,
   type StyleId,
 } from '@pictora/core';
 import Image from 'next/image';
@@ -22,10 +27,13 @@ import {
   generateModels,
   modelCostSummary,
   modelForStyle,
+  pausedQualities,
   pointsText,
   premiumPausedText,
   qualityPaused,
   requestCost,
+  routableModels,
+  routeReasonText,
   type ModelChoices,
 } from '../lib/generate_options';
 import type { MeBody } from '../lib/jobs';
@@ -58,6 +66,8 @@ interface SubmittedJob {
   id: string;
   pointsReserved: number;
   prompt: string;
+  /** The model the job runs on, which Auto picks on the server. */
+  modelId: string;
 }
 
 /** The enhancer's output for one prompt, style and model, as the user may have edited it (ENH-2). */
@@ -178,6 +188,8 @@ export function GenerateScreen({
   });
   const [count, setCount] = useState(MIN_IMAGE_COUNT);
   const [transparent, setTransparent] = useState(false);
+  /** Smart routing: the app picks the model from the style, quality, prompt and points left. */
+  const [auto, setAuto] = useState(true);
   const [points, setPoints] = useState(initialPoints);
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -212,8 +224,22 @@ export function GenerateScreen({
   });
   const closeToast = useCallback(() => setToast(undefined), []);
 
-  const model = available.find((candidate) => candidate.id === choices?.modelId);
-  if (!model || !choices) {
+  const routing = choices && {
+    style: styleId,
+    aspect: choices.aspect,
+    needs: { transparentBackground: transparent, text: promptAsksForText(prompt) },
+    models: routableModels(available),
+    pausedQualities: pausedQualities(available),
+  };
+  const route =
+    auto && routing
+      ? routeModel({ ...routing, quality: choices.quality, pointsLeft: points.left, count })
+      : undefined;
+  const model = available.find(
+    (candidate) => candidate.id === (auto ? route?.modelId : choices?.modelId),
+  );
+  const chosenQuality = auto ? route?.quality : choices?.quality;
+  if (!model || !choices || !routing || !chosenQuality) {
     return (
       <main className="generate">
         <h1>Create an image</h1>
@@ -224,7 +250,47 @@ export function GenerateScreen({
     );
   }
 
-  const cost = requestCost(model, choices.quality, count);
+  const cost = route?.points ?? requestCost(model, chosenQuality, count);
+  const transparentOffered = auto
+    ? available.some((candidate) => candidate.capabilities.transparentBackground)
+    : model.capabilities.transparentBackground;
+  const aspects = auto
+    ? ASPECTS.filter((aspect) =>
+        available.some((candidate) => candidate.capabilities.aspects.includes(aspect)),
+      )
+    : model.capabilities.aspects;
+  const reasonText =
+    route &&
+    routeReasonText(
+      route.reason,
+      route.quality,
+      styles.find((style) => style.id === styleId)?.name ?? styleId,
+    );
+
+  /** What a quality costs per image, or why it can't be picked. With Auto, the model routing would pick. */
+  function qualityOption(option: Quality): { disabled: boolean; hint: string } {
+    if (!model || !routing) return { disabled: true, hint: '' };
+    if (auto) {
+      const picked = routeModel({
+        ...routing,
+        quality: option,
+        pointsLeft: Number.POSITIVE_INFINITY,
+      });
+      if (!picked || picked.quality !== option) {
+        return {
+          disabled: true,
+          hint: routing.pausedQualities.includes(option) ? 'Paused this month' : 'Not available',
+        };
+      }
+      return { disabled: false, hint: `${pointsText(picked.points)} per image` };
+    }
+    const perImage = costPerImage(model, option);
+    if (perImage === undefined) {
+      return { disabled: true, hint: `Not offered by ${model.displayName}` };
+    }
+    if (qualityPaused(model, option)) return { disabled: true, hint: 'Paused this month' };
+    return { disabled: false, hint: `${pointsText(perImage)} per image` };
+  }
   const affordable = cost <= points.left;
   const jobActive =
     job !== undefined &&
@@ -234,6 +300,7 @@ export function GenerateScreen({
   const busy = submitting || jobActive;
 
   function chooseModel(next: PublicModel) {
+    setAuto(false);
     setChoices((current) =>
       choicesForModel(next, current ?? { quality: DEFAULT_QUALITY, aspect: '1:1' }),
     );
@@ -242,6 +309,8 @@ export function GenerateScreen({
 
   function chooseStyle(next: StyleId) {
     setStyleId(next);
+    // Auto follows the style through routing.
+    if (auto) return;
     // GEN-5: a style selects the model the registry suggests for it, when that model is available.
     const suggestedId = styles.find((style) => style.id === next)?.suggestedModelId;
     const suggested = available.find((candidate) => candidate.id === suggestedId);
@@ -311,18 +380,17 @@ export function GenerateScreen({
           ...(enhancedPrompt ? { enhancedPrompt } : {}),
           ...(model.capabilities.negativePrompt && avoid.trim() ? { avoid: avoid.trim() } : {}),
           style: styleId,
-          modelId: model.id,
+          modelId: auto ? AUTO_MODEL_ID : model.id,
           aspect: choices.aspect,
           quality: choices.quality,
           count,
-          ...(model.capabilities.transparentBackground && transparent
-            ? { transparentBackground: true }
-            : {}),
+          ...(transparentOffered && transparent ? { transparentBackground: true } : {}),
         }),
       });
       const body = (await response.json().catch(() => ({}))) as {
         jobId?: string;
         pointsReserved?: number;
+        modelId?: string;
         error?: string;
       };
       if (response.status !== 202 || !body.jobId) {
@@ -331,7 +399,12 @@ export function GenerateScreen({
         return;
       }
       const reserved = body.pointsReserved ?? cost;
-      setJob({ id: body.jobId, pointsReserved: reserved, prompt: text });
+      setJob({
+        id: body.jobId,
+        pointsReserved: reserved,
+        prompt: text,
+        modelId: body.modelId ?? model.id,
+      });
       setPoints((current) => ({ ...current, left: Math.max(0, current.left - reserved) }));
     } catch {
       setFormError('Something went wrong. Check your connection and try again.');
@@ -427,7 +500,7 @@ export function GenerateScreen({
 
         <fieldset className="aspect-picker">
           <legend>Aspect ratio</legend>
-          {model.capabilities.aspects.map((aspect) => (
+          {aspects.map((aspect) => (
             <label key={aspect} className="option-card">
               <input
                 type="radio"
@@ -454,8 +527,7 @@ export function GenerateScreen({
             </p>
           )}
           {QUALITIES.map((quality) => {
-            const perImage = costPerImage(model, quality);
-            const paused = qualityPaused(model, quality);
+            const option = qualityOption(quality);
             return (
               <label key={quality} className="option-card">
                 <input
@@ -463,17 +535,11 @@ export function GenerateScreen({
                   name="quality"
                   value={quality}
                   checked={choices.quality === quality}
-                  disabled={perImage === undefined || paused}
+                  disabled={option.disabled}
                   onChange={() => setChoices({ ...choices, quality })}
                 />
                 <span>{QUALITY_LABELS[quality]}</span>
-                <span className="field-hint">
-                  {perImage === undefined
-                    ? `Not offered by ${model.displayName}`
-                    : paused
-                      ? 'Paused this month'
-                      : `${pointsText(perImage)} per image`}
-                </span>
+                <span className="field-hint">{option.hint}</span>
               </label>
             );
           })}
@@ -494,7 +560,7 @@ export function GenerateScreen({
               ))}
             </select>
           </div>
-          {model.capabilities.transparentBackground && (
+          {transparentOffered && (
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -510,13 +576,26 @@ export function GenerateScreen({
           <summary>Advanced</summary>
           <fieldset className="model-picker">
             <legend>Model</legend>
+            <label className="model-option">
+              <input
+                type="radio"
+                name="model"
+                value={AUTO_MODEL_ID}
+                checked={auto}
+                onChange={() => setAuto(true)}
+              />
+              <span className="model-name">Auto (recommended)</span>
+              <span className="field-hint">
+                Picks a model for your style, quality, prompt and points left
+              </span>
+            </label>
             {available.map((candidate) => (
               <label key={candidate.id} className="model-option">
                 <input
                   type="radio"
                   name="model"
                   value={candidate.id}
-                  checked={candidate.id === model.id}
+                  checked={!auto && candidate.id === model.id}
                   onChange={() => chooseModel(candidate)}
                 />
                 <span className="model-name">{candidate.displayName}</span>
@@ -531,6 +610,12 @@ export function GenerateScreen({
           <p id="cost" className="cost-display">
             Uses {cost} of your {points.left} points today
           </p>
+          {auto && (
+            <p className="field-hint auto-pick" aria-live="polite">
+              Auto picks {model.displayName}
+              {reasonText ? `: ${reasonText}` : ''}.
+            </p>
+          )}
           {!affordable && (
             <p className="form-error">
               You don&apos;t have enough points left today. Pick a lower quality or fewer images, or
@@ -589,6 +674,9 @@ export function GenerateScreen({
           poll={poll}
           pointsReserved={job.pointsReserved}
           prompt={job.prompt}
+          modelName={
+            models.find((candidate) => candidate.id === job.modelId)?.displayName ?? job.modelId
+          }
           onComingSoon={setToast}
         />
       )}

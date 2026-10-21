@@ -17,6 +17,8 @@ export interface JobProgressProps {
   pointsReserved: number;
   /** The prompt the job was made from, used as the images' alt text. */
   prompt: string;
+  /** The model the images are made with, which Auto may have picked. */
+  modelName: string;
   onComingSoon: (feature: ComingSoonFeature) => void;
 }
 
@@ -26,7 +28,13 @@ const STEPS = ['queued', 'running', 'succeeded'] as const;
  * A submitted job: its status as queued, generating and done (GEN-8), then the results with a full-size view,
  * PNG download (GEN-7) and a Report action, or the reason it failed and the refund (GEN-10).
  */
-export function JobProgress({ poll, pointsReserved, prompt, onComingSoon }: JobProgressProps) {
+export function JobProgress({
+  poll,
+  pointsReserved,
+  prompt,
+  modelName,
+  onComingSoon,
+}: JobProgressProps) {
   const { job, timedOut, lost } = poll;
   const status = job?.status ?? 'queued';
   const failed = status === 'failed' || status === 'blocked';
@@ -54,6 +62,7 @@ export function JobProgress({ poll, pointsReserved, prompt, onComingSoon }: JobP
       <p className="job-status" role="status">
         Status: {STATUS_LABELS[status]}
       </p>
+      <p className="job-model">Model: {modelName}</p>
 
       {active && (
         <p className="job-note">

@@ -150,7 +150,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('edit jobs against DynamoDB Local', () => {
     const result = await createJob(deps(), session, request);
     expect(result.status).toBe(202);
     const { jobId } = result.body as { jobId: string };
-    expect(result.body).toEqual({ jobId, status: 'queued', pointsReserved: 3 });
+    expect(result.body).toEqual({ jobId, status: 'queued', pointsReserved: 3, modelId: 'mock' });
     expect(enqueue).toHaveBeenCalledWith('mock', jobId);
     expect(await getItem(jobPk(jobId), JOB_SK)).toMatchObject({
       type: 'edit',
