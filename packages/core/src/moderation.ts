@@ -114,7 +114,29 @@ export interface BlockItem {
   ttl: number;
 }
 
-/** A `MODLOG#<date>` / `<ulid>` item: a block or a user's report, kept for 90 days for review. */
+/**
+ * An admin's verdict on a block or report (ADM-4): `ok` overturns it (a false block, counted for the PRD's
+ * moderation false-block metric), `confirmed` upholds it.
+ */
+export const REVIEW_VERDICTS = ['ok', 'confirmed'] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+/** What an admin did, logged in `MODLOG` as an `admin_action` entry with the admin's `sub` (ADM-4). */
+export const ADMIN_ACTIONS = ['suspend', 'unsuspend', 'review'] as const;
+export type AdminAction = (typeof ADMIN_ACTIONS)[number];
+
+/** How a block or report was reviewed, once an admin has (ADM-4). */
+export interface ModlogReview {
+  review?: ReviewVerdict;
+  /** The reviewing admin's `sub`. */
+  reviewedBy?: string;
+  reviewedAt?: string;
+}
+
+/**
+ * A `MODLOG#<date>` / `<ulid>` item, kept for 90 days: a block or a user's report for review, or an admin's
+ * action. For an admin action, `userId` is the admin's `sub`.
+ */
 export type ModlogItem = {
   PK: string;
   SK: string;
@@ -123,6 +145,16 @@ export type ModlogItem = {
   ttl: number;
 } & (
   | {
+      type: 'admin_action';
+      action: AdminAction;
+      /** The user suspended or unsuspended, or whose entry was reviewed. */
+      targetUserId: string;
+      /** For a review: the entry reviewed and the verdict. */
+      entryDate?: string;
+      entryId?: string;
+      verdict?: ReviewVerdict;
+    }
+  | (ModlogReview & {
       type: 'block';
       stage: BlockStage;
       category: string;
@@ -132,8 +164,8 @@ export type ModlogItem = {
       modelId?: string;
       jobId?: string;
       uploadId?: string;
-    }
-  | {
+    })
+  | (ModlogReview & {
       type: 'report';
       reason: ReportReason;
       imageId: string;
@@ -142,5 +174,5 @@ export type ModlogItem = {
       promptExcerpt: string;
       /** The version's model; an uploaded image has none. */
       modelId?: string;
-    }
+    })
 );

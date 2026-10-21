@@ -1,9 +1,13 @@
 import Link from 'next/link';
+import { ADMIN_PATH, isAdmin } from '../lib/admin_access';
 import { LOGIN_PATH, LOGOUT_PATH } from '../lib/cognito_oauth';
 import type { Session } from '../lib/session';
 import { ACCOUNT_PATH } from '../lib/site';
 
-/** The top bar: the signed-in user's email, linking to their account, and a sign-out button; or a sign-in link. */
+/**
+ * The top bar: the signed-in user's email, linking to their account, an Admin link for admins, and a sign-out
+ * button; or a sign-in link.
+ */
 export function SiteHeader({ session }: { session?: Session }) {
   return (
     <header className="site-header">
@@ -12,6 +16,7 @@ export function SiteHeader({ session }: { session?: Session }) {
       </Link>
       {session ? (
         <div className="site-account">
+          {isAdmin(session) && <Link href={ADMIN_PATH}>Admin</Link>}
           <Link href={ACCOUNT_PATH}>{session.email}</Link>
           <form method="post" action={LOGOUT_PATH}>
             <button type="submit">Sign out</button>
