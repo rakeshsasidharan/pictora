@@ -14,6 +14,7 @@ import { OPENAI_MODERATION_URL, createModerator, type Moderate } from '@pictora/
 import { mockClient } from 'aws-sdk-client-mock';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import sharp from 'sharp';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { moderateImageRequests } from '../src/moderation.js';
 import { processJob } from '../src/pipeline.js';
@@ -25,6 +26,7 @@ import {
   model,
   newUser,
   pipelineDeps,
+  pngOf,
   seedJob,
 } from './helpers.js';
 
@@ -50,12 +52,16 @@ const imageRequest = (overrides = {}) => ({
 describe('moderateImageRequests', () => {
   const job = {} as never;
 
-  it('checks the prompt, then each input image, and blocks under the policy', async () => {
-    const parent = new Uint8Array([1]);
-    const reference = new Uint8Array([2]);
-    const moderate = vi.fn<Moderate>(async (input) =>
-      input.image === reference ? verdict('self-harm') : verdict(),
-    );
+  it('checks the prompt, then a 1024 px copy of each input image, and blocks under the policy', async () => {
+    const parent = await pngOf(2048, 1024);
+    const reference = await pngOf(300, 200);
+    const seen: { width?: number; height?: number; format?: string }[] = [];
+    const moderate = vi.fn<Moderate>(async (input) => {
+      if (!input.image) return verdict();
+      const { width, height, format } = await sharp(input.image).metadata();
+      seen.push({ width, height, format });
+      return seen.length === 2 ? verdict('self-harm') : verdict();
+    });
     const hook = moderateImageRequests(moderate);
     expect(
       await hook({
@@ -64,10 +70,10 @@ describe('moderateImageRequests', () => {
         request: imageRequest({ inputImage: parent, referenceImages: [reference] }),
       }),
     ).toEqual({ flagged: true, category: 'self-harm', stage: 'image' });
-    expect(moderate.mock.calls.map(([input]) => input)).toEqual([
-      { text: 'A lighthouse at dusk' },
-      { image: parent },
-      { image: reference },
+    expect(moderate.mock.calls[0]?.[0]).toEqual({ text: 'A lighthouse at dusk' });
+    expect(seen).toEqual([
+      { width: 1024, height: 512, format: 'jpeg' },
+      { width: 300, height: 200, format: 'jpeg' },
     ]);
   });
 

@@ -23,6 +23,7 @@ import {
   modelCostSummary,
   modelForStyle,
   pointsText,
+  premiumPausedText,
   qualityPaused,
   requestCost,
   type ModelChoices,
@@ -154,13 +155,6 @@ const COUNTS = Array.from(
 
 const SAMPLE_BY_STYLE = new Map(SAMPLE_IMAGES.map((sample) => [sample.style, sample]));
 const THUMBNAIL_SIZE = 72;
-
-/** For example `1 November`: when paused premium qualities return. */
-const PAUSE_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'long',
-  timeZone: 'UTC',
-});
 
 /**
  * The generate screen (GEN-1 to GEN-10, LIM-2): prompt, style, aspect ratio, quality, model and count, the
@@ -456,9 +450,7 @@ export function GenerateScreen({
           <legend>Quality</legend>
           {premiumPausedUntil && (
             <p className="form-notice" role="status">
-              Premium models are paused until{' '}
-              {PAUSE_END_FORMAT.format(new Date(premiumPausedUntil))} because this month&apos;s
-              budget is used up. Draft quality still works.
+              {premiumPausedText(premiumPausedUntil)}
             </p>
           )}
           {QUALITIES.map((quality) => {

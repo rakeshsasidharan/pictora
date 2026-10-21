@@ -121,15 +121,23 @@ export async function prepareUpload(bytes: Uint8Array): Promise<PreparedUpload> 
     throw new NotAnImageError(undefined, { cause: error });
   }
   const pngBytes = new Uint8Array(png.data);
-  const moderationCopy = await sharp(pngBytes)
-    .resize(MODERATION_COPY_PX, MODERATION_COPY_PX, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: MODERATION_COPY_JPEG_QUALITY })
-    .toBuffer();
   return {
     png: pngBytes,
     width: png.info.width,
     height: png.info.height,
     thumbnail: await thumbnail(pngBytes),
-    moderationCopy: new Uint8Array(moderationCopy),
+    moderationCopy: await moderationCopy(pngBytes),
   };
+}
+
+/**
+ * A JPEG copy no larger than 1024 px on its longest side, for the moderation endpoint: large images stay well
+ * inside its request limit, and the check doesn't need full resolution.
+ */
+export async function moderationCopy(bytes: Uint8Array): Promise<Uint8Array> {
+  const copy = await sharp(bytes)
+    .resize(MODERATION_COPY_PX, MODERATION_COPY_PX, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: MODERATION_COPY_JPEG_QUALITY })
+    .toBuffer();
+  return new Uint8Array(copy);
 }

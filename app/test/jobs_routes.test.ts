@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
 import { GET } from '../src/app/api/jobs/[id]/route';
 import { POST } from '../src/app/api/jobs/route';
+import { GET as getImage } from '../src/app/api/images/[id]/route';
 import { SESSION_HEADERS } from '../src/lib/session';
 
 const url = 'https://pictora.example.dev/api/jobs';
@@ -30,6 +31,17 @@ describe('GET /api/jobs/:id', () => {
     const response = await GET(new NextRequest(`${url}/01JAAAAAAAAAAAAAAAAAAAAAAA`), {
       params: Promise.resolve({ id: '01JAAAAAAAAAAAAAAAAAAAAAAA' }),
     });
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('GET /api/images/:id', () => {
+  it('answers 401 without a session', async () => {
+    const id = '01JAAAAAAAAAAAAAAAAAAAAAAA';
+    const response = await getImage(
+      new NextRequest(`https://pictora.example.dev/api/images/${id}`),
+      { params: Promise.resolve({ id }) },
+    );
     expect(response.status).toBe(401);
   });
 });

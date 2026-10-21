@@ -2554,6 +2554,42 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               },
             },
             {
+              "Action": "s3:GetObject",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/uploads/*",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/users/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
               "Action": [
                 "secretsmanager:DescribeSecret",
                 "secretsmanager:GetSecretValue",

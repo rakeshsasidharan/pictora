@@ -141,3 +141,18 @@ export function centreCropSize(size: Size, ratio: number): Size {
 function isGeminiImageSize(value: unknown): value is GeminiImageSize {
   return typeof value === 'string' && (GEMINI_IMAGE_SIZES as readonly string[]).includes(value);
 }
+
+/**
+ * The aspect, of those given, nearest an image's shape (on a log scale). Edits keep the parent image's shape,
+ * so the edited version is produced at the aspect closest to it that the model offers.
+ */
+export function nearestAspect(size: Size, aspects: readonly Aspect[]): Aspect {
+  const ratio = Math.log(size.width / size.height);
+  const distance = (aspect: Aspect) => Math.abs(Math.log(ASPECT_RATIOS[aspect]) - ratio);
+  const first = aspects[0];
+  if (!first) throw new Error('No aspects to choose from');
+  return aspects.reduce(
+    (best, aspect) => (distance(aspect) < distance(best) ? aspect : best),
+    first,
+  );
+}

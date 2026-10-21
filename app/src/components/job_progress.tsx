@@ -1,9 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type KeyboardEvent } from 'react';
 import { COMING_SOON, type ComingSoonFeature } from '../lib/coming_soon';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
+import { editImagePath } from '../lib/site';
 import type { JobPoll } from '../lib/use_job_status';
 import { ReportImage } from './report_image';
 
@@ -82,22 +84,12 @@ export function JobProgress({ poll, pointsReserved, prompt, onComingSoon }: JobP
           {refunded > 0 && <p>{pointsText(refunded)} returned to your allowance.</p>}
         </div>
       )}
-      {status === 'succeeded' && job?.images && (
-        <ResultsGrid images={job.images} prompt={prompt} onComingSoon={onComingSoon} />
-      )}
+      {status === 'succeeded' && job?.images && <ResultsGrid images={job.images} prompt={prompt} />}
     </section>
   );
 }
 
-function ResultsGrid({
-  images,
-  prompt,
-  onComingSoon,
-}: {
-  images: JobImage[];
-  prompt: string;
-  onComingSoon: (feature: ComingSoonFeature) => void;
-}) {
+function ResultsGrid({ images, prompt }: { images: JobImage[]; prompt: string }) {
   const [viewing, setViewing] = useState<JobImage>();
   const alt = altTextFor(prompt);
 
@@ -119,13 +111,9 @@ function ResultsGrid({
               <a className="button" href={image.downloadUrl} download>
                 Download PNG
               </a>
-              <button
-                type="button"
-                className="button"
-                onClick={() => onComingSoon(COMING_SOON.edit)}
-              >
+              <Link className="button" href={editImagePath(image.imageId, image.version)}>
                 Edit
-              </button>
+              </Link>
             </div>
           </li>
         ))}

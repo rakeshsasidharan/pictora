@@ -406,6 +406,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('admin APIs against DynamoDB Local', () => {
       hasQueue: () => true,
       enqueue: vi.fn(async () => undefined),
       presign: async (key) => key,
+      objectSize: async () => undefined,
       defaultDailyPoints: 25,
       spendCapCents: 2000,
       now: () => NOW,

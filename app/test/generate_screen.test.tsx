@@ -503,20 +503,20 @@ describe('GenerateScreen', () => {
       expect((generate() as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('shows coming soon for the gallery and edit, linked to their issues', async () => {
+    it('shows coming soon for the gallery, and links each result to its edit panel', async () => {
       stubApi({ statuses: [{ status: 'queued' }, { status: 'succeeded', images }] });
       renderScreen();
       fillAndGenerate();
       fireEvent.click(await screen.findByRole('button', { name: 'gallery' }));
-      let toast = screen.getByText('Gallery coming soon.').closest('.toast') as HTMLElement;
+      const toast = screen.getByText('Gallery coming soon.').closest('.toast') as HTMLElement;
       expect(within(toast).getByRole('link').getAttribute('href')).toMatch(/\/issues\/23$/);
+      fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
+      expect(screen.queryByText('Gallery coming soon.')).toBeNull();
 
       await screen.findByText('Status: Done');
-      fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]!);
-      toast = screen.getByText('Edit coming soon.').closest('.toast') as HTMLElement;
-      expect(within(toast).getByRole('link').getAttribute('href')).toMatch(/\/issues\/22$/);
-      fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
-      expect(screen.queryByText('Edit coming soon.')).toBeNull();
+      expect(
+        screen.getAllByRole('link', { name: 'Edit' }).map((link) => link.getAttribute('href')),
+      ).toEqual(['/edit/IMG1?version=1', '/edit/IMG2?version=1']);
     });
   });
 

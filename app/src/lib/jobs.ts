@@ -1,6 +1,7 @@
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   JOB_SK,
+  MAX_UPLOAD_BYTES,
   JOB_TTL_DAYS,
   SECONDS_PER_DAY,
   activeJobsGsiPk,
@@ -8,9 +9,15 @@ import {
   estimatePoints,
   jobError,
   jobPk,
+  nearestAspect,
+  parseReferenceKey,
   pausedQuality,
   ttlAfter,
+  userPk,
   utcDate,
+  versionSk,
+  type Aspect,
+  type EditJobRequest,
   type GenerateJobRequest,
   type JobItem,
   type JobStatus,
@@ -44,6 +51,8 @@ export interface JobsDeps {
   enqueue: (provider: Provider, jobId: string) => Promise<void>;
   /** A presigned GET URL for an object in the images bucket; with a download name, it saves as that file. */
   presign: (key: string, downloadName?: string) => Promise<string>;
+  /** The size of an object in the images bucket, or undefined when it doesn't exist (reference uploads). */
+  objectSize: (key: string) => Promise<number | undefined>;
   defaultDailyPoints: number;
   /** The monthly cap on platform provider spend, in cents (tech design 4.1). */
   spendCapCents: number;
@@ -65,7 +74,6 @@ export const API_ERROR_STATUS = {
   unknown_model: 400,
   model_disabled: 400,
   unsupported_option: 400,
-  edit_unavailable: 400,
   upload_wrong_type: 400,
   not_an_image: 400,
   upload_too_large: 413,
@@ -107,8 +115,9 @@ const COOLDOWN_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
 });
 
 /**
- * `POST /api/jobs` (tech design 5.1): validates the request, checks it against the model, estimates its points,
- * reserves them with the limits in one transaction, and queues the job. Answers 202 with the job ID.
+ * `POST /api/jobs` (tech design 5.1, 5.3): validates the request, checks it against the model, estimates its
+ * points, reserves them with the limits in one transaction, and queues the job. Answers 202 with the job ID. An
+ * edit must start from a version of the caller's own image, and costs one image at the chosen quality.
  */
 export async function createJob(
   deps: JobsDeps,
@@ -123,9 +132,6 @@ export async function createJob(
     );
   }
   const request = parsed.data;
-  if (request.type === 'edit') {
-    return apiError('edit_unavailable', 'Editing images is coming soon.');
-  }
 
   const model = (await deps.models()).find((candidate) => candidate.id === request.modelId);
   if (!model) {
@@ -137,9 +143,18 @@ export async function createJob(
       `${model.displayName} is switched off right now. Pick another model.`,
     );
   }
-  const unsupported = unsupportedOption(model, request);
-  if (unsupported) return apiError('unsupported_option', unsupported);
-  const points = estimatePoints(model, request.quality, request.aspect, request.count);
+  let points: number;
+  if (request.type === 'edit') {
+    const unsupported = unsupportedEditOption(model, request);
+    if (unsupported) return apiError('unsupported_option', unsupported);
+    const aspect = await editAspect(deps, session, request, model);
+    if (!aspect) return apiError('not_found', 'Image not found.');
+    points = estimatePoints(model, request.quality, aspect, 1);
+  } else {
+    const unsupported = unsupportedOption(model, request);
+    if (unsupported) return apiError('unsupported_option', unsupported);
+    points = estimatePoints(model, request.quality, request.aspect, request.count);
+  }
 
   const now = deps.now();
   if (pausedQuality(request.quality)) {
@@ -159,7 +174,7 @@ export async function createJob(
     SK: JOB_SK,
     jobId,
     userId: session.sub,
-    type: 'generate',
+    type: request.type,
     status: 'queued',
     request,
     modelId: model.id,
@@ -239,6 +254,79 @@ export function unsupportedOption(
     return `${name} doesn't support a fixed seed. Clear the seed or pick another model.`;
   }
   return undefined;
+}
+
+/** Why the model can't make this edit, in words for the user; undefined when it can (EDIT-4, EDIT-5). */
+export function unsupportedEditOption(
+  model: ModelConfig,
+  request: EditJobRequest,
+): string | undefined {
+  const name = model.displayName;
+  if (!model.capabilities.edit) return `${name} can't edit images. Pick another model.`;
+  if (!model.qualities[request.quality]) {
+    return `${name} doesn't offer ${request.quality} quality. Pick another quality.`;
+  }
+  const references = request.referenceKeys?.length ?? 0;
+  const allowed = model.capabilities.referenceImages;
+  if (references > allowed) {
+    return allowed === 0
+      ? `${name} doesn't take reference images. Remove them or pick another model.`
+      : `${name} takes up to ${allowed} reference ${plural(allowed, 'image')}. Remove some or pick another model.`;
+  }
+  return undefined;
+}
+
+/** The fields of a `VER#` item an edit request is checked against. */
+interface VersionDimensions {
+  width: number;
+  height: number;
+  aspect?: Aspect;
+}
+
+async function readVersion(
+  deps: JobsDeps,
+  sub: string,
+  imageId: string,
+  version: number,
+): Promise<VersionDimensions | undefined> {
+  const result = await deps.client.send(
+    new GetCommand({
+      TableName: deps.tableName,
+      Key: { PK: userPk(sub), SK: versionSk(imageId, version) },
+    }),
+  );
+  return result.Item as VersionDimensions | undefined;
+}
+
+/**
+ * Checks that the parent version and every reference image are the caller's own (EDIT-1, EDIT-5), and returns
+ * the aspect the edit is made at: the parent's own when the model offers it, otherwise the nearest one it does.
+ * Undefined when any of them is missing or someone else's, which the API answers with 404 so image IDs can't
+ * be probed. A reference upload must still be in the bucket and at most 10 MB.
+ */
+async function editAspect(
+  deps: JobsDeps,
+  session: Session,
+  request: EditJobRequest,
+  model: ModelConfig,
+): Promise<Aspect | undefined> {
+  const parent = await readVersion(deps, session.sub, request.imageId, request.parentVersion);
+  if (!parent) return undefined;
+  for (const key of request.referenceKeys ?? []) {
+    const reference = parseReferenceKey(key);
+    if (!reference || reference.sub !== session.sub) return undefined;
+    if (reference.kind === 'version') {
+      if (!(await readVersion(deps, session.sub, reference.imageId, reference.version))) {
+        return undefined;
+      }
+    } else {
+      const size = await deps.objectSize(key);
+      if (size === undefined || size > MAX_UPLOAD_BYTES) return undefined;
+    }
+  }
+  const aspects = model.capabilities.aspects;
+  if (parent.aspect && aspects.includes(parent.aspect)) return parent.aspect;
+  return nearestAspect({ width: parent.width, height: parent.height }, aspects);
 }
 
 /**
