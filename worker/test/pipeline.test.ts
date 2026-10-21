@@ -155,7 +155,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
 
   it('takes a mock job from queued to succeeded, storing the images and settling the points', async () => {
     const sub = newUser();
-    const request = generate({ quality: 'high', count: 2, seed: 7 });
+    const request = generate({ quality: 'high', count: 2, seed: 7, transparentBackground: true });
     const job = await seedJob(table.client, table.tableName, sub, {
       request,
       pointsReserved: 6,
@@ -219,6 +219,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
         quality: 'high',
         aspect: '1:1',
         seed: expect.any(Number),
+        transparentBackground: true,
         jobId: job.jobId,
         costPoints: 3,
       });

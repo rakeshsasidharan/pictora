@@ -190,6 +190,7 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
           quality: request.quality,
           aspect: request.aspect,
           seed: image.seed,
+          transparentBackground: request.transparentBackground,
           jobId: job.jobId,
           costPoints: image.costPoints,
           createdAt: at,

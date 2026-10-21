@@ -51,6 +51,7 @@ export default async function EditImagePage({
   return (
     <EditPanel
       detail={detail.body as unknown as ImageDetailBody}
+      ownerSub={session.sub}
       models={models}
       points={{ left: me.pointsLeft, limit: me.dailyLimit }}
       initialVersion={Number.isInteger(requested) && requested > 0 ? requested : undefined}
