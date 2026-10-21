@@ -1,5 +1,5 @@
 import { ASPECT_RATIOS, centreCropSize, type Aspect, type Size } from '@pictora/core';
-import sharp from 'sharp';
+import sharp, { type OutputInfo } from 'sharp';
 
 /** Gallery thumbnails: 512 px on the longest side, WebP (tech design 9). */
 export const THUMBNAIL_MAX_PX = 512;
@@ -74,4 +74,70 @@ async function dimensions(bytes: Uint8Array): Promise<Size> {
   const { width, height } = await sharp(bytes).metadata();
   if (!width || !height) throw new Error('Image has no dimensions');
   return { width, height };
+}
+
+/** Formats an upload may be in (EDIT-2), as `sharp` names them. */
+export const UPLOAD_FORMATS = ['jpeg', 'png', 'webp'] as const;
+/** Uploads are scaled down to fit 4096 px, the largest output size tier, so edits stay within provider limits. */
+export const UPLOAD_MAX_PX = 4096;
+/** Uploads over 50 megapixels are refused before decoding, so a small file can't expand into a huge image. */
+export const UPLOAD_MAX_INPUT_PIXELS = 50_000_000;
+/** The copy sent to moderation: 1024 px on the longest side, as JPEG, to keep the request small. */
+export const MODERATION_COPY_PX = 1024;
+const MODERATION_COPY_JPEG_QUALITY = 85;
+
+/** The upload isn't a JPEG, PNG or WebP image that can be decoded. */
+export class NotAnImageError extends Error {
+  constructor(message = 'The file is not a JPEG, PNG or WebP image', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'NotAnImageError';
+  }
+}
+
+/** An upload ready to store: the PNG, its thumbnail and a small copy to moderate. */
+export interface PreparedUpload extends NormalisedImage {
+  thumbnail: Thumbnail;
+  moderationCopy: Uint8Array;
+}
+
+/**
+ * Decodes an uploaded image (EDIT-2) and turns it into version 1 of a new image: a PNG turned upright from its
+ * EXIF orientation and scaled down to fit 4096 px. Its metadata is dropped, so a photo's location doesn't stay
+ * with it. Throws `NotAnImageError` for anything that isn't a decodable JPEG, PNG or WebP.
+ */
+export async function prepareUpload(bytes: Uint8Array): Promise<PreparedUpload> {
+  const input = () => sharp(bytes, { limitInputPixels: UPLOAD_MAX_INPUT_PIXELS });
+  let png: { data: Buffer; info: OutputInfo };
+  try {
+    const { format } = await input().metadata();
+    if (!(UPLOAD_FORMATS as readonly string[]).includes(format)) throw new NotAnImageError();
+    png = await input()
+      .rotate()
+      .resize(UPLOAD_MAX_PX, UPLOAD_MAX_PX, { fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+  } catch (error) {
+    if (error instanceof NotAnImageError) throw error;
+    throw new NotAnImageError(undefined, { cause: error });
+  }
+  const pngBytes = new Uint8Array(png.data);
+  return {
+    png: pngBytes,
+    width: png.info.width,
+    height: png.info.height,
+    thumbnail: await thumbnail(pngBytes),
+    moderationCopy: await moderationCopy(pngBytes),
+  };
+}
+
+/**
+ * A JPEG copy no larger than 1024 px on its longest side, for the moderation endpoint: large images stay well
+ * inside its request limit, and the check doesn't need full resolution.
+ */
+export async function moderationCopy(bytes: Uint8Array): Promise<Uint8Array> {
+  const copy = await sharp(bytes)
+    .resize(MODERATION_COPY_PX, MODERATION_COPY_PX, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: MODERATION_COPY_JPEG_QUALITY })
+    .toBuffer();
+  return new Uint8Array(copy);
 }

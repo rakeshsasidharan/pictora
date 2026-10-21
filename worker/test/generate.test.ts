@@ -1,6 +1,9 @@
 import type { SQSEvent, SQSRecord } from 'aws-lambda';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGenerateHandler, parseJobMessage } from '../src/generate.js';
+import { log } from '../src/log.js';
+
+vi.mock('../src/log.js', () => ({ log: vi.fn() }));
 
 const QUEUE_ARN = 'arn:aws:sqs:us-west-2:000000000000:pictora-dev-openai';
 
@@ -47,16 +50,14 @@ describe('parseJobMessage', () => {
 });
 
 describe('generate handler', () => {
-  let log: ReturnType<typeof vi.spyOn>;
-  let error: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-  });
+  const lines = (level: string) =>
+    vi
+      .mocked(log)
+      .mock.calls.filter(([lineLevel]) => lineLevel === level)
+      .map(([, message, fields]): Record<string, unknown> => ({ message, ...fields }));
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.mocked(log).mockClear();
   });
 
   it('runs the job in a valid message and acknowledges it', async () => {
@@ -67,14 +68,14 @@ describe('generate handler', () => {
 
     expect(result).toEqual({ batchItemFailures: [] });
     expect(runJob).toHaveBeenCalledWith('01JOB');
-    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toMatchObject({
+    expect(lines('INFO').at(-1)).toMatchObject({
       message: 'Job message handled',
       jobId: '01JOB',
       outcome: 'succeeded',
       messageId: 'm1',
       queue: 'pictora-dev-openai',
     });
-    expect(error).not.toHaveBeenCalled();
+    expect(lines('ERROR')).toEqual([]);
   });
 
   it('acknowledges a message whose job was skipped', async () => {
@@ -99,9 +100,9 @@ describe('generate handler', () => {
       batchItemFailures: [{ itemIdentifier: 'bad-json' }, { itemIdentifier: 'no-job-id' }],
     });
     expect(runJob).toHaveBeenCalledTimes(2);
-    expect(error).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
-      level: 'ERROR',
+    expect(lines('ERROR')).toHaveLength(2);
+    expect(lines('ERROR')[0]).toMatchObject({
+      message: 'Invalid job message',
       messageId: 'bad-json',
       receiveCount: '1',
     });
@@ -117,11 +118,8 @@ describe('generate handler', () => {
     );
     expect(result).toEqual({ batchItemFailures: [{ itemIdentifier: 'm1' }] });
     expect(runJob).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
-      message: 'Job message failed',
-      jobId: '01A',
-      error: 'DynamoDB unavailable',
-    });
+    expect(lines('ERROR')[0]).toMatchObject({ message: 'Job message failed', jobId: '01A' });
+    expect(String(lines('ERROR')[0]?.error)).toContain('DynamoDB unavailable');
   });
 
   it('returns no failures for an empty batch', async () => {

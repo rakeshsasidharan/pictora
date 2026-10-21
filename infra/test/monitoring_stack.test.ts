@@ -58,13 +58,165 @@ describe('Monitoring stack', () => {
     });
   });
 
-  it('budgets the environment with alerts at 50%, 80% and 100% to the alert topic', () => {
+  it('alarms when over 5% of finished jobs fail in 15 minutes', () => {
+    const [alarm] = Object.values(
+      dev.findResources('AWS::CloudWatch::Alarm', {
+        Properties: { AlarmName: 'pictora-dev-failure-rate' },
+      }),
+    );
+    expect(alarm?.Properties).toMatchObject({
+      Threshold: 5,
+      ComparisonOperator: 'GreaterThanThreshold',
+      EvaluationPeriods: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: expect.stringMatching(/^AlertTopic/) }],
+    });
+    const metrics = alarm?.Properties.Metrics;
+    expect(metrics.find((m: { Expression?: string }) => m.Expression).Expression).toContain(
+      '100 * FILL(f, 0)',
+    );
+    const names = metrics
+      .filter((m: { MetricStat?: unknown }) => m.MetricStat)
+      .map((m: { MetricStat: { Metric: { MetricName: string }; Period: number } }) => [
+        m.MetricStat.Metric.MetricName,
+        m.MetricStat.Period,
+      ]);
+    expect(names).toEqual([
+      ['JobsSucceeded', 900],
+      ['JobsFailed', 900],
+      ['JobsBlocked', 900],
+    ]);
+    expect(JSON.stringify(metrics)).toContain('Pictora/dev');
+  });
+
+  it.each(['openai', 'gemini', 'bedrock'])(
+    'alarms when p95 %s latency is over 60 s',
+    (provider) => {
+      dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: `pictora-dev-${provider}-p95-latency`,
+        Namespace: 'Pictora/dev',
+        MetricName: 'ProviderLatencyMs',
+        Dimensions: Match.arrayWith([
+          { Name: 'provider', Value: provider },
+          { Name: 'service', Value: 'pictora' },
+        ]),
+        ExtendedStatistic: 'p95',
+        Period: 900,
+        Threshold: 60_000,
+        ComparisonOperator: 'GreaterThanThreshold',
+      });
+    },
+  );
+
+  it.each(['openai', 'gemini', 'bedrock', 'purge'])(
+    'alarms when a message waits in the %s queue for over 5 minutes',
+    (queue) => {
+      dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        AlarmName: `pictora-dev-${queue}-oldest-message`,
+        Namespace: 'AWS/SQS',
+        MetricName: 'ApproximateAgeOfOldestMessage',
+        Statistic: 'Maximum',
+        Threshold: 300,
+        ComparisonOperator: 'GreaterThanThreshold',
+      });
+    },
+  );
+
+  it('alarms on a model health problem or a failed check', () => {
+    const [alarm] = Object.values(
+      dev.findResources('AWS::CloudWatch::Alarm', {
+        Properties: { AlarmName: 'pictora-dev-model-health' },
+      }),
+    );
+    expect(alarm?.Properties).toMatchObject({
+      Threshold: 0,
+      ComparisonOperator: 'GreaterThanThreshold',
+      AlarmActions: [{ Ref: expect.stringMatching(/^AlertTopic/) }],
+    });
+    const text = JSON.stringify(alarm?.Properties.Metrics);
+    expect(text).toContain('ModelHealthProblems');
+    expect(text).toContain('"MetricName":"Errors"');
+  });
+
+  it('sends every job alarm and its recovery to the alert topic', () => {
+    const alarms = Object.values(dev.findResources('AWS::CloudWatch::Alarm'));
+    expect(alarms.length).toBe(13);
+    for (const alarm of alarms) {
+      expect(alarm.Properties.AlarmActions).toEqual([
+        { Ref: expect.stringMatching(/^AlertTopic/) },
+      ]);
+    }
+  });
+
+  it('builds the dashboard: jobs, error rate, 5xx, latency, queues, dead letters and spend', () => {
+    const [dashboard] = Object.values(dev.findResources('AWS::CloudWatch::Dashboard'));
+    expect(dashboard?.Properties.DashboardName).toBe('pictora-dev');
+    const body = JSON.stringify(dashboard?.Properties.DashboardBody);
+    for (const title of [
+      'Jobs by status',
+      'Job error rate (%)',
+      'App 5xx (%)',
+      'Provider latency p50 (ms)',
+      'Provider latency p95 (ms)',
+      'Queue depth',
+      'Oldest message age (s)',
+      'Dead-letter queue depth',
+      'Spend today (cents)',
+      'Spend this month (cents)',
+    ]) {
+      expect(body).toContain(title);
+    }
+    for (const metric of [
+      'JobsCreated',
+      'ProviderLatencyMs',
+      'ApproximateNumberOfMessagesVisible',
+      'ProviderCostCents',
+      'MonthlySpendCents',
+    ]) {
+      expect(body).toContain(metric);
+    }
+  });
+
+  it.each([
+    [80, 1600],
+    [100, 2000],
+  ])('alarms when the month spend reaches %i%% of the dev cap', (percent, threshold) => {
+    dev.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: `pictora-dev-spend-${percent}`,
+      Namespace: 'Pictora/dev',
+      MetricName: 'MonthlySpendCents',
+      Statistic: 'Maximum',
+      Period: 300,
+      Threshold: threshold,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      EvaluationPeriods: 1,
+      TreatMissingData: 'ignore',
+      AlarmActions: [{ Ref: Match.stringLikeRegexp('^AlertTopic') }],
+    });
+  });
+
+  it('sets the prod spend alarms from the $100 cap', () => {
+    const prod = Template.fromStack(testStage('PictoraProd').monitoring);
+    prod.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'pictora-prod-spend-80',
+      Namespace: 'Pictora/prod',
+      Threshold: 8000,
+    });
+    prod.hasResourceProperties('AWS::CloudWatch::Alarm', {
+      AlarmName: 'pictora-prod-spend-100',
+      Threshold: 10000,
+    });
+    const [budget] = Object.values(prod.findResources('AWS::Budgets::Budget'));
+    expect(budget?.Properties.Budget.BudgetLimit).toEqual({ Amount: 100, Unit: 'USD' });
+  });
+
+  it('budgets the environment at the spend cap with alerts at 50%, 80% and 100% to the alert topic', () => {
     const [budget] = Object.values(dev.findResources('AWS::Budgets::Budget'));
     expect(budget?.Properties.Budget).toMatchObject({
       BudgetName: 'pictora-dev',
       BudgetType: 'COST',
       TimeUnit: 'MONTHLY',
-      BudgetLimit: { Amount: 15, Unit: 'USD' },
+      BudgetLimit: { Amount: 20, Unit: 'USD' },
       CostFilters: { TagKeyValue: ['user:environment$dev'] },
     });
     const notifications = budget?.Properties.NotificationsWithSubscribers;

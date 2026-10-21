@@ -17,5 +17,13 @@ describe('SiteHeader', () => {
     expect(html).toContain('<form action="/auth/logout" method="post">');
     expect(html).toContain('Sign out');
     expect(html).not.toContain('href="/auth/login"');
+    expect(html).not.toContain('href="/admin"');
+  });
+
+  it('links admins to the admin area', () => {
+    const html = renderToStaticMarkup(
+      <SiteHeader session={{ sub: 's', email: 'admin@example.com', groups: ['admins'] }} />,
+    );
+    expect(html).toContain('href="/admin"');
   });
 });

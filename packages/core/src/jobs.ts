@@ -31,6 +31,7 @@ export const JOB_ERROR_CODES = [
   'provider_error',
   'enqueue_failed',
   'stuck',
+  'source_missing',
 ] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
@@ -43,6 +44,8 @@ export const JOB_ERROR_MESSAGES: Readonly<Record<JobErrorCode, string>> = {
     'The image model ran into a problem. Your points have been refunded. Please try again, or pick another model.',
   enqueue_failed: "We couldn't start your job. Your points have been refunded. Please try again.",
   stuck: "Your job didn't finish in time. Your points have been refunded. Please try again.",
+  source_missing:
+    'The image you were editing, or one of its reference images, is no longer available. Your points have been refunded.',
 };
 
 export interface JobError {
@@ -140,6 +143,11 @@ export function statsModelSk(modelId: string): string {
   return `MODEL#${modelId}`;
 }
 
+/** Prompt enhancer overhead for the day, per enhancer model (`bedrock:<id>`, `gemini:<id>` or `mock`). */
+export function statsEnhancerSk(enhancerModel: string): string {
+  return `ENHANCER#${enhancerModel}`;
+}
+
 /** Digits in a usage item's `GSI1SK`, so the ADM-3 top-users query sorts by points used. */
 export const USAGE_RANK_DIGITS = 10;
 
@@ -173,6 +181,11 @@ export const SECONDS_PER_DAY = 86_400;
 /** Where the worker stores version `version` of an image (tech design 9). */
 export function imageKey(sub: string, imageId: string, version: number): string {
   return `users/${sub}/${imageId}/v${version}.png`;
+}
+
+/** Where the browser uploads an image to edit (EDIT-2, tech design 9); unused uploads expire after a day. */
+export function uploadKey(sub: string, uploadId: string): string {
+  return `uploads/${sub}/${uploadId}`;
 }
 
 /** Where the worker stores the WebP thumbnail of version `version` of an image (tech design 9). */

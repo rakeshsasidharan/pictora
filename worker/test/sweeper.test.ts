@@ -1,3 +1,4 @@
+import type { EmitMetrics } from '@pictora/core/observability';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import {
@@ -69,6 +70,16 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('sweepStuckJobs', () => {
     expect(await usedOn(sub)).toBe(2);
     expect(await activeJobs(sub)).toBe(0);
     expect(await item(statsPk('2026-10-15'), statsModelSk('mock'))).toMatchObject({ failures: 1 });
+  });
+
+  it('counts each swept job as a failed job', async () => {
+    const job = await seedJob(table.client, table.tableName, newUser(), {
+      createdAt: minutesAgo(11),
+    });
+    const metrics = vi.fn<EmitMetrics>();
+    const result = await sweepStuckJobs({ ...table, now: () => NOW, metrics });
+    expect(result.swept).toEqual([job.jobId]);
+    expect(metrics).toHaveBeenCalledWith([{ name: 'JobsFailed', value: 1, unit: 'Count' }]);
   });
 
   it('fails and refunds a job queued for over 10 minutes', async () => {

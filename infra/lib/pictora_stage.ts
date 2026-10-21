@@ -46,7 +46,7 @@ export class PictoraStage extends Stage {
       });
     }
     this.data = new DataStack(this, 'Data', { config });
-    this.auth = new AuthStack(this, 'Auth', { config });
+    this.auth = new AuthStack(this, 'Auth', { config, table: this.data.table });
     this.jobs = new JobsStack(this, 'Jobs', {
       config,
       table: this.data.table,
@@ -61,12 +61,16 @@ export class PictoraStage extends Stage {
       auth: this.auth,
       queues: this.jobs.queues,
       purgeQueue: this.jobs.purgeQueue,
+      providerSecrets: this.jobs.providerSecrets,
       certificate: this.certificate?.certificate,
     });
     this.monitoring = new MonitoringStack(this, 'Monitoring', {
       config,
       appFunction: this.web.appFunction,
       deadLetterQueue: this.jobs.deadLetterQueue,
+      queues: this.jobs.queues,
+      purgeQueue: this.jobs.purgeQueue,
+      modelHealthFunction: this.jobs.modelHealthFunction,
     });
   }
 }

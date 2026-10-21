@@ -1,11 +1,16 @@
 {
-  // Type-checks against core's source, so `npm run typecheck` doesn't need core built first. `next build`
-  // uses tsconfig.json and core's dist, since Turbopack doesn't map core's `.js` imports to its `.ts` files.
+  // Type-checks against core's and providers' source, so `npm run typecheck` doesn't need them built
+  // first. `next build` uses tsconfig.json and their dist, since Turbopack doesn't map their `.js` imports
+  // to their `.ts` files.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
       "@pictora/core": ["../packages/core/src/index.ts"],
-      "@pictora/core/registry-store": ["../packages/core/src/registry_store.ts"]
+      "@pictora/core/registry-store": ["../packages/core/src/registry_store.ts"],
+      "@pictora/core/observability": ["../packages/core/src/observability.ts"],
+      "@pictora/core/block-store": ["../packages/core/src/block_store.ts"],
+      "@pictora/providers/text": ["../packages/providers/src/text.ts"],
+      "@pictora/providers/image": ["../packages/providers/src/image.ts"]
     }
   }
 }

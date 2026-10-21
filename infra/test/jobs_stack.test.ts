@@ -1,6 +1,6 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { bedrockModelIds } from '../lib/jobs_stack.js';
+import { bedrockModelIds, geminiEnvironment } from '../lib/jobs_stack.js';
 import { PLACEHOLDER_IMAGE_DIGEST } from '../lib/stage_config.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
@@ -125,7 +125,7 @@ describe('Jobs stack: worker Lambda', () => {
     );
   });
 
-  it('passes the table, bucket, secret names and commit SHA', () => {
+  it('passes the table, bucket, secret names, spend cap and commit SHA', () => {
     expect(workerFunction(dev).Environment.Variables).toMatchObject({
       PICTORA_ENV: 'dev',
       GIT_SHA: 'abc123',
@@ -133,6 +133,29 @@ describe('Jobs stack: worker Lambda', () => {
       IMAGES_BUCKET: expect.anything(),
       OPENAI_SECRET_ID: 'pictora/dev/openai',
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      SPEND_CAP_CENTS: '2000',
+      GEMINI_BACKEND: 'api',
+    });
+    expect(workerFunction(dev).Environment.Variables).not.toHaveProperty('GEMINI_VERTEX_PROJECT');
+  });
+
+  it('passes the Vertex AI project and location only for the Vertex AI backend', () => {
+    const base = devStage.config;
+    expect(geminiEnvironment(base)).toEqual({ GEMINI_BACKEND: 'api' });
+    expect(
+      geminiEnvironment({
+        ...base,
+        geminiBackend: 'vertex',
+        geminiVertexLocation: 'us-central1',
+        geminiVertexProject: 'pictora-test',
+      }),
+    ).toEqual({
+      GEMINI_BACKEND: 'vertex',
+      GEMINI_VERTEX_LOCATION: 'us-central1',
+      GEMINI_VERTEX_PROJECT: 'pictora-test',
+    });
+    expect(geminiEnvironment({ ...base, geminiBackend: 'vertex' })).toEqual({
+      GEMINI_BACKEND: 'vertex',
     });
   });
 
@@ -198,13 +221,17 @@ describe('Jobs stack: worker IAM', () => {
     expect(actionsOf(statement ?? {})).not.toContain('dynamodb:DeleteTable');
   });
 
-  it('can only put objects in the images bucket', () => {
+  it('puts objects in the images bucket, and reads only image and upload objects', () => {
     const s3Statements = statements.filter((s) => actionsOf(s).some((a) => a.startsWith('s3:')));
-    expect(s3Statements).toHaveLength(1);
-    const [statement] = s3Statements;
-    expect(actionsOf(statement ?? {})).toContain('s3:PutObject');
-    expect(actionsOf(statement ?? {}).filter((a) => /^s3:(Get|Delete|List)/.test(a))).toEqual([]);
-    expect(JSON.stringify(statement?.Resource)).toMatch(/ImagesBucket.*Arn.*\/\*/);
+    expect(s3Statements).toHaveLength(2);
+    const put = s3Statements.find((s) => actionsOf(s).includes('s3:PutObject'));
+    expect(actionsOf(put ?? {}).filter((a) => /^s3:(Get|Delete|List)/.test(a))).toEqual([]);
+    expect(JSON.stringify(put?.Resource)).toMatch(/ImagesBucket.*Arn.*\/\*/);
+    const read = s3Statements.find((s) => actionsOf(s).includes('s3:GetObject'));
+    expect(actionsOf(read ?? {})).toEqual(['s3:GetObject']);
+    const resources = JSON.stringify(read?.Resource);
+    expect(resources).toContain('/users/*');
+    expect(resources).toContain('/uploads/*');
   });
 
   it('reads only the openai and gemini secrets of its environment, by name', () => {
@@ -299,12 +326,12 @@ describe('Jobs stack: sweeper', () => {
       Object.values(dev.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([30, 30, 30]);
+    ).toEqual([30, 30, 30, 30]);
     expect(
       Object.values(prod.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([90, 90, 90]);
+    ).toEqual([90, 90, 90, 90]);
   });
 
   it('can use the table and its indexes, and nothing else', () => {
@@ -371,5 +398,46 @@ describe('bedrockModelIds', () => {
       'stability.stable-image-core-v1:1',
       'stability.stable-image-ultra-v1:1',
     ]);
+  });
+});
+
+describe('Jobs stack: model health', () => {
+  const functionId = () =>
+    logicalId(dev, 'AWS::Lambda::Function', { ImageConfig: { Command: ['model_health.handler'] } });
+
+  it('runs the model_health handler from the worker image with the registry and secret names', () => {
+    const props = imageFunction(dev, 'model_health.handler');
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.Timeout).toBe(120);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: expect.anything(),
+      OPENAI_SECRET_ID: 'pictora/dev/openai',
+      GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      GEMINI_BACKEND: 'api',
+    });
+  });
+
+  it('runs daily at 06:00 UTC, without retrying a failed run', () => {
+    dev.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'cron(0 6 * * ? *)',
+      State: 'ENABLED',
+      Targets: [
+        Match.objectLike({
+          Arn: { 'Fn::GetAtt': [functionId(), 'Arn'] },
+          RetryPolicy: { MaximumRetryAttempts: 0 },
+        }),
+      ],
+    });
+  });
+
+  it('may read the table and the provider secrets, and list Bedrock models', () => {
+    const statements = policyStatements(dev, 'ModelHealthFunctionServiceRole');
+    const actions = statements.flatMap((statement) => [statement.Action].flat());
+    expect(actions).toEqual(expect.arrayContaining(['bedrock:ListFoundationModels']));
+    expect(actions).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem']));
+    expect(actions).not.toContain('dynamodb:PutItem');
+    expect(actions).not.toContain('bedrock:InvokeModel');
+    expect(JSON.stringify(statements)).toContain('secretsmanager:GetSecretValue');
   });
 });

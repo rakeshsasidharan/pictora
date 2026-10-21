@@ -10,14 +10,15 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1149.0",
-    "@aws-sdk/lib-dynamodb": "^3.1149.0",
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
     "aws-cdk": "^2.1145.0",
     "tsx": "^4.23.15",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.273.0",
-    "constructs": "^10.8.1"
+    "constructs": "^10.8.1",
+    "disposable-email-domains-js": "^1.26.0"
   }
 }

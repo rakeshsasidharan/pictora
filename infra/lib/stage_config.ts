@@ -7,6 +7,12 @@ export type EnvName = 'dev' | 'prod';
 /** The Route 53 hosted zone that holds the site records and certificate validation (tech design 14). */
 export const HOSTED_ZONE_NAME = 'rpillai.dev';
 
+/** Local `next dev`, allowed as a sign-in callback and an upload origin in dev only. */
+export const LOCAL_DEV_URL = 'http://localhost:3000';
+
+/** Every CloudFront domain, the site's origin while an environment has no custom domain. */
+export const CLOUDFRONT_ORIGIN = 'https://*.cloudfront.net';
+
 /** Used when no `hostedZoneId` context is given, so synth works without AWS access. Deploys pass the real ID. */
 export const PLACEHOLDER_HOSTED_ZONE_ID = 'Z0000000000PLACEHOLDER';
 
@@ -24,6 +30,13 @@ const AUTH_DOMAIN_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const IMAGE_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
+/** `bedrock:<model or inference profile ID>`, `gemini:<model ID>` or `mock`, as `ENHANCER_MODEL` takes it. */
+const ENHANCER_MODEL_PATTERN = /^(?:(?:bedrock|gemini):[A-Za-z0-9._:-]+|mock)$/;
+
+/** Where the worker calls Gemini: the Gemini API with an API key, or Vertex AI (tech design 10). */
+export const GEMINI_BACKENDS = ['api', 'vertex'] as const;
+export type GeminiBackend = (typeof GEMINI_BACKENDS)[number];
+
 /** Per-environment settings from the `environments` context in `infra/cdk.json` (tech design 10 and 14). */
 export interface EnvironmentSettings {
   /** Site domain under `rpillai.dev`. Without one, the site is served on the CloudFront domain. */
@@ -32,14 +45,21 @@ export interface EnvironmentSettings {
   readonly authDomainPrefix: string;
   /** Points each user gets per UTC day, unless their profile overrides it. */
   readonly dailyPoints: number;
-  /** Monthly platform cap on provider spend, in US dollars. */
+  /**
+   * Monthly platform cap on provider spend, in US dollars. At it, only draft quality works; the spend alarms
+   * fire at 80% and 100% of it, and the AWS budget uses the same total.
+   */
   readonly spendCapUsd: number;
   /** Maximum concurrent worker invocations per provider queue. */
   readonly queueConcurrency: number;
-  /** Monthly AWS Budgets amount for this environment's infrastructure, in US dollars. */
-  readonly budgetUsd: number;
   /** Reserved concurrency for the app Lambda, as a cost guard. Unset means unreserved. */
   readonly appReservedConcurrency?: number;
+  /** The prompt enhancer model (tech design 6.3): `bedrock:<id>`, `gemini:<id>` or `mock`. */
+  readonly enhancerModel: string;
+  /** `api` (the default) or `vertex`. The secret `pictora/<env>/gemini` must hold the matching credential. */
+  readonly geminiBackend: GeminiBackend;
+  /** Vertex AI location; the worker defaults to `global`. */
+  readonly geminiVertexLocation?: string;
 }
 
 /** Values passed with `-c` at deploy time, with placeholders so synth works without them. */
@@ -53,6 +73,11 @@ export interface DeploySettings {
   readonly gitSha: string;
   /** Email for the alert topic. Kept out of the repo; without it the topic has no subscription. */
   readonly alertEmail?: string;
+  /**
+   * Google Cloud project for Vertex AI, kept out of the repo. Without it the worker uses the service account
+   * key's `project_id`.
+   */
+  readonly geminiVertexProject?: string;
   /** Next.js `.next/static` output, served under `/_next/static/`. */
   readonly appStaticDir: string;
   /** Next.js `public` folder; files under `public/static/` are served from S3. */
@@ -92,17 +117,33 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     );
   }
 
+  const enhancerModel = optionalString(raw, 'enhancerModel', where);
+  if (enhancerModel === undefined || !ENHANCER_MODEL_PATTERN.test(enhancerModel)) {
+    throw new Error(
+      `${where}.enhancerModel must be bedrock:<model ID>, gemini:<model ID> or mock: ${enhancerModel ?? '(missing)'}`,
+    );
+  }
+
+  const geminiBackend = optionalString(raw, 'geminiBackend', where) ?? 'api';
+  if (!(GEMINI_BACKENDS as readonly string[]).includes(geminiBackend)) {
+    throw new Error(
+      `${where}.geminiBackend must be one of ${GEMINI_BACKENDS.join(', ')}: ${geminiBackend}`,
+    );
+  }
+
   return {
     domain,
     authDomainPrefix,
     dailyPoints: positiveInteger(raw, 'dailyPoints', where),
     spendCapUsd: positiveInteger(raw, 'spendCapUsd', where),
     queueConcurrency: positiveInteger(raw, 'queueConcurrency', where),
-    budgetUsd: positiveInteger(raw, 'budgetUsd', where),
     appReservedConcurrency:
       raw.appReservedConcurrency === undefined
         ? undefined
         : positiveInteger(raw, 'appReservedConcurrency', where),
+    enhancerModel,
+    geminiBackend: geminiBackend as GeminiBackend,
+    geminiVertexLocation: optionalString(raw, 'geminiVertexLocation', where),
   };
 }
 
@@ -132,6 +173,7 @@ function deploySettings(node: Node): DeploySettings {
     workerImageDigest,
     gitSha: contextString(node, 'gitSha') ?? 'local',
     alertEmail: contextString(node, 'alertEmail'),
+    geminiVertexProject: contextString(node, 'geminiVertexProject'),
     appStaticDir,
     appPublicDir: contextString(node, 'appPublicDir') ?? DEFAULT_APP_PUBLIC_DIR,
   };

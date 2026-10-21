@@ -15,7 +15,7 @@ const devSettings = {
   dailyPoints: 1000,
   spendCapUsd: 20,
   queueConcurrency: 5,
-  budgetUsd: 15,
+  enhancerModel: 'mock',
 };
 
 function configFor(context: Record<string, unknown>, envName: 'dev' | 'prod' = 'dev') {
@@ -104,7 +104,7 @@ describe('stageConfig', () => {
     },
   );
 
-  it.each(['dailyPoints', 'spendCapUsd', 'queueConcurrency', 'budgetUsd'])(
+  it.each(['dailyPoints', 'spendCapUsd', 'queueConcurrency'])(
     'requires %s to be a positive integer',
     (key) => {
       expect(() => configFor({ environments: { dev: { ...devSettings, [key]: 0 } } })).toThrow(key);
@@ -113,6 +113,50 @@ describe('stageConfig', () => {
       ).toThrow(key);
     },
   );
+
+  it('reads the enhancer model for each environment', () => {
+    expect(configFor(cdkJsonContext()).enhancerModel).toBe('mock');
+    expect(configFor(cdkJsonContext(), 'prod').enhancerModel).toBe(
+      'bedrock:us.openai.gpt-5.6-luna',
+    );
+    expect(
+      configFor({
+        environments: { dev: { ...devSettings, enhancerModel: 'gemini:gemini-3.1-flash-lite' } },
+      }).enhancerModel,
+    ).toBe('gemini:gemini-3.1-flash-lite');
+  });
+
+  it.each([undefined, 'openai:gpt-5', 'bedrock:', 'luna'])(
+    'rejects the enhancer model %s',
+    (enhancerModel) => {
+      expect(() => configFor({ environments: { dev: { ...devSettings, enhancerModel } } })).toThrow(
+        /enhancerModel must be bedrock:<model ID>, gemini:<model ID> or mock/,
+      );
+    },
+  );
+
+  it('uses the Gemini API unless the environment picks Vertex AI', () => {
+    expect(configFor(cdkJsonContext()).geminiBackend).toBe('api');
+    expect(configFor(cdkJsonContext(), 'prod').geminiBackend).toBe('api');
+    expect(configFor({ environments: { dev: devSettings } }).geminiBackend).toBe('api');
+    const vertex = configFor({
+      environments: {
+        dev: { ...devSettings, geminiBackend: 'vertex', geminiVertexLocation: 'us-central1' },
+      },
+      geminiVertexProject: 'pictora-test',
+    });
+    expect(vertex).toMatchObject({
+      geminiBackend: 'vertex',
+      geminiVertexLocation: 'us-central1',
+      geminiVertexProject: 'pictora-test',
+    });
+  });
+
+  it('rejects an unknown Gemini backend', () => {
+    expect(() =>
+      configFor({ environments: { dev: { ...devSettings, geminiBackend: 'vertexai' } } }),
+    ).toThrow(/geminiBackend must be one of api, vertex: vertexai/);
+  });
 
   it('fails clearly when the environment is missing', () => {
     expect(() => configFor({ environments: { dev: devSettings } }, 'prod')).toThrow(

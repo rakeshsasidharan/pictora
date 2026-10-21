@@ -1,0 +1,27 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          { "text": "Here is the edited image." },
+          { "inlineData": { "mimeType": "image/png", "data": "__IMAGE__" } }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 1050,
+    "candidatesTokenCount": 1290,
+    "totalTokenCount": 2340,
+    "promptTokensDetails": [
+      { "modality": "TEXT", "tokenCount": 18 },
+      { "modality": "IMAGE", "tokenCount": 1032 }
+    ],
+    "candidatesTokensDetails": [{ "modality": "IMAGE", "tokenCount": 1290 }]
+  },
+  "modelVersion": "gemini-3.1-flash-image",
+  "responseId": "resp-edit-1"
+}

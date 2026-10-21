@@ -1,6 +1,16 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { centreCrop, isPng, normalisePng, thumbnail } from '../src/image.js';
+import {
+  MODERATION_COPY_PX,
+  NotAnImageError,
+  THUMBNAIL_MAX_PX,
+  UPLOAD_MAX_PX,
+  centreCrop,
+  isPng,
+  normalisePng,
+  prepareUpload,
+  thumbnail,
+} from '../src/image.js';
 import { solidImage } from './helpers.js';
 
 describe('normalisePng', () => {
@@ -93,5 +103,68 @@ describe('centreCrop', () => {
     const { channels } = await sharp(result.png).stats();
     expect(result).toMatchObject({ width: 10, height: 10 });
     expect(channels.slice(0, 3).map((channel) => channel.mean)).toEqual([0, 255, 0]);
+  });
+});
+
+describe('prepareUpload', () => {
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'turns a %s upload into a PNG, a thumbnail and a moderation copy',
+    async (format) => {
+      const result = await prepareUpload(await solidImage(format, 1600, 1200));
+
+      expect(isPng(result.png)).toBe(true);
+      expect(result).toMatchObject({ width: 1600, height: 1200 });
+      expect(await sharp(result.thumbnail.webp).metadata()).toMatchObject({
+        format: 'webp',
+        width: THUMBNAIL_MAX_PX,
+        height: 384,
+      });
+      expect(await sharp(result.moderationCopy).metadata()).toMatchObject({
+        format: 'jpeg',
+        width: MODERATION_COPY_PX,
+        height: 768,
+      });
+    },
+  );
+
+  it('scales a large upload down to fit 4096 px', async () => {
+    const result = await prepareUpload(await solidImage('jpeg', 5000, 2500));
+    expect(result).toMatchObject({ width: UPLOAD_MAX_PX, height: 2048 });
+  });
+
+  it('turns a photo upright and drops its metadata', async () => {
+    const jpeg = new Uint8Array(
+      await sharp(await solidImage('jpeg', 300, 200))
+        .withExif({ IFD0: { Copyright: 'Pictora test' } })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer(),
+    );
+    const result = await prepareUpload(jpeg);
+    expect(result).toMatchObject({ width: 200, height: 300 });
+    const metadata = await sharp(result.png).metadata();
+    expect(metadata.exif).toBeUndefined();
+    expect(metadata.orientation).toBeUndefined();
+  });
+
+  it.each([
+    ['a PDF', new TextEncoder().encode('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n')],
+    ['random bytes', new Uint8Array(512).fill(7)],
+  ])('refuses %s', async (_name, bytes) => {
+    await expect(prepareUpload(bytes)).rejects.toBeInstanceOf(NotAnImageError);
+  });
+
+  it('refuses an image format other than JPEG, PNG or WebP', async () => {
+    const gif = new Uint8Array(
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } })
+        .gif()
+        .toBuffer(),
+    );
+    await expect(prepareUpload(gif)).rejects.toBeInstanceOf(NotAnImageError);
+  });
+
+  it('refuses a truncated image', async () => {
+    const jpeg = await solidImage('jpeg', 400, 400);
+    await expect(prepareUpload(jpeg.subarray(0, 200))).rejects.toBeInstanceOf(NotAnImageError);
   });
 });

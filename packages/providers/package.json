@@ -9,6 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./text": {
+      "types": "./dist/text.d.ts",
+      "default": "./dist/text.js"
+    },
+    "./image": {
+      "types": "./dist/image.d.ts",
+      "default": "./dist/image.js"
     }
   },
   "files": [
@@ -17,15 +25,24 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:providers": "tsx scripts/check_providers.ts",
+    "generate:samples": "tsx scripts/generate_samples.ts",
+    "compare:enhancers": "tsx scripts/compare_enhancers.ts"
   },
   "devDependencies": {
     "aws-sdk-client-mock": "^4.1.0",
-    "vitest": "^5.0.3"
+    "msw": "^3.0.3",
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.1153.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1152.0",
+    "@aws-sdk/client-secrets-manager": "^3.1152.0",
+    "@google/genai": "^2.30.0",
     "@pictora/core": "^0.0.0",
+    "openai": "^7.38.0",
     "sharp": "^0.35.5"
   }
 }

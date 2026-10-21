@@ -81,7 +81,7 @@ flowchart LR
 - **Build:** `next build` with `output: 'standalone'`. The Docker image copies `.next/standalone` and runs `node server.js` on port 3000. The Lambda Web Adapter extension is copied into `/opt/extensions/`.
 - **Adapter settings:** `AWS_LWA_PORT=3000`, `AWS_LWA_READINESS_CHECK_PATH=/api/health`, `AWS_LWA_INVOKE_MODE=response_stream`. The Function URL invoke mode is `RESPONSE_STREAM`.
 - **Lambda settings:** arm64, 1024 MB, 30 s timeout, reserved concurrency 20 in prod (cost guard).
-- **Static assets:** `.next/static` and `public/static/` are uploaded to an S3 assets bucket by CDK `BucketDeployment`, from the files inside the app image (`infra/scripts/extract_app_static.sh`), so they match the server exactly. CloudFront serves them through Origin Access Control with a long cache time. Next.js hashes the file names, so no invalidation is needed. Other files in `public/` are served by the app.
+- **Static assets:** `.next/static` and `public/static/` are uploaded to an S3 assets bucket by CDK `BucketDeployment`, from the files inside the app image (`infra/scripts/extract_app_static.sh`), so they match the server exactly. CloudFront serves them through Origin Access Control with a long cache time. Next.js hashes the file names, so no invalidation is needed. Other files in `public/` are served by the app. The Next.js image optimizer is off (`images.unoptimized`), so `next/image` points straight at these files. On Lambda the optimizer would fetch them through the app's own handler, and the proxy's origin check would reject that internal request.
 - **Function URL protection:** the URL uses auth type `NONE`. CloudFront adds a secret `X-Origin-Verify` header, and the Next.js proxy (`app/src/proxy.ts`; Next.js 16 renamed the middleware file convention to proxy) rejects requests without it (403). The secret lives in Secrets Manager and is rotated by redeploying.
   Why not Origin Access Control for Lambda: with it, POST bodies need a client-computed `x-amz-content-sha256` header, which browsers don't send.
 - **CloudFront:** the default behaviour uses `CachingDisabled` and the `AllViewerExceptHostHeader` origin request policy. A Function URL rejects a forwarded `Host` header.
@@ -93,7 +93,7 @@ flowchart LR
 - Visibility timeout 1,080 s (6 × the function timeout, as AWS recommends). `maxReceiveCount` 3, then the dead-letter queue, which has an alarm.
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min, or in `queued` for over 10 min, as `failed`, refunds points, and frees the concurrency slot. It finds them through the active-jobs index (section 4), and each refund is conditional on the job still being in the status it was found in.
-  - `model_health` (daily): checks every enabled registry model still exists with its provider. A missing model or a deprecation notice triggers an SNS alert, which covers the model-retirement risk in the PRD.
+  - `model_health` (daily, 06:00 UTC): checks every enabled registry model against its provider's models list: OpenAI's models list, the Gemini models list (same `@google/genai` backend as the adapter), and Bedrock `ListFoundationModels` for Stability AI (`bedrock:ListFoundationModels`). A model that is missing, marked legacy by Bedrock, or retiring within 60 days (the registry's `eolDate` or Bedrock's end of life) is logged by name and counted in `ModelHealthProblems`; the model health alarm emails the admin, which covers the model-retirement risk in the PRD. A provider whose list can't be read is logged and skipped, never flagged.
 - Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
 
 ## 4. Data model (DynamoDB)
@@ -105,14 +105,18 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), ageConfirmed, status (`active` \| `suspended` \| `deleting`), deletionRequestedAt, `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
-| Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt), latestVersion, versionCount, style, modelId, createdAt, thumbKey | — |
-| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, modelId, quality, aspect, seed, jobId, costPoints | — |
-| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage, category | 24 h |
+| Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt, or `Uploaded image`), latestVersion, versionCount, versionsClaimed (the last version number an edit claimed, section 5.3), style, modelId, source (`upload` for an uploaded image), createdAt, thumbKey (the latest version's) | — |
+| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, source (`upload` for an uploaded version 1), parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, referenceCount, modelId, quality, aspect, seed, jobId, costPoints | — |
+| Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId (or uploadId for a blocked upload), createdAt | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
-| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents | — |
+| Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents (the configured cap, recorded by the worker) | — |
+| Sign-up flag | `SIGNUP#<email in lower case>` | `ABUSE` | abuseFlag, createdAt; written by the pre-sign-up trigger, moved onto the profile when the app creates it | 30 days |
+| Sign-up IP counter | `SIGNUPIP#<yyyy-mm-dd>` | `<sha-256 of the source IP, 32 hex>` | count | 2 days |
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
-| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | userId, stage, category, promptExcerpt, provider | 90 days |
+| Moderation review stats | `STATS#<yyyy-mm-dd>` | `MODERATION` | blocksReviewed, falseBlocks (blocks reviewed `ok`, for the false-block metric), reportsReviewed; counted on the day of the entries reviewed (ADM-4) | 400 days |
+| Enhancer stats | `STATS#<yyyy-mm-dd>` | `ENHANCER#<enhancer model>` | calls, inputTokens, outputTokens, costCents (overhead, never charged to users), fallbacks (output failed moderation), failures | 400 days |
+| Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report` \| `admin_action`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key. Blocks and reports, once reviewed (ADM-4): review (`ok` \| `confirmed`), reviewedBy, reviewedAt. Admin actions: userId is the admin's sub, action (`suspend` \| `unsuspend` \| `review`), targetUserId, and for a review entryDate, entryId, verdict | 90 days |
 
 **Access patterns**
 
@@ -126,6 +130,8 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending. The worker writes `GSI1SK` (10 digits) after each settle or refund |
 | Stuck jobs (sweeper) | Query GSI1 `GSI1PK=JOBS#running`, `GSI1SK < now − 5 min`, and `GSI1PK=JOBS#queued`, `GSI1SK < now − 10 min` |
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
+| Admin stats for a range (ADM-3) | Query `PK=STATS#<date>` for each day (at most 92), GetItem `PLATFORM/SPEND#<month>` |
+| Moderation review queue (ADM-4) | Query `PK=MODLOG#<date>`, descending, filtered to blocks and reports |
 | Account deletion (AUTH-3) | Query all items under `USER#<sub>` and delete them in batches; delete the S3 prefix `users/<sub>/` |
 
 ### 4.1 Points and limits
@@ -134,14 +140,14 @@ Points are integers, and 1 point is $0.01 of provider list price.
 
 - **Estimate:** `points = model.qualities[quality].costPoints × count` (`estimatePoints` in `packages/core`). Each quality fixes the output size tier (Gemini `imageSize` 1K, 2K or 4K; OpenAI quality at 1024²), so its cost is the price of one image at that size; the aspect ratio doesn't change it.
 - **Reserve** (in the create-job API), as one `TransactWriteItems` call:
-  1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? DEFAULT_DAILY_POINTS` (25).
+  1. Update `USAGE#<today>`: `ADD used :p`, on condition `attribute_not_exists(used) OR used <= :limitMinusP`. The limit is `profile.dailyPoints ?? (profile.abuseFlag ? 5 : DEFAULT_DAILY_POINTS)` (25).
   2. Update `PROFILE`: `ADD activeJobs :1`, on condition `activeJobs < :2` and `status = active` and no cooldown in force (LIM-3).
   3. Put `JOB#<id>` with condition `attribute_not_exists(PK)`.
 - **Settle** (worker, on success): the user pays the actual cost rounded up to points, capped at the returned images' share of the reservation, so a partial success (fewer images than requested) charges only for the images returned (`settleJobPoints`). If that is lower than the reservation, `ADD used :negativeDiff` on the job's `usageDate`. Then increment `PLATFORM/SPEND#<month>` and `STATS#…` by the actual cost, and decrement `activeJobs`.
 - **Refund** (failure or block): `ADD used :-p` and decrement `activeJobs`, in the same transaction that sets the job's final status, and count the failure or block in `STATS#…`. If the provider had already answered (for example, storing the images failed), its cost is still added to the platform spend.
 - **Rate limit:** 10 jobs a minute, via `ADD count :1` on `RATE#<minute>` with the condition `count < 10`, as a fourth item of the reserve transaction. A transaction cancelled by a concurrent one (`TransactionConflict`) is retried.
 - **Errors:** error answers are `{ error, code }`, where `error` is a plain-language message for the user (GEN-10).
-- **Platform cap:** at job creation, read `PLATFORM/SPEND#<month>`. If `spentCents ≥ capCents` ($100), reject any model whose quality tier isn't `draft`. At 80%, an alarm emails the admin. A small overrun from jobs already in flight is accepted.
+- **Platform cap:** at job creation, a request for a quality other than `draft` reads `PLATFORM/SPEND#<month>`. If `spentCents` has reached the cap (`SPEND_CAP_CENTS` from `spendCapUsd` in config: $100 in prod, $20 in dev), it is refused with 403 `premium_paused` and the message "Premium models are paused until <1st of next month>…". `GET /api/models` and the generate page mark those qualities `paused`, and the UI disables them. After each job with a provider cost, the worker records the cap on the spend item and publishes the month's total as the `MonthlySpendCents` metric (Embedded Metric Format, namespace `Pictora/<env>`); alarms at 80% and 100% of the cap email the admin. A small overrun from jobs already in flight is accepted.
 - The reset at 00:00 UTC comes for free, because the usage key is per day.
 
 ## 5. Job pipeline
@@ -206,10 +212,13 @@ stateDiagram-v2
 
 ### 5.3 Edits (EDIT-1 to EDIT-5)
 
-- An edit is a job of type `edit`, with `parentImageId`, `parentVersion` and an `instruction`. It can carry up to 3 `referenceKeys`, uploaded images in S3.
-- Edits are **stateless**: each one sends the parent version's PNG plus the instruction to the provider. No provider chat history is kept, so edits are reproducible, provider-independent, and survive model changes.
-- The result is stored as version `n+1` of the same image. Earlier versions are never overwritten (EDIT-3).
-- **Uploads (EDIT-2):** the browser asks `POST /api/uploads` for a presigned POST. Its conditions are `content-length-range` up to 10 MB and a content type of JPEG, PNG or WebP. The browser uploads straight to `uploads/<sub>/<ulid>`. The worker moderates the image before using it, then stores it as version 1 of a new image. Uploads that are never used expire after 1 day (lifecycle rule).
+- An edit is a job of type `edit`: `{ imageId, parentVersion, instruction, modelId, quality, referenceKeys? }`. The model must support `edit` and the quality. An edit costs one image at that quality, reserved as for generation. The edit panel starts on Gemini 3.1 Flash Image (`DEFAULT_EDIT_MODEL_ID`), with GPT Image 2 and the other edit models as alternatives (EDIT-4).
+- **References (EDIT-5):** up to 3 `referenceKeys`, no more than the model's `referenceImages`; the panel hides them for a model that takes none. A key is either an upload that is never completed, `uploads/<sub>/<ulid>` (the browser gets a presigned POST from `POST /api/uploads`, whose answer carries the `key`, and sends the file without calling `complete`, so it stays out of the gallery and expires with the 1-day lifecycle rule), or a version of one of the user's images, `users/<sub>/<imageId>/v<n>.png`. Picking a reference from the gallery waits for the gallery (#23).
+- **Checks at creation:** the parent `VER#` item, every referenced version, and every reference upload (present and at most 10 MB) must belong to the caller; anything else answers 404, so image IDs can't be probed.
+- Edits are **stateless**: each one sends the parent version's PNG plus the instruction (and the references after it) to the provider. No provider chat history is kept, so edits are reproducible, provider-independent, and survive model changes. The aspect sent is the parent's own when the model offers it, otherwise the nearest one it does (`nearestAspect`), so an uploaded photo keeps its shape.
+- **Worker:** loads the parent PNG and the references from S3 (a reference upload is decoded, turned upright and converted to PNG as an upload would be), moderates the instruction and each image, and calls `adapter.edit`. A parent or reference that has gone (deleted or expired) fails the job with `source_missing` and a full refund, before any provider call.
+- The result is stored as the image's next version, with `parentVersion` and `editInstruction`. Earlier versions are never overwritten (EDIT-3). The number comes from a counter on the `IMG#` item (`versionsClaimed`, starting from `latestVersion`), claimed after the provider answers, so concurrent edits never write the same `v<n>.png`; a claimed number whose job then fails is left as a gap. The transaction that records the version adds 1 to `versionCount` and sets `latestVersion` and the image's `thumbKey`, unless a higher-numbered edit finished first. An image deleted while its edit ran fails the job with a refund.
+- **Uploads (EDIT-2):** the `/edit` page checks the file's type and size, then asks `POST /api/uploads` for a presigned POST. Its conditions are the exact key, `content-length-range` 1 byte to 10 MB, the content type the browser asked for (JPEG, PNG or WebP), and a 5-minute expiry. The browser uploads straight to `uploads/<sub>/<ulid>`, then calls `POST /api/uploads/:id/complete`. The app checks the object exists and is at most 10 MB, decodes it with `sharp`, and moderates a 1024 px copy. A flagged upload is deleted and recorded as a block (`BLOCK#` with `uploadId`, and a `MODLOG#` entry), which counts towards the cooldown. An allowed one is turned upright, stripped of its metadata, scaled down to fit 4096 px, and stored as a PNG with a thumbnail: version 1 of a new image whose ID is the upload ID (`source: 'upload'`), so completing twice is safe. The upload object is then deleted. Uploads cost no points. Uploads that are never completed expire after 1 day (lifecycle rule).
 
 ## 6. Model registry and provider adapters
 
@@ -290,14 +299,16 @@ Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `P
 | Adapter | SDK | Generate | Edit | Notes |
 | --- | --- | --- | --- | --- |
 | OpenAI | `openai` | `images.generate` with `output_format: 'png'`, `quality`, `size`, `background` | `images.edit` with the parent image (+ references) | Sizes: 1024×1024, 1536×1024, 1024×1536; other aspects are generated at the nearest size and centre-cropped |
-| Gemini | `@google/genai` | `models.generateContent` with an image response and an aspect-ratio config | Same call, with the parent image as inline data + the instruction | The same SDK works with the Gemini API (API key) or Vertex AI (`vertexai: true`), so the open Vertex question changes only config |
+| Gemini | `@google/genai` | `models.generateContent` with an image response and an aspect-ratio config | Same call, with the parent image as inline data + the instruction | The same SDK works with the Gemini API (API key) or Vertex AI (`vertexai: true`), so moving to Vertex later would change only config. Pictora uses the Gemini API (section 16) |
 | Bedrock (P1) | `@aws-sdk/client-bedrock-runtime` | `InvokeModel` in us-west-2 with Stability request bodies (`prompt`, `negative_prompt`, `aspect_ratio`, `seed`, `output_format: 'png'`; `mode: 'text-to-image'` for SD 3.5 Large). One image per call, so `count` images are parallel calls; when only some succeed, only those are returned and charged | Stability edit models through `us.` inference profiles (image tools, #35); Stable Image Core, SD 3.5 Large and Ultra generate only | IAM role auth; no key. All six aspects are native (about 1 megapixel). A content-filter `finish_reasons` entry becomes `ProviderSafetyError`. The worker may invoke only the Bedrock models listed in `models.json` |
 | Mock (dev/test) | none | Returns a placeholder PNG at the mapped size showing the prompt, after a delay (`MOCK_PROVIDER_DELAY_MS`, default 1 s); `__fail__`, `__block__` and `__timeout__` in the prompt raise the matching error | Same, over the input image | Lets CI and end-to-end tests run with no provider spend. Reports the model's list price as its cost, so points behave as with a real provider |
 
 ### 6.3 Prompt enhancer and moderation
 
-- **Enhancer (ENH-1 to ENH-4):** `POST /api/enhance` is synchronous, with a target of under 3 s. A system prompt tells the LLM to add subject, composition, lighting and style detail suited to the model, to keep the user's intent, and to add no people, brands or new content. The output is capped at 1,500 characters. The model is chosen in config (`ENHANCER_MODEL`), so the GPT-5.6 Luna versus Gemini Flash test in M2 needs only a config change. Enhancer calls are not charged to users but are counted in the stats.
-- **Moderation:** the OpenAI moderation endpoint (`omni-moderation-latest`) checks text and images. It runs on the raw prompt in `/api/enhance`, and in the worker on the final prompt and any input image. A flag means the job is `blocked`, with a `BLOCK#` record and a `MODLOG#` entry. Three blocks in 24 hours set `cooldownUntil` to now + 24 h. A provider safety refusal is handled the same way.
+- **Enhancer (ENH-1 to ENH-4):** `POST /api/enhance` is synchronous, with a target of under 3 s (the call times out at 10 s). It answers 403 for the same account states as `POST /api/jobs` (`profileRefusal`), and counts in the same per-minute rate window. A system prompt tells the LLM to add subject, composition, lighting and style detail suited to the model, to keep the user's intent, and to add no people, brands or new content. The output is capped at 1,500 characters. The model is chosen in config (`ENHANCER_MODEL`, CDK context `environments.<env>.enhancerModel`): `bedrock:<id>` calls Bedrock `Converse` in us-west-2 with the app's IAM role (GPT-5.6 Luna is reached through the `us.openai.gpt-5.6-luna` inference profile), `gemini:<id>` calls the Gemini API with the key in `pictora/<env>/gemini`, and `mock` (dev, end-to-end tests) adds fixed detail with no call. So the GPT-5.6 Luna versus Gemini Flash test in M2 (`npm run compare:enhancers`) needs only a config change. The client is in `@pictora/providers/text`, which the app imports without `sharp`. Enhancer calls are not charged to users; their tokens and cost go to `STATS#<date>` / `ENHANCER#<model>`. If the enhancer or the input check fails, the API answers 503 `enhance_failed` and the screen generates from the user's words with a notice; if the output is flagged, or its check fails, the API answers with the user's words and `fallback: true` (ENH-4). The worker adds the style text to the enhanced prompt as it does to a raw one, so the enhancer is told the style but not to repeat it.
+- **Moderation:** the OpenAI moderation endpoint (`omni-moderation-latest`) checks text and images. It runs on the raw prompt in `/api/enhance`, and in the worker on the final prompt and any input image (a 1024 px JPEG copy, which stays well inside the endpoint's request limit). A flag means the job is `blocked`, with a `BLOCK#` record and a `MODLOG#` entry. Three blocks in 24 hours set `cooldownUntil` to now + 24 h. A provider safety refusal is handled the same way (stage `provider`, category `provider_refusal`). If the moderation call fails, the job fails with a refund; it never goes ahead unchecked. The worker reads the OpenAI key from the secret named in `OPENAI_SECRET_ID`.
+- **Policy mapping** (`BLOCKED_CATEGORIES` in `packages/core`): `sexual/minors`, `sexual`, `violence/graphic`, `hate/threatening`, `hate`, `harassment/threatening`, the three `self-harm` categories, `illicit/violent` and `illicit` block; the first one flagged, in that order, is logged. Plain `violence` and `harassment` are allowed, so a flag on those alone doesn't block. The user sees the neutral `blocked` message, never the category.
+- **Reports:** `POST /api/reports` with `{ imageId, version, reason }` (reason one of `REPORT_REASONS`) writes a `MODLOG#` entry of type `report` for one of the user's own image versions (404 otherwise). The "Report" action sits in the image view.
 
 ## 7. API surface
 
@@ -306,23 +317,27 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | Method | Path | Purpose | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Readiness and smoke test | Public; no downstream calls |
-| GET | `/api/models` | Enabled models, styles, costs | Cached 60 s |
+| GET | `/api/models` | Enabled models, styles, costs | Cached 60 s; once the platform cap is reached, non-draft qualities carry `paused: true` and the body has `premiumPausedUntil` |
 | GET | `/api/me` | Profile, points left today, limits | Creates the profile on first use; returns `dailyLimit`, `pointsUsed`, `pointsLeft`, `activeJobs` |
 | POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | `{ ageConfirmed: true, termsAccepted: true, tosVersion }`; 409 `terms_changed` for an older version. Needed before the first job: until then `POST /api/jobs` and `POST /api/enhance` answer 403 `onboarding_required` |
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
-| POST | `/api/enhance` | Rewrite a prompt | Moderated; rate-limited |
-| POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down |
-| GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); presigned image URLs once succeeded |
-| POST | `/api/uploads` | Presigned POST for an upload | 10 MB, JPEG/PNG/WebP |
+| POST | `/api/enhance` | Rewrite a prompt | `{ prompt, style, modelId }` → `{ enhancedPrompt, fallback? }`. Moderated on input (422 `blocked`) and output (fallback to the user's words); rate-limited with jobs (429); 503 `enhance_failed` when the enhancer is unavailable |
+| POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
+| GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
+| POST | `/api/uploads` | Presigned POST for an upload (EDIT-2) | `{ contentType, size }` → `{ uploadId, key, url, fields, expiresAt }`; 10 MB, JPEG/PNG/WebP; counted in the job rate window. `key` can be sent as an edit's reference image without completing the upload |
+| POST | `/api/uploads/:id/complete` | Check, moderate and store an upload as a new image | 201 `{ image }`, 200 when already completed; 404 for a missing or another user's upload, 413 over 10 MB, 400 `not_an_image`, 422 `blocked`, 503 `moderation_failed` |
 | GET | `/api/images` | Gallery page (cursor) | Thumbnails as presigned URLs |
-| GET | `/api/images/:id` | Image detail + versions | |
+| GET | `/api/images/:id` | Image detail + versions | Owner only (404 otherwise); every version, oldest first, with its parent, edit instruction or prompt, size, and presigned `url`, `downloadUrl` and `thumbUrl`. The edit panel (`/edit/<imageId>`) reads it after each edit |
 | DELETE | `/api/images/:id` | Delete an image and all its versions | |
 | GET | `/api/images/:id/versions/:n/download` | Redirect to a presigned original PNG | `Content-Disposition: attachment` |
-| POST | `/api/reports` | Report an output | Writes a `MODLOG` entry |
-| GET | `/api/admin/stats` | Spend and blocks dashboard (ADM-3) | `admins` Cognito group only |
-| POST | `/api/admin/users/:sub/suspend` | Suspend a user (ADM-4) | Admins only |
+| POST | `/api/reports` | Report an output | `{ imageId, version, reason }`; 201 with `reportId`. Writes a `MODLOG` entry of type `report`; owner only (404 otherwise) |
+| GET | `/api/admin/stats?from=&to=` | Spend and usage dashboard (ADM-3) | `admins` Cognito group only. Range defaults to the 14 days ending today, at most 92 days. Spend by day and provider (the provider comes from the registry), totals per model, enhancer overhead, today's spend, images, failure rate (failed jobs ÷ failed jobs + images) and blocks (from today's `MODLOG`), month-to-date spend against the cap, false blocks among reviewed blocks, and the top 20 users by points today (GSI1 on `USAGE#<today>`) with email and status |
+| GET | `/api/admin/moderation?date=` | Blocks and reports for review (ADM-4) | Admins only; the day's `MODLOG` blocks and reports, newest first, with a presigned thumbnail for reported images |
+| POST | `/api/admin/moderation/:date/:id/review` | Mark an entry reviewed (ADM-4) | Admins only; `{ verdict: 'ok' \| 'confirmed' }`. One transaction records the verdict, moves the `STATS#<date>/MODERATION` counts, and logs an `admin_action` |
+| GET | `/api/admin/users/:sub` | A user's profile and today's points | Admins only |
+| POST | `/api/admin/users/:sub/suspend`, `/unsuspend` | Suspend or reinstate a user (ADM-4) | Admins only; sets the profile status and logs an `admin_action` in one transaction. A suspended user's job, enhance and upload requests answer 403 `suspended` with the contact address. Admins can't suspend themselves; an account being deleted answers 409 |
 
-Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in DynamoDB through the console or CLI in v1, as the PRD says.
+The proxy answers 403 to signed-in users outside the `admins` group on `/admin` pages and `/api/admin/*`, and each admin route and the admin layout check the group again. The admin pages are `/admin` (dashboard), `/admin/moderation` and `/admin/users/<sub>`. Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in DynamoDB through the console or CLI in v1, as the PRD says; the dashboard links to the commands in the README.
 
 ## 8. Authentication
 
@@ -333,14 +348,14 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 - **First login:** a profile is created on first API call. Until the profile has `ageConfirmed`, `tosAcceptedAt` and the current `TOS_VERSION`, the home page sends the user to `/onboarding`, which collects the age confirmation and terms acceptance (AUTH-4); pages that create or show images use `requireOnboarding` from `app/src/lib/onboarding.ts`. A new version asks users to accept again.
 - **Account deletion (AUTH-3):** `/account` shows the email, sign-in method, member-since date and today's points, and a "Delete account" confirmation that needs "DELETE" typed. Sessions carry the Cognito `username` (from the access token) for the admin calls; Google users' usernames start with `google_`. Access tokens already issued stay valid until they expire (at most 1 hour), but the cookies are cleared, the refresh tokens revoked, and the profile is `deleting`, so no new jobs start.
 - **Public pages:** `/` is the landing page for signed-out visitors (AUTH-2) and redirects signed-in users to `/generate`. `/terms`, `/content-policy` and `/privacy` are rendered on the server from the Markdown in `app/content/legal/` with `markdown-it` (raw HTML disabled), once per server instance; they ship no page-specific client code. They can't be prerendered at build time, because the root layout reads the session for the header.
-- **Abuse signals:** a Cognito pre-sign-up Lambda checks the email domain against a disposable-domain list. A match sets `abuseFlag`, which lowers `dailyPoints` to 5.
+- **Abuse signals:** a Cognito pre-sign-up Lambda (every sign-up, email or Google) checks the email domain, and its parent domains, against a disposable-domain list (the npm package `disposable-email-domains-js`, kept current by Dependabot). When Cognito passes the source IP (`userContextData`, only with threat protection), it also counts sign-ups per IP per day, and flags any after the third. A flagged sign-up gets a `SIGNUP#<email>` marker, because a federated user has no `sub` yet; when the app creates the profile, it moves the marker onto it as `abuseFlag` (`disposable_email` or `many_accounts`). A flagged account gets 5 daily points unless `dailyPoints` is set (ADM-5 wins). The trigger never blocks a sign-up: if the check fails, the sign-up goes through unflagged. The README says how to clear a flag by hand.
 - **CSRF:** state-changing routes require the `Origin` header to match the site domain, on top of the SameSite cookies.
 
 ## 9. Storage (S3)
 
 | Bucket | Contents | Settings |
 | --- | --- | --- |
-| `pictora-<env>-images-<account-id>` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain, versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
+| `pictora-<env>-images-<account-id>` | `users/<sub>/<imageId>/v<n>.png`, `users/<sub>/<imageId>/v<n>_thumb.webp`, `uploads/<sub>/<ulid>` | Block public access, SSE-S3, CORS for presigned POST from the site domain (any `*.cloudfront.net` origin while the environment has no custom domain, plus `http://localhost:3000` in dev), versioning on in prod, lifecycle: `uploads/` expires after 1 day, old object versions after 30 days |
 | `pictora-<env>-assets-<account-id>` | Next.js static files | Block public access; read only through CloudFront Origin Access Control |
 
 - Thumbnails (512 px WebP) are made by the worker with `sharp`, for fast gallery loads. Downloads always serve the original PNG (GEN-7).
@@ -351,7 +366,8 @@ Admin model switches (ADM-2) and per-user point overrides (ADM-5) are edited in 
 | Item | Where | Notes |
 | --- | --- | --- |
 | OpenAI API key | Secrets Manager `pictora/<env>/openai` | Set by hand once per environment |
-| Gemini API key or Vertex service account | Secrets Manager `pictora/<env>/gemini` | Format depends on the Vertex decision |
+| Gemini API key | Secrets Manager `pictora/<env>/gemini` | Set by hand once per environment, as the plain key string. For Vertex AI it holds a service account key JSON instead |
+| Gemini backend | CDK context `environments.<env>.geminiBackend` (`api` or `vertex`, default `api`) and `geminiVertexLocation` (default `global`) → worker `GEMINI_BACKEND`, `GEMINI_VERTEX_LOCATION`; the Vertex project comes from `-c geminiVertexProject` (`GEMINI_VERTEX_PROJECT`) or the service account key's `project_id` | Moving to Vertex AI is a config and secret change, no code change (section 16) |
 | Origin verify header | Secrets Manager `pictora/<env>/origin-verify` | Generated by CDK |
 | Google OAuth client | Secrets Manager `pictora/<env>/google-oauth` | `{ "clientId", "clientSecret" }`, set by hand once per environment, before the first deploy of the `Auth` stack |
 | Site URL and Cognito app client ID | SSM parameter `/pictora/<env>/app-config` | Written by the `Web` stack; read by the app at runtime (section 8) |
@@ -362,15 +378,15 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 
 ## 11. Observability
 
-- **Logs:** Powertools Logger, as JSON, with `jobId`, `userSub` (hashed), `modelId`, `provider`, `latencyMs`, `costCents` and `outcome`. Retention: 30 days in dev, 90 days in prod.
-- **Metrics:** Powertools Metrics (EMF), under namespace `Pictora/<env>`: `JobsCreated`, `JobsSucceeded`, `JobsFailed`, `JobsBlocked`, `ProviderLatencyMs` (per provider), `ProviderCostCents`, `PointsReserved`, `EnhancerLatencyMs`.
-- **Dashboard:** jobs by status, p50 and p95 latency per provider, error rate, queue depth and age, dead-letter queue depth, spend for today and this month.
-- **Alarms** (sent to SNS, then email): failure rate above 5% over 15 min, p95 latency above 60 s, dead-letter queue above 0, oldest queue message older than 5 min, app 5xx above 1%, monthly spend at 80% of the cap, and model health failures.
-- **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget. Set OpenAI and Google billing alerts at the same levels by hand.
+- **Logs:** Powertools Logger (`createLog` in `@pictora/core/observability`; service `pictora-app` or `pictora-worker`), as JSON, with `jobId`, `userSub` (a 16-character SHA-256), `modelId`, `provider`, `latencyMs`, `costCents` and `outcome`. Prompt fields (`prompt`, `enhancedPrompt`, `sentPrompt`, `avoid`, `negativePrompt`, `instruction`, `editInstruction`) are dropped from every line below debug level. Retention: 30 days in dev, 90 days in prod, for every function's log group (CDK's dev-only bucket auto-delete helper aside).
+- **Metrics:** Powertools Metrics (EMF), under namespace `Pictora/<env>`, each with the dimension `service = pictora`: `JobsCreated` and `PointsReserved` (app), `JobsSucceeded`, `JobsFailed` (the sweeper's too), `JobsBlocked`, `ProviderLatencyMs` (with a `provider` dimension), `ProviderCostCents` (worker), `EnhancerLatencyMs` (app), and `ModelHealthProblems` (model health).
+- **Dashboard** (`pictora-<env>`): jobs by status, job error rate, app 5xx, p50 and p95 latency per provider, queue depth and oldest message age per queue, dead-letter queue depth, spend today (`ProviderCostCents`), spend this month (`MonthlySpendCents`), and points reserved today.
+- **Alarms** (sent to SNS, then email, with recovery notices): failed jobs above 5% of finished jobs over 15 min, p95 latency above 60 s per provider, dead-letter queue above 0, oldest message older than 5 min in any provider queue or the purge queue, app 5xx above 1%, monthly spend at 80% and 100% of the cap (`MonthlySpendCents`), and model health problems or a failed model health run.
+- **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget, which is the platform cap (`spendCapUsd`), so AWS spend (Bedrock included) alerts at the same levels as provider spend. Set OpenAI and Google billing alerts at the same levels by hand.
 
 ## 12. Security
 
-- Least-privilege IAM per function. The app can read and write the table, send to the queues, presign for its bucket, and disable and sign out users of its user pool (account deletion). The purge Lambda can delete users of the pool and objects in the images bucket. The worker can also read the secrets and call Bedrock. Neither can delete the table or the buckets.
+- Least-privilege IAM per function. The app can read and write the table, send to the queues, presign for its bucket, and disable and sign out users of its user pool (account deletion). The purge Lambda can delete users of the pool and objects in the images bucket. The worker can also read the secrets, read objects under `users/` and `uploads/` (an edit's parent and references), and call Bedrock. Neither can delete the table or the buckets.
 - No secrets in the browser or in the repo. Provider calls happen only in the worker or the app's server side.
 - Every API checks ownership: users can reach only their own items under `USER#<sub>`, and job reads check `userId`.
 - Security headers via Next.js middleware: CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`.
@@ -388,7 +404,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | UI components | Vitest + React Testing Library | Prompt form, model picker, points display, gallery, edit panel | CI |
 | Infra | CDK assertions | Resource settings (encryption, public access blocks, alarms, IAM scope) and snapshot | CI |
 | End to end | Playwright (`e2e/`, Chromium) | Health, sign in and out (Cognito test user), landing page, generate with the mock provider, edit, gallery, delete; refuses to run against prod | After each dev deploy |
-| Live provider check | Script | One draft image per enabled model | Manual before a prod release |
+| Live provider check | Script (`npm run check:providers`) | One image per enabled model at its cheapest quality, plus the OpenAI moderation endpoint; reads keys from Secrets Manager and refuses to run in CI | Manual before a prod release |
 
 ## 14. Environments
 
@@ -435,5 +451,5 @@ These are estimates for launch traffic (under 1,000 users a month) and should be
 
 - [x] Dev domain: `pictora.rpillai.dev`.
 - [ ] Prod domain.
-- [ ] Gemini API or Vertex AI. This decides the secret format and billing; the adapter handles both.
+- [x] Gemini API or Vertex AI: the Gemini API, so `pictora/<env>/gemini` holds an API key.
 - [ ] Which enhancer model wins (decided in M2 by test).

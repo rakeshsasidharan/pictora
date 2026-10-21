@@ -14,6 +14,18 @@
       "types": "./dist/src/registry_store.d.ts",
       "default": "./dist/src/registry_store.js"
     },
+    "./observability": {
+      "types": "./dist/src/observability.d.ts",
+      "default": "./dist/src/observability.js"
+    },
+    "./abuse-store": {
+      "types": "./dist/src/abuse_store.d.ts",
+      "default": "./dist/src/abuse_store.js"
+    },
+    "./block-store": {
+      "types": "./dist/src/block_store.d.ts",
+      "default": "./dist/src/block_store.js"
+    },
     "./models.json": "./models.json"
   },
   "files": [
@@ -26,11 +38,13 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1149.0",
-    "@aws-sdk/lib-dynamodb": "^3.1149.0",
-    "zod": "^4.6.5"
+    "@aws-lambda-powertools/logger": "^2.36.0",
+    "@aws-lambda-powertools/metrics": "^2.36.0",
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
+    "zod": "^4.6.7"
   }
 }

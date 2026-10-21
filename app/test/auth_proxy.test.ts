@@ -206,3 +206,39 @@ describe('authenticate: CSRF', () => {
     expect(local.headers.get('x-middleware-next')).toBe('1');
   });
 });
+
+describe('authenticate: admin area', () => {
+  it('answers 403 to a signed-in user outside the admins group, for pages and APIs', async () => {
+    for (const path of [
+      '/admin',
+      '/admin/moderation',
+      '/api/admin/stats',
+      '/api/admin/users/x/suspend',
+    ]) {
+      const response = await authenticate(
+        siteRequest(path, { cookies: session({ groups: ['testers'] }) }),
+        deps(),
+      );
+      expect(response.status, path).toBe(403);
+      expect(response.headers.get('x-middleware-next'), path).toBeNull();
+    }
+  });
+
+  it('lets admins through, and leaves look-alike paths alone', async () => {
+    const admin = await authenticate(
+      siteRequest('/api/admin/stats', { cookies: session({ groups: ['admins'] }) }),
+      deps(),
+    );
+    expect(admin.headers.get('x-middleware-next')).toBe('1');
+    const lookAlike = await authenticate(
+      siteRequest('/administrator', { cookies: session() }),
+      deps(),
+    );
+    expect(lookAlike.headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('still sends signed-out visitors to sign in, and answers 401 for the API', async () => {
+    expect((await authenticate(siteRequest('/admin'), deps())).status).toBe(302);
+    expect((await authenticate(siteRequest('/api/admin/stats'), deps())).status).toBe(401);
+  });
+});

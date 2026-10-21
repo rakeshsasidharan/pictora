@@ -1,0 +1,21 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [{ "inlineData": { "mimeType": "image/png", "data": "__IMAGE__" } }],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 9,
+    "candidatesTokenCount": 1290,
+    "totalTokenCount": 1299,
+    "promptTokensDetails": [{ "modality": "TEXT", "tokenCount": 9 }],
+    "candidatesTokensDetails": [{ "modality": "IMAGE", "tokenCount": 1290 }]
+  },
+  "modelVersion": "gemini-3.1-flash-image",
+  "responseId": "resp-gen-1"
+}

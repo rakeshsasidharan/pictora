@@ -24,6 +24,7 @@ import {
   type ImageProvider,
 } from '@pictora/providers';
 import { mockClient } from 'aws-sdk-client-mock';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { refundJob } from '../src/job_store.js';
 import {
@@ -251,6 +252,100 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
     const day = await stats();
     expect(day).toMatchObject({ images: 3, points: 6, providerCostCents: 6, failures: 1 });
     expect(day?.ttl).toBe(Math.floor(Date.parse('2026-10-15T12:00:30Z') / 1000) + 400 * 86_400);
+  });
+
+  it('publishes job metrics: success with cost and latency, failure and block', async () => {
+    const { provider } = countingMock();
+    const metrics = vi.fn<EmitMetrics>();
+    const points = () => metrics.mock.calls.flatMap(([batch]) => batch);
+
+    const ok = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'high' }),
+      pointsReserved: 3,
+    });
+    expect(await processJob(deps(provider, { metrics }), ok.jobId)).toBe('succeeded');
+    expect(points()).toEqual([
+      {
+        name: 'ProviderLatencyMs',
+        value: expect.any(Number),
+        unit: 'Milliseconds',
+        dimensions: { provider: 'mock' },
+      },
+      { name: 'JobsSucceeded', value: 1, unit: 'Count' },
+      { name: 'ProviderCostCents', value: 3, unit: 'Count' },
+    ]);
+
+    metrics.mockClear();
+    const failing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __fail__' }),
+    });
+    expect(await processJob(deps(provider, { metrics }), failing.jobId)).toBe('failed');
+    expect(points().map((point) => point.name)).toEqual(['ProviderLatencyMs', 'JobsFailed']);
+
+    metrics.mockClear();
+    const blocked = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __block__' }),
+    });
+    expect(await processJob(deps(provider, { metrics }), blocked.jobId)).toBe('blocked');
+    expect(points().map((point) => point.name)).toEqual(['ProviderLatencyMs', 'JobsBlocked']);
+  });
+
+  it('publishes the month spend after each job with a provider cost, and records the cap', async () => {
+    const { provider } = countingMock();
+    const spendDeps = deps(provider, { spend: { capCents: 2000, namespace: 'Pictora/dev' } });
+    const metric = () =>
+      vi
+        .mocked(console.log)
+        .mock.calls.map(([line]) => String(line))
+        .filter((line) => line.includes('"_aws"'))
+        .map((line) => JSON.parse(line));
+
+    const job = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'high' }),
+      pointsReserved: 3,
+    });
+    expect(await processJob(spendDeps, job.jobId)).toBe('succeeded');
+    expect(await spend()).toMatchObject({ spentCents: 3, capCents: 2000 });
+    expect(metric()).toEqual([
+      {
+        _aws: {
+          Timestamp: Date.parse('2026-10-15T12:00:30.000Z'),
+          CloudWatchMetrics: [
+            {
+              Namespace: 'Pictora/dev',
+              Dimensions: [[]],
+              Metrics: [{ Name: 'MonthlySpendCents', Unit: 'Count' }],
+            },
+          ],
+        },
+        MonthlySpendCents: 3,
+      },
+    ]);
+
+    // A failure the provider still billed for counts too; one with no cost publishes nothing.
+    const storing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ quality: 'standard' }),
+      pointsReserved: 2,
+    });
+    s3.on(PutObjectCommand).rejects(new Error('S3 down'));
+    expect(await processJob(spendDeps, storing.jobId)).toBe('failed');
+    expect(metric().map((line) => line.MonthlySpendCents)).toEqual([3, 5]);
+    const failing = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate({ prompt: 'a lighthouse __fail__' }),
+    });
+    expect(await processJob(spendDeps, failing.jobId)).toBe('failed');
+    expect(metric()).toHaveLength(2);
+  });
+
+  it('publishes no spend metric without spend reporting configured', async () => {
+    const { provider } = countingMock();
+    const job = await seedJob(table.client, table.tableName, newUser(), {
+      request: generate(),
+    });
+    expect(await processJob(deps(provider), job.jobId)).toBe('succeeded');
+    const lines = vi.mocked(console.log).mock.calls.map(([line]) => String(line));
+    expect(lines.some((line) => line.includes('MonthlySpendCents'))).toBe(false);
+    expect((await spend())?.capCents).toBeUndefined();
   });
 
   it.each([

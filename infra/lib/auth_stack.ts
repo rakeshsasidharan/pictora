@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import {
   AccountRecovery,
@@ -8,8 +9,14 @@ import {
   UserPoolDomain,
   UserPoolGroup,
   UserPoolIdentityProviderGoogle,
+  UserPoolOperation,
   type UserPoolIdentityProvider,
 } from 'aws-cdk-lib/aws-cognito';
+import type { ITable } from 'aws-cdk-lib/aws-dynamodb';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Architecture, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import type { Construct } from 'constructs';
 import type { StageConfig } from './stage_config.js';
@@ -29,19 +36,30 @@ export function googleOAuthSecretName(envName: string): string {
   return `pictora/${envName}/google-oauth`;
 }
 
+/** Cognito waits 5 s for a trigger, so the pre-sign-up check must finish well inside it. */
+export const PRE_SIGN_UP_TIMEOUT = Duration.seconds(4);
+
+const PRE_SIGN_UP_ENTRY = fileURLToPath(
+  new URL('../lambda/pre_sign_up_handler.ts', import.meta.url),
+);
+
 export interface AuthStackProps extends StackProps {
   readonly config: StageConfig;
+  /** The table the pre-sign-up trigger writes abuse markers and sign-up counters to. */
+  readonly table: ITable;
 }
 
 /**
  * The Cognito user pool (tech design 8): email as the username with verification, Google as a federated
- * provider, the managed login domain and the `admins` group. The app client lives in the `Web` stack,
+ * provider, the managed login domain, the `admins` group, and the pre-sign-up trigger that checks new accounts
+ * for abuse signals (a disposable email domain, many sign-ups from one IP). The app client lives in the `Web` stack,
  * because its callback URLs need the site URL, which is the CloudFront domain when there is no custom domain.
  */
 export class AuthStack extends Stack {
   readonly userPool: UserPool;
   readonly domain: UserPoolDomain;
   readonly googleProvider: UserPoolIdentityProvider;
+  readonly preSignUpFunction: NodejsFunction;
   /** Origin of the managed login pages, for example `https://<prefix>.auth.us-west-2.amazoncognito.com`. */
   readonly domainBaseUrl: string;
 
@@ -86,6 +104,29 @@ export class AuthStack extends Stack {
       cognitoDomain: { domainPrefix: authDomainPrefix },
     });
     this.domainBaseUrl = this.domain.baseUrl();
+
+    this.preSignUpFunction = new NodejsFunction(this, 'PreSignUpFunction', {
+      entry: PRE_SIGN_UP_ENTRY,
+      handler: 'handler',
+      runtime: Runtime.NODEJS_22_X,
+      architecture: Architecture.ARM_64,
+      memorySize: 256,
+      timeout: PRE_SIGN_UP_TIMEOUT,
+      environment: { TABLE_NAME: props.table.tableName },
+      bundling: { format: OutputFormat.ESM, minify: true, sourceMap: false },
+      logGroup: new LogGroup(this, 'PreSignUpLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }),
+    });
+    // Writes the `SIGNUP#` marker and adds to the `SIGNUPIP#` counter; nothing else.
+    this.preSignUpFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        resources: [props.table.tableArn],
+      }),
+    );
+    this.userPool.addTrigger(UserPoolOperation.PRE_SIGN_UP, this.preSignUpFunction);
 
     new UserPoolGroup(this, 'AdminsGroup', {
       userPool: this.userPool,

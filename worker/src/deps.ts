@@ -1,11 +1,22 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { Environment } from '@pictora/core';
+import { metricsNamespace, type Environment } from '@pictora/core';
+import { powertoolsMetrics } from '@pictora/core/observability';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
-import { createProviderFactory } from '@pictora/providers';
+import {
+  DEFAULT_ADAPTERS,
+  GeminiProvider,
+  OpenAiProvider,
+  createModerator,
+  createProviderFactory,
+  geminiConfigFromEnv,
+  secretApiKey,
+  secretString,
+} from '@pictora/providers';
 import { ulid } from 'ulid';
 import type { TableContext } from './job_store.js';
+import { moderateImageRequests } from './moderation.js';
 import type { PipelineDeps } from './pipeline.js';
 
 /**
@@ -33,12 +44,26 @@ export function tableContext(env: NodeJS.ProcessEnv = process.env): TableContext
   };
 }
 
+/** The monthly cap on platform provider spend from `SPEND_CAP_CENTS`, set per environment by CDK. */
+export function spendCapCents(env: NodeJS.ProcessEnv = process.env): number {
+  const value = Number(required('SPEND_CAP_CENTS', env));
+  if (!Number.isInteger(value) || value < 0) throw new Error('SPEND_CAP_CENTS is not valid');
+  return value;
+}
+
 /**
  * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
- * registry cached for 60 s, and the provider adapters. Moderation joins them with its own issue (#19).
+ * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
+ * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
+ * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`). The month's
+ * platform spend is published to `Pictora/<PICTORA_ENV>` with the cap from `SPEND_CAP_CENTS`.
  */
 export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
   const table = tableContext(env);
+  const bucket = required('IMAGES_BUCKET', env);
+  const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
+  const geminiSecretId = required('GEMINI_SECRET_ID', env);
+  const geminiConfig = geminiConfigFromEnv(env);
   const registry = createRegistryLoader({
     source: dynamoRegistrySource(table.client, table.tableName),
     environment: workerEnvironment(env),
@@ -46,9 +71,22 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
   return {
     ...table,
     s3: new S3Client({}),
-    bucket: required('IMAGES_BUCKET', env),
+    bucket,
     models: () => registry.models(),
-    provider: createProviderFactory(),
+    provider: createProviderFactory({
+      adapters: {
+        ...DEFAULT_ADAPTERS,
+        openai: () => new OpenAiProvider({ apiKey: openAiKey }),
+        gemini: () =>
+          new GeminiProvider({ config: geminiConfig, credential: secretString(geminiSecretId) }),
+      },
+    }),
+    moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),
+    metrics: powertoolsMetrics(env),
+    spend: {
+      capCents: spendCapCents(env),
+      namespace: metricsNamespace(required('PICTORA_ENV', env)),
+    },
     now: () => new Date(),
     newImageId: () => ulid(),
   };

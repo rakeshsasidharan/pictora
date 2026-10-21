@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isAdmin, isAdminPath } from './admin_access';
 import type { AuthConfig } from './auth_config';
 import {
   ACCESS_COOKIE,
@@ -18,6 +19,7 @@ export const PUBLIC_API_PATHS = ['/api/health'];
 /** Pages that need a signed-in user; visitors are sent to sign in and brought back. */
 export const PROTECTED_PAGE_PREFIXES = [
   '/generate',
+  '/edit',
   '/gallery',
   '/images',
   '/admin',
@@ -59,7 +61,8 @@ function skipsSession(pathname: string): boolean {
  * Authenticates a request (tech design 8). It checks the `Origin` of state-changing requests, verifies the
  * access token from the cookies and, when it has expired, refreshes it with the refresh token, so users are
  * not signed out after an hour. The verified user goes to route handlers as request headers. `/api/*` routes
- * other than `/api/health` answer 401 without a session; protected pages redirect to sign in.
+ * other than `/api/health` answer 401 without a session; protected pages redirect to sign in. `/admin` pages and
+ * `/api/admin/*` answer 403 to anyone outside the `admins` group.
  */
 export async function authenticate(
   request: NextRequest,
@@ -84,7 +87,16 @@ export async function authenticate(
   const outcome = await resolveSession(request, deps);
   const access = accessFor(pathname);
   let response: NextResponse;
-  if (outcome.session) {
+  if (outcome.session && isAdminPath(pathname) && !isAdmin(outcome.session)) {
+    // ADM-1 to ADM-5: only the admins group may use the admin pages and APIs.
+    response =
+      access === 'api'
+        ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        : new NextResponse('Forbidden', {
+            status: 403,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+  } else if (outcome.session) {
     setSessionHeaders(requestHeaders, outcome.session);
     response = NextResponse.next({ request: { headers: requestHeaders } });
   } else if (access === 'api') {

@@ -12,6 +12,7 @@ import {
   type JobItem,
   type ModelConfig,
 } from '@pictora/core';
+import type { EmitMetrics } from '@pictora/core/observability';
 import { modelsAvailableIn } from '@pictora/core/registry-store';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createJob, getJobStatus, getMe, unsupportedOption, type JobsDeps } from '../src/lib/jobs';
@@ -61,8 +62,11 @@ function offlineDeps(overrides: Partial<JobsDeps> = {}): JobsDeps {
     models: async () => devModels,
     hasQueue: () => true,
     enqueue: async () => undefined,
-    presign: async (key) => `https://signed.example/${key}`,
+    presign: async (key, downloadName) =>
+      `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
+    objectSize: async () => undefined,
     defaultDailyPoints: 25,
+    spendCapCents: 2000,
     now: () => new Date('2026-10-15T12:00:00Z'),
     newJobId: () => '01JAAAAAAAAAAAAAAAAAAAAAAA',
     ...overrides,
@@ -77,18 +81,6 @@ describe('createJob: request checks', () => {
     expect(result.status).toBe(400);
     expect(result.body).toMatchObject({ code: 'invalid_request' });
     expect(result.body.error).toMatch(/isn't valid/);
-  });
-
-  it('rejects edits, which arrive with #22', async () => {
-    const result = await createJob(offlineDeps(), session, {
-      type: 'edit',
-      imageId: '01JAAAAAAAAAAAAAAAAAAAAAAA',
-      parentVersion: 1,
-      instruction: 'Make it blue',
-      modelId: 'mock',
-      quality: 'draft',
-    });
-    expect(result).toMatchObject({ status: 400, body: { code: 'edit_unavailable' } });
   });
 
   it('rejects a model that is not in the registry', async () => {
@@ -166,8 +158,11 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     models: async () => devModels,
     hasQueue: () => true,
     enqueue,
-    presign: async (key) => `https://signed.example/${key}`,
+    presign: async (key, downloadName) =>
+      `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
+    objectSize: async () => undefined,
     defaultDailyPoints: 25,
+    spendCapCents: 2000,
     now: () => clock,
     newJobId: () => {
       idCounter += 1;
@@ -214,7 +209,16 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
 
   it('creates the profile, reserves the points, records the queued job and queues it', async () => {
     const session = await onboardedSession();
-    const result = await createJob(deps(), session, generate({ quality: 'high', count: 2 }));
+    const metrics = vi.fn<EmitMetrics>();
+    const result = await createJob(
+      deps({ metrics }),
+      session,
+      generate({ quality: 'high', count: 2 }),
+    );
+    expect(metrics).toHaveBeenCalledWith([
+      { name: 'JobsCreated', value: 1, unit: 'Count' },
+      { name: 'PointsReserved', value: 6, unit: 'Count' },
+    ]);
     expect(result.status).toBe(202);
     const { jobId } = result.body as { jobId: string };
     expect(result.body).toEqual({ jobId, status: 'queued', pointsReserved: 6 });
@@ -332,7 +336,9 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     await setProfile(session.sub, { cooldownUntil: '2026-10-15T12:30:00.000Z' });
     const result = await createJob(deps(), session, generate());
     expect(result).toMatchObject({ status: 403, body: { code: 'cooldown' } });
-    expect(result.body.error).toMatch(/until 12:30 UTC/);
+    expect(result.body.error).toBe(
+      'Image creation is paused for your account until 15 October at 12:30 UTC after several blocked requests.',
+    );
     clock = new Date('2026-10-15T12:30:00Z');
     expect((await createJob(deps(), session, generate())).status).toBe(202);
   });
@@ -521,11 +527,13 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
             imageId: 'IMG1',
             version: 1,
             url: `https://signed.example/users/${owner.sub}/IMG1/v1.png`,
+            downloadUrl: `https://signed.example/users/${owner.sub}/IMG1/v1.png?download=pictora-IMG1-v1.png`,
           },
           {
             imageId: 'IMG2',
             version: 1,
             url: `https://signed.example/users/${owner.sub}/IMG2/v1.png`,
+            downloadUrl: `https://signed.example/users/${owner.sub}/IMG2/v1.png?download=pictora-IMG2-v1.png`,
           },
         ],
       });

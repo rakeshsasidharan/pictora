@@ -54,6 +54,12 @@ export const SWEEPER_MEMORY_MB = 512;
 export const SWEEPER_TIMEOUT_SECONDS = 60;
 export const SWEEPER_INTERVAL_MINUTES = 5;
 
+/** The model health check (tech design 3.2): same image, its own handler, once a day at 06:00 UTC. */
+export const MODEL_HEALTH_HANDLER = 'model_health.handler';
+export const MODEL_HEALTH_MEMORY_MB = 512;
+export const MODEL_HEALTH_TIMEOUT_SECONDS = 120;
+export const MODEL_HEALTH_HOUR_UTC = 6;
+
 /** The account purge (AUTH-3): same image, its own handler, fed by the purge queue. */
 export const PURGE_HANDLER = 'purge.handler';
 export const PURGE_MEMORY_MB = 512;
@@ -93,6 +99,7 @@ export class JobsStack extends Stack {
   readonly deadLetterQueue: Queue;
   readonly workerFunction: DockerImageFunction;
   readonly sweeperFunction: DockerImageFunction;
+  readonly modelHealthFunction: DockerImageFunction;
   /** Takes `{ sub, username }` from `DELETE /api/me` and deletes the account's data and Cognito user. */
   readonly purgeQueue: Queue;
   readonly purgeFunction: DockerImageFunction;
@@ -159,11 +166,23 @@ export class JobsStack extends Stack {
         IMAGES_BUCKET: props.imagesBucket.bucketName,
         OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
         GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+        SPEND_CAP_CENTS: String(config.spendCapUsd * 100),
+        ...geminiEnvironment(config),
       },
     });
 
     props.table.grantReadWriteData(this.workerFunction);
     props.imagesBucket.grantPut(this.workerFunction);
+    // Edits read the parent version and their reference images (tech design 5.3); nothing else is listed or read.
+    this.workerFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject'],
+        resources: [
+          props.imagesBucket.arnForObjects('users/*'),
+          props.imagesBucket.arnForObjects('uploads/*'),
+        ],
+      }),
+    );
     for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.workerFunction);
     }
@@ -205,6 +224,41 @@ export class JobsStack extends Stack {
       description: 'Fails and refunds stuck Pictora jobs',
       schedule: Schedule.rate(Duration.minutes(SWEEPER_INTERVAL_MINUTES)),
       targets: [new LambdaFunction(this.sweeperFunction, { retryAttempts: 0 })],
+    });
+
+    this.modelHealthFunction = new DockerImageFunction(this, 'ModelHealthFunction', {
+      code: DockerImageCode.fromEcr(repository, {
+        tagOrDigest: config.workerImageDigest,
+        cmd: [MODEL_HEALTH_HANDLER],
+      }),
+      architecture: Architecture.ARM_64,
+      memorySize: MODEL_HEALTH_MEMORY_MB,
+      timeout: Duration.seconds(MODEL_HEALTH_TIMEOUT_SECONDS),
+      logGroup: new LogGroup(this, 'ModelHealthLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        PICTORA_ENV: config.envName,
+        GIT_SHA: config.gitSha,
+        TABLE_NAME: props.table.tableName,
+        OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
+        GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+        ...geminiEnvironment(config),
+      },
+    });
+    // Reads the registry and the provider keys, and lists Bedrock's models, which has no resource-level scope.
+    props.table.grantReadData(this.modelHealthFunction);
+    for (const provider of SECRET_PROVIDERS) {
+      this.providerSecrets[provider].grantRead(this.modelHealthFunction);
+    }
+    this.modelHealthFunction.addToRolePolicy(
+      new PolicyStatement({ actions: ['bedrock:ListFoundationModels'], resources: ['*'] }),
+    );
+    new Rule(this, 'ModelHealthSchedule', {
+      description: 'Checks every enabled Pictora model still exists with its provider',
+      schedule: Schedule.cron({ minute: '0', hour: String(MODEL_HEALTH_HOUR_UTC) }),
+      targets: [new LambdaFunction(this.modelHealthFunction, { retryAttempts: 0 })],
     });
 
     this.purgeQueue = new Queue(this, 'PurgeQueue', {
@@ -269,4 +323,14 @@ export class JobsStack extends Stack {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** The worker's Gemini backend settings; the Vertex AI ones only when the backend is Vertex AI. */
+export function geminiEnvironment(config: StageConfig): Record<string, string> {
+  if (config.geminiBackend !== 'vertex') return { GEMINI_BACKEND: config.geminiBackend };
+  return {
+    GEMINI_BACKEND: 'vertex',
+    ...(config.geminiVertexLocation ? { GEMINI_VERTEX_LOCATION: config.geminiVertexLocation } : {}),
+    ...(config.geminiVertexProject ? { GEMINI_VERTEX_PROJECT: config.geminiVertexProject } : {}),
+  };
 }

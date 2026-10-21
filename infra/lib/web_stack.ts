@@ -37,7 +37,7 @@ import {
   type IBucket,
 } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, CacheControl, Source } from 'aws-cdk-lib/aws-s3-deployment';
-import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { Secret, type ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import type { IQueue } from 'aws-cdk-lib/aws-sqs';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
@@ -47,8 +47,14 @@ import {
   REFRESH_TOKEN_VALIDITY,
   type AuthStack,
 } from './auth_stack.js';
-import { QUEUE_PROVIDERS, type QueueProvider } from './jobs_stack.js';
-import { HOSTED_ZONE_NAME, type StageConfig } from './stage_config.js';
+import {
+  BEDROCK_REGION,
+  QUEUE_PROVIDERS,
+  providerSecretName,
+  type QueueProvider,
+  type SecretProvider,
+} from './jobs_stack.js';
+import { HOSTED_ZONE_NAME, LOCAL_DEV_URL, type StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the app image to (`PictoraCicd` stack). */
 export const APP_REPOSITORY_NAME = 'pictora-app';
@@ -66,9 +72,6 @@ export const APP_TIMEOUT_SECONDS = 30;
 /** Sign-in callback and sign-out landing paths in the app. */
 export const AUTH_CALLBACK_PATH = '/auth/callback';
 export const SIGNED_OUT_PATH = '/';
-
-/** Local `next dev`, allowed as a callback in dev only. */
-export const LOCAL_DEV_URL = 'http://localhost:3000';
 
 /** The app environment variable with a provider queue's URL, for example `OPENAI_QUEUE_URL`. */
 export function queueUrlVariable(provider: QueueProvider): string {
@@ -89,6 +92,8 @@ export interface WebStackProps extends StackProps {
   readonly queues: Readonly<Record<QueueProvider, IQueue>>;
   /** The queue `DELETE /api/me` sends the account purge to (AUTH-3). */
   readonly purgeQueue: IQueue;
+  /** The provider key secrets: OpenAI for moderation, Gemini for a `gemini:` prompt enhancer. */
+  readonly providerSecrets: Readonly<Record<SecretProvider, ISecret>>;
   /** Required when the stage has a domain. */
   readonly certificate?: ICertificate;
 }
@@ -142,6 +147,11 @@ export class WebStack extends Stack {
         COGNITO_DOMAIN: props.auth.domainBaseUrl,
         APP_CONFIG_PARAMETER: appConfigParameter,
         PURGE_QUEUE_URL: props.purgeQueue.queueUrl,
+        ENHANCER_MODEL: config.enhancerModel,
+        OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
+        ...(config.enhancerModel.startsWith('gemini:')
+          ? { GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini') }
+          : {}),
         ...Object.fromEntries(
           QUEUE_PROVIDERS.map((provider) => [
             queueUrlVariable(provider),
@@ -165,6 +175,19 @@ export class WebStack extends Stack {
       }),
     );
     this.originVerifySecret.grantRead(this.appFunction);
+    // /api/enhance moderates with the OpenAI key, and a Gemini enhancer needs the Gemini key.
+    props.providerSecrets.openai.grantRead(this.appFunction);
+    if (config.enhancerModel.startsWith('gemini:')) {
+      props.providerSecrets.gemini.grantRead(this.appFunction);
+    }
+    if (config.enhancerModel.startsWith('bedrock:')) {
+      this.appFunction.addToRolePolicy(
+        new PolicyStatement({
+          actions: ['bedrock:InvokeModel'],
+          resources: enhancerModelArns(this, config.enhancerModel.slice('bedrock:'.length)),
+        }),
+      );
+    }
     props.table.grantReadWriteData(this.appFunction);
     props.imagesBucket.grantReadWrite(this.appFunction);
     for (const provider of QUEUE_PROVIDERS)
@@ -299,6 +322,14 @@ export class WebStack extends Stack {
    * content hashed, so they're cached for a year and never pruned: pages still open keep loading old chunks.
    */
   private deployAssets(config: StageConfig): void {
+    // Both deployments share one handler, so they share its log group, kept as long as every other one.
+    const prod = config.envName === 'prod';
+    let logGroup: LogGroup | undefined;
+    const deploymentLogGroup = () =>
+      (logGroup ??= new LogGroup(this, 'AssetDeploymentLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }));
     if (existsSync(config.appStaticDir)) {
       new BucketDeployment(this, 'DeployNextStatic', {
         sources: [Source.asset(config.appStaticDir)],
@@ -311,6 +342,7 @@ export class WebStack extends Stack {
         ],
         prune: false,
         memoryLimit: 512,
+        logGroup: deploymentLogGroup(),
       });
     }
 
@@ -324,7 +356,38 @@ export class WebStack extends Stack {
         cacheControl: [CacheControl.setPublic(), CacheControl.maxAge(Duration.hours(1))],
         prune: false,
         memoryLimit: 512,
+        logGroup: deploymentLogGroup(),
       });
     }
   }
+}
+
+/** Regions a `us.` cross-region inference profile routes to (Bedrock docs, model card). */
+export const US_INFERENCE_REGIONS = ['us-east-1', 'us-east-2', 'us-west-2'] as const;
+
+/**
+ * What the app may invoke for a Bedrock enhancer, called from us-west-2: the model itself, or for a `us.` or
+ * `global.` inference profile, the profile and the model in the regions the profile routes to.
+ */
+export function enhancerModelArns(stack: Stack, modelId: string): string[] {
+  const profile = /^(us|global)\.(.+)$/.exec(modelId);
+  const foundationModel = (region: string, id: string) =>
+    stack.formatArn({
+      service: 'bedrock',
+      region,
+      account: '',
+      resource: 'foundation-model',
+      resourceName: id,
+    });
+  if (!profile?.[1] || !profile[2]) return [foundationModel(BEDROCK_REGION, modelId)];
+  const regions = profile[1] === 'us' ? [...US_INFERENCE_REGIONS] : ['*'];
+  return [
+    stack.formatArn({
+      service: 'bedrock',
+      region: BEDROCK_REGION,
+      resource: 'inference-profile',
+      resourceName: modelId,
+    }),
+    ...regions.map((region) => foundationModel(region, profile[2] as string)),
+  ];
 }

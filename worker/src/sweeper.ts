@@ -1,10 +1,13 @@
 import { STUCK_QUEUED_MS, STUCK_RUNNING_MS, jobError, type ActiveJobStatus } from '@pictora/core';
+import { powertoolsMetrics, type EmitMetrics } from '@pictora/core/observability';
 import { tableContext } from './deps.js';
 import { findStuckJobs, refundJob, type TableContext } from './job_store.js';
 import { log } from './log.js';
 
 export interface SweepDeps extends TableContext {
   now: () => Date;
+  /** Publishes `JobsFailed` for each swept job when set. */
+  metrics?: EmitMetrics;
 }
 
 export interface SweepResult {
@@ -33,7 +36,14 @@ export async function sweepStuckJobs(deps: SweepDeps): Promise<SweepResult> {
   for (const status of ['running', 'queued'] as const) {
     const cutoff = new Date(now.getTime() - STUCK_AFTER_MS[status]);
     for (const job of await findStuckJobs(deps, status, cutoff)) {
-      const fields = { jobId: job.jobId, modelId: job.modelId, status, since: job.GSI1SK };
+      const fields = {
+        jobId: job.jobId,
+        userSub: job.userId,
+        modelId: job.modelId,
+        provider: job.provider,
+        status,
+        since: job.GSI1SK,
+      };
       try {
         const done = await refundJob(deps, {
           job,
@@ -43,6 +53,7 @@ export async function sweepStuckJobs(deps: SweepDeps): Promise<SweepResult> {
           now: deps.now(),
         });
         (done ? result.swept : result.skipped).push(job.jobId);
+        if (done) deps.metrics?.([{ name: 'JobsFailed', value: 1, unit: 'Count' }]);
         log(
           done ? 'WARN' : 'INFO',
           done ? 'Stuck job failed and refunded' : 'Job moved on',
@@ -61,7 +72,7 @@ let deps: SweepDeps | undefined;
 
 /** Runs every 5 minutes from an EventBridge schedule. Throws when a refund failed, so the run counts as an error. */
 export async function handler(): Promise<SweepResult> {
-  deps ??= { ...tableContext(), now: () => new Date() };
+  deps ??= { ...tableContext(), now: () => new Date(), metrics: powertoolsMetrics() };
   const result = await sweepStuckJobs(deps);
   log('INFO', 'Sweep finished', {
     swept: result.swept.length,

@@ -13,17 +13,41 @@ export {
   ProviderTimeoutError,
   toProviderError,
 } from './errors.js';
+export * from './enhancer.js';
 export { createProviderFactory, DEFAULT_ADAPTERS, guardProvider } from './factory.js';
 export type { AdapterFactory, ProviderFactoryOptions } from './factory.js';
 export {
+  GEMINI_BACKENDS,
+  GEMINI_DEFAULT_VERTEX_LOCATION,
+  GEMINI_MAX_REFERENCE_IMAGES,
+  GeminiProvider,
+  geminiClientOptions,
+  geminiConfigFromEnv,
+  geminiRequest,
+  toGeminiError,
+} from './gemini.js';
+export type {
+  GeminiBackend,
+  GeminiConfig,
+  GeminiProviderOptions,
+  GeminiRequest,
+} from './gemini.js';
+export {
   centreCrop,
   isPng,
+  MODERATION_COPY_PX,
+  moderationCopy,
   normalisePng,
+  NotAnImageError,
+  prepareUpload,
   thumbnail,
   THUMBNAIL_MAX_PX,
   THUMBNAIL_WEBP_QUALITY,
+  UPLOAD_FORMATS,
+  UPLOAD_MAX_INPUT_PIXELS,
+  UPLOAD_MAX_PX,
 } from './image.js';
-export type { NormalisedImage, Thumbnail } from './image.js';
+export type { NormalisedImage, PreparedUpload, Thumbnail } from './image.js';
 export {
   MOCK_BLOCK_KEYWORD,
   MOCK_DEFAULT_DELAY_MS,
@@ -32,6 +56,31 @@ export {
   MockProvider,
 } from './mock.js';
 export type { MockProviderOptions } from './mock.js';
+export {
+  MODERATION_MODEL,
+  MODERATION_TIMEOUT_MS,
+  OPENAI_MODERATION_URL,
+  createModerator,
+  imageDataUrl,
+  parseModeration,
+} from './moderation.js';
+export type { Moderate, ModerationInput, ModeratorOptions } from './moderation.js';
+export {
+  OPENAI_MAX_REFERENCE_IMAGES,
+  OPENAI_TOKEN_PRICES,
+  OpenAiProvider,
+  openAiCostCents,
+  openAiRequestParams,
+  toOpenAiError,
+} from './openai.js';
+export type { OpenAiProviderOptions, OpenAiTokenPrices } from './openai.js';
+export {
+  BEDROCK_MODEL_PROVIDER,
+  bedrockModelCatalogue,
+  geminiModelCatalogue,
+  openAiModelCatalogue,
+} from './model_catalogue.js';
+export type { CatalogueEntry, ModelCatalogue } from './model_catalogue.js';
 export { PROVIDER_IDS, isProviderId } from './provider_ids.js';
 export type { ProviderId } from './provider_ids.js';
 export {
@@ -43,4 +92,6 @@ export {
   withRetry,
 } from './retry.js';
 export type { RetryOptions } from './retry.js';
+export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey, secretString } from './secrets.js';
+export type { SecretApiKeyOptions } from './secrets.js';
 export type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
