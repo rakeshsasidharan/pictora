@@ -7,7 +7,9 @@ import {
   isQuality,
   loadSeedRegistry,
   modelsForEnvironment,
+  modelsForGroups,
   parseRegistry,
+  TESTERS_GROUP,
   validateRegistry,
 } from '../src/index.js';
 
@@ -263,5 +265,27 @@ describe('registry helpers', () => {
     expect(isQuality('max')).toBe(false);
     expect(isAspect('9:16')).toBe(true);
     expect(isAspect('4:3')).toBe(false);
+  });
+});
+
+describe('modelsForGroups', () => {
+  const dev = modelsForEnvironment(loadSeedRegistry(), 'dev');
+
+  it('leaves the Mock model out for users outside the testers group', () => {
+    for (const groups of [[], ['admins']]) {
+      const ids = modelsForGroups(dev, groups).map((model) => model.id);
+      expect(ids).not.toContain('mock');
+      expect(ids).toHaveLength(dev.length - 1);
+    }
+  });
+
+  it('keeps every model, Mock included, for the testers group', () => {
+    expect(TESTERS_GROUP).toBe('testers');
+    expect(modelsForGroups(dev, ['admins', TESTERS_GROUP])).toEqual(dev);
+  });
+
+  it('returns a new array, leaving the input untouched', () => {
+    const result = modelsForGroups(dev, [TESTERS_GROUP]);
+    expect(result).not.toBe(dev);
   });
 });

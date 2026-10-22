@@ -357,7 +357,7 @@ The proxy answers 403 to signed-in users outside the `admins` group on `/admin` 
 
 ## 8. Authentication
 
-- **Cognito user pool:** email as the username, verified email required, and Google as a federated identity provider. An `admins` group. Managed login (hosted UI) on a Cognito domain (`authDomainPrefix` per environment in `infra/cdk.json`). The Google OAuth client is read from Secrets Manager `pictora/<env>/google-oauth` (`{ "clientId", "clientSecret" }`, created by hand).
+- **Cognito user pool:** email as the username, verified email required, and Google as a federated identity provider. An `admins` group, and a `testers` group for the e2e test account: only its members are offered the dev-only Mock model (`modelsForGroups` in `packages/core`, applied to `GET /api/models`, the generate and edit pages, and `POST /api/jobs`, where anyone else gets `unknown_model`, including through Auto routing). Managed login (hosted UI) on a Cognito domain (`authDomainPrefix` per environment in `infra/cdk.json`). The Google OAuth client is read from Secrets Manager `pictora/<env>/google-oauth` (`{ "clientId", "clientSecret" }`, created by hand).
 - **App client:** a public client (no secret) with the authorization code flow and PKCE, in the `Web` stack rather than `Auth`: its callback URL is the site URL, which is the CloudFront domain while an environment has no custom domain, and the distribution depends on the app Lambda. For the same reason, the app reads the client ID and site URL at runtime from the SSM parameter `/pictora/<env>/app-config` (`{ siteUrl, cognitoClientId }`, cached 5 minutes) instead of Lambda environment variables. Dev also allows `http://localhost:3000` for local `next dev`.
 - **Flow:** `/auth/login` → Cognito authorize (code + PKCE; `?provider=google` goes straight to Google) → `/auth/callback` checks `state`, exchanges the code on the server → tokens go into `httpOnly`, `Secure`, `SameSite=Lax` cookies (access and ID tokens 1 h, refresh token 30 days). `POST /auth/logout` clears the cookies and calls Cognito logout.
 - **Verification:** the Next.js proxy (`app/src/proxy.ts`) checks the access token (and the ID token, which carries the email) with `aws-jwt-verify` (JWKS cached) on `/api/*` and protected pages. An expired access token is refreshed on the server with the refresh token. The verified user reaches route handlers as `x-pictora-user-*` request headers, which the proxy strips from incoming requests. Without a session, `/api/*` (except `/api/health`) answers 401 and protected pages redirect to `/auth/login`.
@@ -419,7 +419,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | Worker | Vitest + DynamoDB Local + mock provider | Full job lifecycle, idempotency on redelivery, sweeper | CI |
 | UI components | Vitest + React Testing Library | Prompt form, model picker, points display, gallery, edit panel | CI |
 | Infra | CDK assertions | Resource settings (encryption, public access blocks, alarms, IAM scope) and snapshot | CI |
-| End to end | Playwright (`e2e/`, Chromium) | Health, sign in and out (Cognito test user), landing page, generate with the mock provider, edit, gallery, delete; refuses to run against prod | After each dev deploy |
+| End to end | Playwright (`e2e/`, Chromium) | Health, sign in and out (a dedicated Cognito test user in the `testers` group), landing page, generate with the mock provider, edit, gallery, delete; a teardown deletes the test user's images after each run; refuses to run against prod | After each dev deploy |
 | Live provider check | Script (`npm run check:providers`) | One image per enabled model at its cheapest quality, plus the OpenAI moderation endpoint; reads keys from Secrets Manager and refuses to run in CI | Manual before a prod release |
 
 ## 14. Environments
@@ -441,7 +441,7 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 | --- | --- | --- |
 | `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference) |
 | `Data` | us-west-2 | DynamoDB table, images bucket, registry seed custom resource |
-| `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` group, pre-sign-up Lambda |
+| `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` and `testers` groups, pre-sign-up Lambda |
 | `Jobs` | us-west-2 | SQS queues (`openai`, `gemini`, `bedrock`, `purge`) + dead-letter queue, worker Lambda, sweeper, model health, account purge Lambda (`cognito-idp:AdminDeleteUser` on the user pool), read access to the OpenAI and Gemini secrets (created by hand, section 10), and `bedrock:InvokeModel` on the Bedrock models in `models.json` |
 | `Web` | us-west-2 | App Lambda + Function URL, assets bucket, CloudFront, DNS record, Cognito app client, app config parameter |
 | `Monitoring` | us-west-2 | Dashboard, alarms, SNS topic, budget |

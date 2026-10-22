@@ -1,7 +1,10 @@
+import { modelsForGroups } from '@pictora/core';
+import type { NextRequest } from 'next/server';
 import { documentClient, tableName } from '../../../lib/dynamodb';
 import { modelsResponse } from '../../../lib/models_response';
 import { readPremiumPause, spendCapCents } from '../../../lib/platform_spend';
 import { registryLoader } from '../../../lib/registry';
+import { sessionFromHeaders } from '../../../lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,15 +12,17 @@ export const dynamic = 'force-dynamic';
 const CACHE_CONTROL = 'private, max-age=60';
 
 /**
- * The enabled models for this environment, with costs and style presets (tech design 7, GEN-5). Once the month's
- * platform spend reaches the cap, premium qualities are marked paused.
+ * The enabled models for this environment, with costs and style presets (tech design 7, GEN-5). The Mock model
+ * is listed for the testers group only. Once the month's platform spend reaches the cap, premium qualities are
+ * marked paused.
  */
-export async function GET(): Promise<Response> {
+export async function GET(request: NextRequest): Promise<Response> {
+  const groups = sessionFromHeaders(request.headers)?.groups ?? [];
   const [models, pause] = await Promise.all([
     registryLoader().enabledModels(),
     readPremiumPause(documentClient(), tableName(), spendCapCents(), new Date()),
   ]);
-  return Response.json(modelsResponse(models, pause), {
+  return Response.json(modelsResponse(modelsForGroups(models, groups), pause), {
     headers: { 'Cache-Control': CACHE_CONTROL },
   });
 }

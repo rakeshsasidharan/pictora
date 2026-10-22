@@ -11,10 +11,11 @@ It never runs against prod: `src/config.ts` refuses the prod domain from `infra/
 | `playwright.config.ts`   | Projects, retries, traces and the four-minute budget                                       |
 | `specs/sign_in.setup.ts` | The `setup` project: signs the test user in once and saves the session to `.auth/user.json` |
 | `specs/*.spec.ts`        | The `chromium` project, which reuses that session                                          |
-| `src/`                   | Settings and the prod guard, the managed login and onboarding helpers, and issue links      |
+| `specs/cleanup.teardown.ts` | The `cleanup` project, setup's teardown: after every spec, deletes all images in the test user's gallery |
+| `src/`                   | Settings and the prod guard, the managed login, onboarding and cleanup helpers, and issue links |
 | `test/`                  | Vitest unit tests for `src/`, run by `npm test`                                            |
 
-`health`, `auth`, `onboarding` and `generate` run today; the setup project takes the test user through onboarding (AUTH-4) when it lands there. `generate` creates two draft images with the mock provider, which only dev offers, so each run uses 2 of the test user's daily points. `edit`, `gallery`, `delete` and `landing` are placeholders marked `test.fixme`, each linked to the issue that makes it pass (#22, #23 and #29).
+The setup project takes the test user through onboarding (AUTH-4) when it lands there. The specs that make images (`generate`, `enhance`, `gallery`, `edit`, `delete`) use the Mock model, which only dev offers and only to the `testers` group, so each run costs nothing but a few of the test user's daily points. When every spec has finished, passed or failed, the `cleanup` project deletes all images in the test user's gallery. It first checks that the account is offered the Mock model, and refuses otherwise, so it can never empty a real person's gallery.
 
 ## Settings
 
@@ -47,7 +48,7 @@ A local server (`E2E_BASE_URL=http://localhost:3000`) runs `health`, but sign-in
 
 ## The test user
 
-The suite signs in as a dedicated email and password user in the dev user pool, created once by hand. It must never be an admin, and it exists only in dev.
+The suite signs in as a dedicated email and password user in the dev user pool, created once by hand. It must be in the `testers` group, which is what offers it the Mock model. It must never be an admin, it exists only in dev, and it must never be anyone's own account: the cleanup empties its gallery after every run.
 
 1. Create the user with a permanent password, using an address you control (the AWS profile needs access to the dev account):
 
@@ -59,6 +60,8 @@ The suite signs in as a dedicated email and password user in the dev user pool, 
      --user-attributes Name=email,Value="$E2E_USER_EMAIL" Name=email_verified,Value=true
    aws cognito-idp admin-set-user-password --region us-west-2 --user-pool-id "$POOL_ID" \
      --username "$E2E_USER_EMAIL" --password "$E2E_USER_PASSWORD" --permanent
+   aws cognito-idp admin-add-user-to-group --region us-west-2 --user-pool-id "$POOL_ID" \
+     --username "$E2E_USER_EMAIL" --group-name testers
    ```
 
 2. Save the email as the repository variable `E2E_USER_EMAIL` and the password as the `dev` environment secret `E2E_USER_PASSWORD`:

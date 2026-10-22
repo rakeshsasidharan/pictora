@@ -1,3 +1,4 @@
+import { modelsForGroups } from '@pictora/core';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
@@ -44,7 +45,9 @@ export default async function EditImagePage({
     readPremiumPause(documentClient(), tableName(), deps.spendCapCents, new Date()),
   ]);
   const { models, premiumPausedUntil } = modelsResponse(
-    enabled.filter((model) => model.capabilities.edit && deps.hasQueue(model.provider)),
+    modelsForGroups(enabled, session.groups).filter(
+      (model) => model.capabilities.edit && deps.hasQueue(model.provider),
+    ),
     pause,
   );
   const requested = Number(Array.isArray(version) ? version[0] : version);

@@ -4,6 +4,9 @@ import { REVIEW_VERDICTS } from './moderation.js';
 /** The Cognito group whose members can use `/admin` and `/api/admin/*` (tech design 7 and 8). */
 export const ADMINS_GROUP = 'admins';
 
+/** The Cognito group whose members may use the dev-only Mock model: the e2e test account, never a real user. */
+export const TESTERS_GROUP = 'testers';
+
 /** The longest date range the stats endpoint covers, and the range it covers by default (ADM-3). */
 export const MAX_STATS_RANGE_DAYS = 92;
 export const DEFAULT_STATS_RANGE_DAYS = 14;

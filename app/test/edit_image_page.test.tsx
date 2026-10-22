@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { loadSeedRegistry } from '@pictora/core';
+import { loadSeedRegistry, TESTERS_GROUP } from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -87,9 +87,11 @@ const page = (version?: string) =>
 
 describe('edit image page', () => {
   beforeEach(() => {
+    // A tester, offered the Mock model like the e2e account.
     requestHeaders.current = new Headers({
       [SESSION_HEADERS.sub]: 'user-sub',
       [SESSION_HEADERS.email]: 'user@example.com',
+      [SESSION_HEADERS.groups]: TESTERS_GROUP,
     });
     onboarded.current = true;
     detail.current = { status: 200, body: { ...body() } };
@@ -108,6 +110,16 @@ describe('edit image page', () => {
     expect(screen.getByRole('button', { name: 'Version 2' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
+  });
+
+  it('never offers the Mock model to a user outside the testers group', async () => {
+    requestHeaders.current.set(SESSION_HEADERS.groups, '');
+    render(await page());
+    const options = within(screen.getByRole('combobox', { name: 'Model' }))
+      .getAllByRole('option')
+      .map((option) => option.getAttribute('value'));
+    expect(options).not.toContain('mock');
+    expect(options).toContain('gpt-image-2');
   });
 
   it('starts from the version in the query', async () => {

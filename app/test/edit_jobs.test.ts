@@ -2,6 +2,7 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   JOB_SK,
   PROFILE_SK,
+  TESTERS_GROUP,
   TOS_VERSION,
   imageKey,
   imageSk,
@@ -104,7 +105,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('edit jobs against DynamoDB Local', () => {
     const session: Session = {
       sub: `edit-user-${sessions}-${Date.now()}`,
       email: 'user@example.com',
-      groups: [],
+      // A tester, since these edits use the Mock model.
+      groups: [TESTERS_GROUP],
     };
     await put({
       PK: userPk(session.sub),

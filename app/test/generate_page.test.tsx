@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { loadSeedRegistry } from '@pictora/core';
+import { loadSeedRegistry, TESTERS_GROUP } from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,10 +62,12 @@ const { default: GeneratePage } = await import('../src/app/generate/page');
 const page = (query: { rerun?: string } = {}) =>
   GeneratePage({ searchParams: Promise.resolve(query) });
 
-function signIn() {
+/** Signs in as a tester by default, who is offered the Mock model like the e2e account. */
+function signIn(groups: string[] = [TESTERS_GROUP]) {
   requestHeaders.current = new Headers({
     [SESSION_HEADERS.sub]: 'user-sub',
     [SESSION_HEADERS.email]: 'user@example.com',
+    [SESSION_HEADERS.groups]: groups.join(','),
   });
 }
 
@@ -88,6 +90,17 @@ describe('generate page', () => {
     expect(screen.getByRole('radio', { name: /^Mock/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /^Stable Image Core/ })).toBeNull();
+  });
+
+  it('never offers the Mock model to a user outside the testers group', async () => {
+    for (const groups of [[], ['admins']]) {
+      signIn(groups);
+      render(await page());
+      fireEvent.click(screen.getByText('Advanced'));
+      expect(screen.queryByRole('radio', { name: /^Mock/ })).toBeNull();
+      expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
+      cleanup();
+    }
   });
 
   it('disables premium qualities while the platform cap is reached', async () => {

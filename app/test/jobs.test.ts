@@ -4,6 +4,7 @@ import {
   JOB_SK,
   PLATFORM_PK,
   PROFILE_SK,
+  TESTERS_GROUP,
   TOS_VERSION,
   jobPk,
   loadSeedRegistry,
@@ -50,7 +51,12 @@ const ONBOARDED = {
 let sessionCounter = 0;
 function newSession(): Session {
   sessionCounter += 1;
-  return { sub: `user-${sessionCounter}-${Date.now()}`, email: 'user@example.com', groups: [] };
+  // Testers, like the e2e account: these tests use the Mock model, which only the testers group may use.
+  return {
+    sub: `user-${sessionCounter}-${Date.now()}`,
+    email: 'user@example.com',
+    groups: [TESTERS_GROUP],
+  };
 }
 
 /** Deps with no DynamoDB, for checks that answer before any read or write. */
@@ -87,6 +93,14 @@ describe('createJob: request checks', () => {
   it('rejects a model that is not in the registry', async () => {
     const result = await createJob(offlineDeps(), session, generate({ modelId: 'no-such-model' }));
     expect(result).toMatchObject({ status: 400, body: { code: 'unknown_model' } });
+  });
+
+  it('treats the Mock model as unknown for a user outside the testers group', async () => {
+    for (const groups of [[], ['admins']]) {
+      const outsider = { ...session, groups };
+      const result = await createJob(offlineDeps(), outsider, generate());
+      expect(result).toMatchObject({ status: 400, body: { code: 'unknown_model' } });
+    }
   });
 
   it('rejects a switched-off model', async () => {
@@ -310,6 +324,19 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
       );
       expect(result).toMatchObject({ status: 400, body: { code: 'unsupported_option' } });
       expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('never routes a user outside the testers group to the Mock model', async () => {
+      const tester = await onboardedSession();
+      const outsider = { ...(await onboardedSession()), groups: [] };
+      // Only the Mock model has a queue, so it is the one model Auto could pick.
+      const onlyMock = deps({ hasQueue: (provider) => provider === 'mock' });
+      expect((await createJob(onlyMock, tester, auto({ quality: 'draft' }))).body).toMatchObject({
+        modelId: 'mock',
+      });
+      const refused = await createJob(onlyMock, outsider, auto({ quality: 'draft' }));
+      expect(refused).toMatchObject({ status: 400, body: { code: 'unsupported_option' } });
+      expect(refused.body.error).toMatch(/No image model is available/);
     });
   });
 

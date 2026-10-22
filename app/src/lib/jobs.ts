@@ -11,6 +11,7 @@ import {
   estimatePoints,
   jobError,
   jobPk,
+  modelsForGroups,
   nearestAspect,
   parseReferenceKey,
   pausedQuality,
@@ -142,7 +143,10 @@ export async function createJob(
     request = routed;
   }
 
-  const model = (await deps.models()).find((candidate) => candidate.id === request.modelId);
+  // The Mock model is offered to the testers group only; for anyone else it doesn't exist.
+  const model = modelsForGroups(await deps.models(), session.groups).find(
+    (candidate) => candidate.id === request.modelId,
+  );
   if (!model) {
     return apiError('unknown_model', "That model isn't available. Pick another model.");
   }
@@ -265,7 +269,9 @@ async function routeAuto(
     readUsedPoints(deps.client, deps.tableName, session.sub, utcDate(now)),
   ]);
   const limit = profile ? dailyLimit(profile, deps.defaultDailyPoints) : deps.defaultDailyPoints;
-  const enabled = models.filter((model) => model.enabled && deps.hasQueue(model.provider));
+  const enabled = modelsForGroups(models, session.groups).filter(
+    (model) => model.enabled && deps.hasQueue(model.provider),
+  );
   const route = routeModel({
     style: request.style,
     quality: request.quality,

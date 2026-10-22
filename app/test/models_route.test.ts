@@ -1,8 +1,10 @@
-import { loadSeedRegistry, type ModelConfig } from '@pictora/core';
+import { loadSeedRegistry, TESTERS_GROUP, type ModelConfig } from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
+import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { modelsResponse } from '../src/lib/models_response';
 import { appEnvironment } from '../src/lib/registry';
+import { setSessionHeaders } from '../src/lib/session';
 
 const seed = loadSeedRegistry();
 const loaderFor = vi.hoisted(() => ({ current: undefined as unknown }));
@@ -30,6 +32,17 @@ vi.mock('../src/lib/platform_spend', () => ({
 
 const { GET } = await import('../src/app/api/models/route');
 
+/** A request from a signed-in user in `groups` (a tester by default, who sees every model), or signed out. */
+function modelsRequest(groups: string[] | 'signed-out' = [TESTERS_GROUP]): NextRequest {
+  const headers = new Headers();
+  if (groups !== 'signed-out') {
+    setSessionHeaders(headers, { sub: 'user-sub', email: 'user@example.com', groups });
+  }
+  return new NextRequest('https://pictora.test/api/models', { headers });
+}
+
+const ids = (body: { models: { id: string }[] }) => body.models.map((m) => m.id);
+
 function useRegistry(models: ModelConfig[], environment: 'dev' | 'prod') {
   loaderFor.current = createRegistryLoader({ source: async () => models, environment });
 }
@@ -42,7 +55,7 @@ afterEach(() => {
 describe('GET /api/models', () => {
   it('returns the enabled models with costs and the style presets, cached for 60 s', async () => {
     useRegistry(seed, 'dev');
-    const response = await GET();
+    const response = await GET(modelsRequest());
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, max-age=60');
 
@@ -71,7 +84,7 @@ describe('GET /api/models', () => {
   it('marks every quality but draft paused once the platform cap is reached', async () => {
     useRegistry(seed, 'dev');
     pauseFor.current = { until: new Date('2026-11-01T00:00:00.000Z') };
-    const body = await (await GET()).json();
+    const body = await (await GET(modelsRequest())).json();
 
     expect(spendRead).toHaveBeenCalledWith({}, 'pictora-test', 2000, expect.any(Date));
     expect(body.premiumPausedUntil).toBe('2026-11-01T00:00:00.000Z');
@@ -84,14 +97,14 @@ describe('GET /api/models', () => {
 
   it('marks nothing paused below the cap', async () => {
     useRegistry(seed, 'dev');
-    const body = await (await GET()).json();
+    const body = await (await GET(modelsRequest())).json();
     expect(body.premiumPausedUntil).toBeUndefined();
     expect(JSON.stringify(body.models)).not.toContain('paused');
   });
 
   it('never exposes provider settings', async () => {
     useRegistry(seed, 'dev');
-    const text = await (await GET()).text();
+    const text = await (await GET(modelsRequest())).text();
     expect(text).not.toContain('providerParams');
     expect(text).not.toContain('providerModelId');
   });
@@ -101,17 +114,29 @@ describe('GET /api/models', () => {
       seed.map((m) => (m.id === 'gpt-image-2' ? { ...m, enabled: false } : m)),
       'dev',
     );
-    const body = await (await GET()).json();
+    const body = await (await GET(modelsRequest())).json();
     expect(body.models.map((m: { id: string }) => m.id)).not.toContain('gpt-image-2');
     expect(
       body.styles.find((s: { id: string }) => s.id === 'line-art').suggestedModelId,
     ).toBeUndefined();
   });
 
-  it('never lists the mock model in prod', async () => {
+  it('never lists the mock model in prod, even to a tester', async () => {
     useRegistry(seed, 'prod');
-    const body = await (await GET()).json();
-    expect(body.models.map((m: { id: string }) => m.id)).not.toContain('mock');
+    const body = await (await GET(modelsRequest())).json();
+    expect(ids(body)).not.toContain('mock');
+  });
+
+  it('lists the mock model in dev only to the testers group', async () => {
+    useRegistry(seed, 'dev');
+    expect(ids(await (await GET(modelsRequest())).json())).toContain('mock');
+    for (const groups of [[], ['admins'], 'signed-out'] as const) {
+      const body = await (
+        await GET(modelsRequest(groups === 'signed-out' ? groups : [...groups]))
+      ).json();
+      expect(ids(body)).not.toContain('mock');
+      expect(ids(body)).toHaveLength(seed.length - 1);
+    }
   });
 });
 

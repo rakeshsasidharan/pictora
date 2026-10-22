@@ -24,6 +24,9 @@ import type { StageConfig } from './stage_config.js';
 /** Cognito group whose members can use the admin pages and APIs (tech design 7 and 8). */
 export const ADMINS_GROUP = 'admins';
 
+/** Cognito group for test accounts, the only users the app offers the dev-only Mock model to. */
+export const TESTERS_GROUP = 'testers';
+
 /** Scopes the app asks for at sign-in. */
 export const OAUTH_SCOPES = ['openid', 'email', 'profile'] as const;
 
@@ -132,6 +135,13 @@ export class AuthStack extends Stack {
       userPool: this.userPool,
       groupName: ADMINS_GROUP,
       description: 'Pictora administrators',
+    });
+
+    // The e2e test account goes in this group, so only it can use the dev-only Mock model.
+    new UserPoolGroup(this, 'TestersGroup', {
+      userPool: this.userPool,
+      groupName: TESTERS_GROUP,
+      description: 'Test accounts that may use the dev-only Mock model',
     });
   }
 

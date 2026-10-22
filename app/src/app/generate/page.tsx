@@ -1,3 +1,4 @@
+import { modelsForGroups } from '@pictora/core';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -39,9 +40,10 @@ export default async function GeneratePage({
     readPremiumPause(documentClient(), tableName(), deps.spendCapCents, new Date()),
     rerunId ? rerunSettings(deps, session, rerunId) : Promise.resolve(undefined),
   ]);
-  // Models without a queue in this environment would only be refused by POST /api/jobs.
+  // Models without a queue in this environment, and the Mock model outside the testers group, would only be
+  // refused by POST /api/jobs.
   const { models, styles, premiumPausedUntil } = modelsResponse(
-    enabled.filter((model) => deps.hasQueue(model.provider)),
+    modelsForGroups(enabled, session.groups).filter((model) => deps.hasQueue(model.provider)),
     pause,
   );
   return (
