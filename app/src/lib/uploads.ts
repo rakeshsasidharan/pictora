@@ -16,6 +16,7 @@ import {
   imageKey,
   imageSk,
   modlogPk,
+  rateLimitPerMinute,
   thumbnailKey,
   ttlAfter,
   uploadKey,
@@ -93,10 +94,11 @@ export async function createUpload(
   const profile = await ensureProfile(deps.client, deps.tableName, session, now);
   const refusal = profileRefusal(profile, now);
   if (refusal) return refusal;
-  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now))) {
+  const rateLimit = rateLimitPerMinute(session.groups);
+  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now, rateLimit))) {
     return apiError(
       'rate_limited',
-      "You've made 10 requests in the last minute. Wait a moment, then try again.",
+      `You've made ${rateLimit} requests in the last minute. Wait a moment, then try again.`,
     );
   }
 

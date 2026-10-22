@@ -38,7 +38,7 @@ function clientFailing(...errors: Error[]) {
   return { client: { send } as unknown as DynamoDBDocumentClient, send };
 }
 
-const input = { job, limit: 25, now: new Date('2026-10-15T12:00:00Z') };
+const input = { job, limit: 25, rateLimit: 10, now: new Date('2026-10-15T12:00:00Z') };
 
 describe('reserveJob', () => {
   it('retries a transaction cancelled by a conflicting one', async () => {
@@ -68,6 +68,24 @@ describe('reserveJob', () => {
       const { client } = clientFailing(cancelled(...codes));
       expect(await reserveJob(client, 'table', input)).toEqual({ ok: false, reason });
     }
+  });
+
+  it("checks the minute's counter against the rate limit it is given", async () => {
+    const { client, send } = clientFailing();
+    await reserveJob(client, 'table', { ...input, rateLimit: 50 });
+    const [command] = send.mock.calls[0] as unknown as [
+      {
+        input: {
+          TransactItems: {
+            Update?: { Key: { SK: string }; ExpressionAttributeValues: Record<string, unknown> };
+          }[];
+        };
+      },
+    ];
+    const rate = command.input.TransactItems.find((item) =>
+      item.Update?.Key.SK.startsWith('RATE#'),
+    );
+    expect(rate?.Update?.ExpressionAttributeValues[':max']).toBe(50);
   });
 
   it('rethrows other errors', async () => {

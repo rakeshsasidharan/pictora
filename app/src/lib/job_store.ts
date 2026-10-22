@@ -8,7 +8,6 @@ import {
   JOB_SK,
   MAX_ACTIVE_JOBS,
   PROFILE_SK,
-  RATE_LIMIT_PER_MINUTE,
   RATE_TTL_SECONDS,
   SECONDS_PER_DAY,
   USAGE_TTL_DAYS,
@@ -34,18 +33,20 @@ export interface ReserveInput {
   job: JobItem;
   /** The user's daily allowance in points. */
   limit: number;
+  /** The user's per-minute request limit (`rateLimitPerMinute`). */
+  rateLimit: number;
   now: Date;
 }
 
 /**
  * Reserves points and a concurrency slot and records the job, in one `TransactWriteItems` call (tech design
- * 4.1): the minute's rate counter (fewer than 10), the day's usage (staying within the limit), the profile
+ * 4.1): the minute's rate counter (below `rateLimit`), the day's usage (staying within the limit), the profile
  * (active, no cooldown, fewer than 2 running jobs) and the queued job. Either all of it happens or none.
  */
 export async function reserveJob(
   client: DynamoDBDocumentClient,
   tableName: string,
-  { job, limit, now }: ReserveInput,
+  { job, limit, rateLimit, now }: ReserveInput,
 ): Promise<ReserveResult> {
   const pk = userPk(job.userId);
   const points = job.pointsReserved;
@@ -60,7 +61,7 @@ export async function reserveJob(
           ExpressionAttributeNames: { '#count': 'count', '#ttl': 'ttl' },
           ExpressionAttributeValues: {
             ':one': 1,
-            ':max': RATE_LIMIT_PER_MINUTE,
+            ':max': rateLimit,
             ':ttl': ttlAfter(now, RATE_TTL_SECONDS),
           },
         },

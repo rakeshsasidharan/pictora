@@ -3,6 +3,7 @@ import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   MAX_UPLOAD_BYTES,
   PROFILE_SK,
+  TESTERS_GROUP,
   TOS_VERSION,
   imageKey,
   imageSk,
@@ -282,6 +283,17 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('uploads with DynamoDB Local', () => {
         status: 429,
         body: { code: 'rate_limited' },
       });
+    });
+
+    it('gives the testers group 50 uploads a minute', async () => {
+      const session = { ...(await onboardedSession()), groups: [TESTERS_GROUP] };
+      const request = { contentType: 'image/png', size: 100 };
+      for (let i = 0; i < 50; i++) {
+        expect((await createUpload(deps(), session, request)).status).toBe(200);
+      }
+      const refused = await createUpload(deps(), session, request);
+      expect(refused).toMatchObject({ status: 429, body: { code: 'rate_limited' } });
+      expect(refused.body.error).toMatch(/^You've made 50 requests in the last minute/);
     });
   });
 

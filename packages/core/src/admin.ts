@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RATE_LIMIT_PER_MINUTE } from './jobs.js';
 import { REVIEW_VERDICTS } from './moderation.js';
 
 /** The Cognito group whose members can use `/admin` and `/api/admin/*` (tech design 7 and 8). */
@@ -6,6 +7,17 @@ export const ADMINS_GROUP = 'admins';
 
 /** The Cognito group whose members may use the dev-only Mock model: the e2e test account, never a real user. */
 export const TESTERS_GROUP = 'testers';
+
+/**
+ * The testers group's per-minute request limit. One e2e run makes about 15 rate-counted requests (jobs, enhancer
+ * calls) in parallel, mostly within a minute, so the 10 of LIM-3 refuses some of them (#115).
+ */
+export const TESTER_RATE_LIMIT_PER_MINUTE = 50;
+
+/** The per-minute limit on jobs, enhancer calls and uploads for a user: 10 (LIM-3), or 50 for testers. */
+export function rateLimitPerMinute(groups: readonly string[]): number {
+  return groups.includes(TESTERS_GROUP) ? TESTER_RATE_LIMIT_PER_MINUTE : RATE_LIMIT_PER_MINUTE;
+}
 
 /** The longest date range the stats endpoint covers, and the range it covers by default (ADM-3). */
 export const MAX_STATS_RANGE_DAYS = 92;
