@@ -1,4 +1,12 @@
-import type { Aspect, JobStatus, Quality, StyleId } from '@pictora/core';
+import {
+  QUALITIES,
+  type Aspect,
+  type JobStatus,
+  type Quality,
+  type RoutableModel,
+  type RouteReason,
+  type StyleId,
+} from '@pictora/core';
 import type { RerunSettings } from './images';
 import type { PublicModel, PublicStyle } from './models_response';
 
@@ -125,6 +133,44 @@ const PAUSE_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
 /** The notice shown while premium qualities are paused until `until` (ISO 8601), tech design 4.1. */
 export function premiumPausedText(until: string): string {
   return `Premium models are paused until ${PAUSE_END_FORMAT.format(new Date(until))} because this month's budget is used up. Draft quality still works.`;
+}
+
+/** The public models as `routeModel` reads them: costs by quality instead of a list. */
+export function routableModels(models: readonly PublicModel[]): RoutableModel[] {
+  return models.map((model) => ({
+    id: model.id,
+    provider: model.provider,
+    defaultFor: model.defaultFor,
+    capabilities: model.capabilities,
+    qualities: Object.fromEntries(
+      model.qualities.map((option) => [option.quality, { costPoints: option.costPoints }]),
+    ),
+  }));
+}
+
+/** Qualities paused by the platform spend cap (tech design 4.1), as the public models mark them. */
+export function pausedQualities(models: readonly PublicModel[]): Quality[] {
+  return QUALITIES.filter((quality) => models.some((model) => qualityPaused(model, quality)));
+}
+
+/** Why Auto picked its model, for the line under the cost; undefined when there is nothing to add. */
+export function routeReasonText(
+  reason: RouteReason,
+  quality: Quality,
+  styleName: string,
+): string | undefined {
+  switch (reason) {
+    case 'style-default':
+      return `the best fit for ${styleName === 'None' ? 'your prompt' : styleName}`;
+    case 'text':
+      return 'best at words in images';
+    case 'affordable':
+      return 'it fits the points you have left';
+    case 'lower-quality':
+      return `${QUALITY_LABELS[quality]} quality fits the points you have left`;
+    default:
+      return undefined;
+  }
 }
 
 /** How the generate form starts: empty, or with a gallery image's settings for a rerun (GAL-3). */

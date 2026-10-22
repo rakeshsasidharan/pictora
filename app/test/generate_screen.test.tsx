@@ -310,7 +310,7 @@ describe('GenerateScreen', () => {
 
     it('sets the suggested model when a style is picked, keeping a quality it offers', () => {
       renderScreen();
-      expect((radio(/^GPT Image 2/) as HTMLInputElement).checked).toBe(true);
+      chooseModel(/^GPT Image 2/);
       fireEvent.click(radio('Photorealistic'));
       expect((radio(/^Gemini 3 Pro Image/) as HTMLInputElement).checked).toBe(true);
       expect((radio(/^Standard/) as HTMLInputElement).checked).toBe(true);
@@ -352,6 +352,7 @@ describe('GenerateScreen', () => {
 
     it("disables generate when the user can't afford the request", () => {
       renderScreen({ left: 5, limit: 25 });
+      chooseModel(/^GPT Image 2/);
       expect((generate() as HTMLButtonElement).disabled).toBe(true);
       expect(screen.getByText(/don't have enough points left today/)).toBeTruthy();
       fireEvent.click(radio(/^Draft/));
@@ -515,6 +516,83 @@ describe('GenerateScreen', () => {
       expect(
         screen.getAllByRole('link', { name: 'Edit' }).map((link) => link.getAttribute('href')),
       ).toEqual(['/edit/IMG1?version=1', '/edit/IMG2?version=1']);
+    });
+  });
+
+  describe('Auto model', () => {
+    const autoLine = () => screen.getByText(/^Auto picks/).textContent;
+
+    it('is selected by default and shows the model it picks for the style', () => {
+      renderScreen();
+      fireEvent.click(screen.getByText('Advanced'));
+      expect((radio(/^Auto \(recommended\)/) as HTMLInputElement).checked).toBe(true);
+      expect((radio(/^GPT Image 2/) as HTMLInputElement).checked).toBe(false);
+      expect(autoLine()).toBe('Auto picks GPT Image 2: the best fit for your prompt.');
+
+      fireEvent.click(radio('Photorealistic'));
+      expect(autoLine()).toBe('Auto picks Gemini 3 Pro Image: the best fit for Photorealistic.');
+      expect(screen.getByText('Uses 14 of your 25 points today')).toBeTruthy();
+      expect(radio(/^Standard/).closest('label')?.textContent).toContain('14 points per image');
+    });
+
+    it('prefers a text model when the prompt asks for words', () => {
+      renderScreen();
+      fireEvent.click(radio('Watercolour'));
+      expect(autoLine()).toMatch(/^Auto picks Gemini 3\.1 Flash Image/);
+      fireEvent.change(prompt(), { target: { value: 'A poster that says "Summer Fair"' } });
+      expect(autoLine()).toBe('Auto picks GPT Image 2: best at words in images.');
+    });
+
+    it('picks an affordable model, then a lower quality, when points are low', () => {
+      renderScreen({ left: 10, limit: 25 });
+      fireEvent.click(radio('Photorealistic'));
+      expect(autoLine()).toBe('Auto picks GPT Image 2: it fits the points you have left.');
+      expect(screen.getByText('Uses 6 of your 10 points today')).toBeTruthy();
+      cleanup();
+
+      // Even the dev-only mock model costs 2 points at Standard.
+      renderScreen({ left: 1, limit: 25 });
+      fireEvent.click(radio('Photorealistic'));
+      expect(autoLine()).toBe(
+        'Auto picks GPT Image 2: Draft quality fits the points you have left.',
+      );
+      expect((generate() as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('sends auto to the job API and shows the model the server picked', async () => {
+      const fetchMock = stubApi({
+        created: json(
+          { jobId: JOB_ID, status: 'queued', pointsReserved: 7, modelId: 'gemini-3.1-flash-image' },
+          202,
+        ),
+        statuses: [{ status: 'queued', modelId: 'gemini-3.1-flash-image' }],
+      });
+      renderScreen();
+      fireEvent.click(radio('Anime'));
+      fireEvent.click(screen.getByRole('checkbox', { name: /Enhance prompt/ }));
+      fillAndGenerate();
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({
+        modelId: 'auto',
+        style: 'anime',
+        quality: 'standard',
+      });
+      expect(await screen.findByText('Model: Gemini 3.1 Flash Image')).toBeTruthy();
+    });
+
+    it('offers a transparent background and routes to a model that makes one', () => {
+      renderScreen();
+      fireEvent.click(radio('Watercolour'));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Transparent background' }));
+      expect(autoLine()).toMatch(/^Auto picks GPT Image 2/);
+    });
+
+    it('goes back to Auto after a model was picked by hand', () => {
+      renderScreen();
+      chooseModel(/^Gemini 3 Pro Image/);
+      expect(screen.queryByText(/^Auto picks/)).toBeNull();
+      fireEvent.click(radio(/^Auto \(recommended\)/));
+      expect(autoLine()).toMatch(/^Auto picks GPT Image 2/);
     });
   });
 

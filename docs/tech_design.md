@@ -313,6 +313,17 @@ Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `P
 - **Policy mapping** (`BLOCKED_CATEGORIES` in `packages/core`): `sexual/minors`, `sexual`, `violence/graphic`, `hate/threatening`, `hate`, `harassment/threatening`, the three `self-harm` categories, `illicit/violent` and `illicit` block; the first one flagged, in that order, is logged. Plain `violence` and `harassment` are allowed, so a flag on those alone doesn't block. The user sees the neutral `blocked` message, never the category.
 - **Reports:** `POST /api/reports` with `{ imageId, version, reason }` (reason one of `REPORT_REASONS`) writes a `MODLOG#` entry of type `report` for one of the user's own image versions (404 otherwise). The "Report" action sits in the image view.
 
+### 6.4 Smart routing (Auto)
+
+The generate screen's model picker starts on **Auto**, which picks the model from the style, quality, aspect, prompt and points left. The rules live in `packages/core` (`routeModel` in `routing.ts`) as tables in code, not as a model call, so they are cheap and predictable:
+
+1. **Needs:** only models that generate (or edit, for an edit) and, when asked, make a transparent background. A prompt that asks for words in the image (quoted text, "that says", "lettering", "logo" and similar; `promptAsksForText`) tries the text models first (`TEXT_MODELS`: GPT Image 2).
+2. **Preference:** the style's default model (`defaultFor`), then the style's fallback table (`STYLE_FALLBACKS`), then any other enabled model in registry order, and the mock model last.
+3. **Quality:** the best model that offers the quality asked for, skipping qualities paused by the platform cap (section 4.1); if none does, the nearest lower quality, then a higher one.
+4. **Budget:** if that choice costs more than the points left today, the best model that fits at the same quality, then at each lower quality. If nothing fits, the first choice stands and the job API refuses it as out of points.
+
+A rerun from the gallery (GAL-3) starts on the original model instead, so its seed reproduces the image; Auto is one click away, and is used when the original model is no longer available. The browser routes the models it was given to show the choice ("Auto picks Gemini 3 Pro Image: the best fit for Photorealistic") and its cost. The job is created with `modelId: 'auto'`, and `POST /api/jobs` routes again on the server with the enabled models that have a queue (the registry cache is 60 s, so a kill switch changes Auto's choice within a minute), today's points and any premium pause. Options the picked model can't take (avoid text, a seed) are dropped rather than refused. The job records the model picked, the 202 answer carries it as `modelId`, and the job progress shows it.
+
 ## 7. API surface
 
 All routes are Next.js route handlers under `/api`. They need a valid session unless marked public, and they validate input with zod schemas from `packages/core`.
@@ -325,7 +336,7 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | `{ ageConfirmed: true, termsAccepted: true, tosVersion }`; 409 `terms_changed` for an older version. Needed before the first job: until then `POST /api/jobs` and `POST /api/enhance` answer 403 `onboarding_required` |
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
 | POST | `/api/enhance` | Rewrite a prompt | `{ prompt, style, modelId }` → `{ enhancedPrompt, fallback? }`. Moderated on input (422 `blocked`) and output (fallback to the user's words); rate-limited with jobs (429); 503 `enhance_failed` when the enhancer is unavailable |
-| POST | `/api/jobs` | Create a generate or edit job | 202 + jobId; 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
+| POST | `/api/jobs` | Create a generate or edit job | 202 with `jobId`, `pointsReserved` and the `modelId` used; a generate request may send `modelId: 'auto'` (section 6.4); 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
 | GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
 | POST | `/api/uploads` | Presigned POST for an upload (EDIT-2) | `{ contentType, size }` → `{ uploadId, key, url, fields, expiresAt }`; 10 MB, JPEG/PNG/WebP; counted in the job rate window. `key` can be sent as an edit's reference image without completing the upload |
 | POST | `/api/uploads/:id/complete` | Check, moderate and store an upload as a new image | 201 `{ image }`, 200 when already completed; 404 for a missing or another user's upload, 413 over 10 MB, 400 `not_an_image`, 422 `blocked`, 503 `moderation_failed` |

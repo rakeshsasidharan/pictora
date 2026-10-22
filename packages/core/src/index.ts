@@ -160,6 +160,14 @@ export type {
   RegistryValidation,
 } from './registry.js';
 export {
+  AUTO_MODEL_ID,
+  STYLE_FALLBACKS,
+  TEXT_MODELS,
+  promptAsksForText,
+  routeModel,
+} from './routing.js';
+export type { RoutableModel, Route, RouteReason, RouteRequest, RoutingNeeds } from './routing.js';
+export {
   MAX_AVOID_LENGTH,
   MAX_PROMPT_LENGTH,
   MAX_UPLOAD_BYTES,
