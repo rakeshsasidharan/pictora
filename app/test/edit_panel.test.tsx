@@ -51,6 +51,7 @@ function stubApi(options: {
   created?: Response;
   statuses?: Record<string, unknown>[];
   detailAfter?: ImageDetailBody;
+  gallery?: unknown;
 }) {
   const statuses = [...(options.statuses ?? [])];
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -63,6 +64,7 @@ function stubApi(options: {
     }
     if (url === `/api/images/${IMAGE_ID}`) return json(options.detailAfter ?? {});
     if (url === '/api/me') return json({ pointsLeft: 24, dailyLimit: 25 });
+    if (url === '/api/images' && options.gallery) return json(options.gallery);
     return json({}, 404);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -82,6 +84,7 @@ function renderPanel(
   return render(
     <EditPanel
       detail={detail(versions)}
+      ownerSub="owner-sub"
       models={models}
       points={{ left: 25, limit: 25 }}
       pollIntervalMs={5}
@@ -258,11 +261,45 @@ describe('EditPanel', () => {
     expect(screen.queryByRole('group', { name: 'Reference images (optional)' })).toBeNull();
   });
 
-  it('says choosing a reference from the gallery is coming soon', () => {
+  it('picks a reference from the gallery and sends its latest version with the edit', async () => {
+    const otherId = '01JDDDDDDDDDDDDDDDDDDDDDDD';
+    const fetchMock = stubApi({
+      statuses: [{ status: 'queued' }],
+      gallery: {
+        images: [
+          {
+            imageId: otherId,
+            title: 'A red bicycle',
+            latestVersion: 3,
+            versionCount: 2,
+            thumbUrl: 'https://signed.example/bike_thumb.webp',
+          },
+        ],
+        jobs: [],
+      },
+    });
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Choose from gallery' }));
-    const toast = screen.getByText('Gallery coming soon.').closest('.toast') as HTMLElement;
-    expect(within(toast).getByRole('link').getAttribute('href')).toMatch(/\/issues\/23$/);
+    const picker = screen.getByRole('dialog', { name: 'Choose a reference image' });
+    fireEvent.click(await within(picker).findByRole('button', { name: 'Use A red bicycle' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const list = screen.getByRole('list', { name: 'Reference images' });
+    expect(within(list).getByText('A red bicycle')).toBeTruthy();
+
+    fireEvent.change(instruction(), { target: { value: 'Add this bicycle' } });
+    fireEvent.click(apply());
+    await waitFor(() => expect(jobBodies(fetchMock)).toHaveLength(1));
+    expect(jobBodies(fetchMock)[0]?.referenceKeys).toEqual([`users/owner-sub/${otherId}/v3.png`]);
+  });
+
+  it('closes the gallery picker without adding a reference', async () => {
+    stubApi({ gallery: { images: [], jobs: [] } });
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose from gallery' }));
+    expect(await screen.findByText('Your gallery is empty.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Reference images' })).toBeNull();
   });
 
   it('starts from the version asked for', () => {

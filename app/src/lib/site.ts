@@ -21,3 +21,21 @@ export function editImagePath(imageId: string, version?: number): string {
   const path = `${EDIT_PATH}/${encodeURIComponent(imageId)}`;
   return version === undefined ? path : `${path}?version=${version}`;
 }
+
+/** The private gallery of the user's images (GAL-1). */
+export const GALLERY_PATH = '/gallery';
+
+/** One image's detail view in the gallery (GAL-2); on wide screens the grid opens it as a modal instead. */
+export function galleryImagePath(imageId: string): string {
+  return `${GALLERY_PATH}/${encodeURIComponent(imageId)}`;
+}
+
+/** The generate screen filled in with a gallery image's settings and seed (GAL-3). */
+export function rerunPath(imageId: string): string {
+  return `${GENERATE_PATH}?rerun=${encodeURIComponent(imageId)}`;
+}
+
+/** Saves a version's original PNG through the app, so the link outlives any presigned URL (GAL-3). */
+export function downloadPath(imageId: string, version: number): string {
+  return `/api/images/${encodeURIComponent(imageId)}/versions/${version}/download`;
+}

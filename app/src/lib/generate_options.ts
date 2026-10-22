@@ -7,6 +7,7 @@ import {
   type RouteReason,
   type StyleId,
 } from '@pictora/core';
+import type { RerunSettings } from './images';
 import type { PublicModel, PublicStyle } from './models_response';
 
 /** How often the generate screen asks for a job's status, and when it stops asking (GEN-8). */
@@ -170,4 +171,49 @@ export function routeReasonText(
     default:
       return undefined;
   }
+}
+
+/** How the generate form starts: empty, or with a gallery image's settings for a rerun (GAL-3). */
+export interface InitialForm {
+  prompt: string;
+  avoid: string;
+  styleId: StyleId;
+  choices?: ModelChoices;
+  transparent: boolean;
+  /** The original seed, kept only when the model is the original one and it takes a seed. */
+  seed?: number;
+  /** The enhanced prompt the original used, reused as is; undefined when it used the user's own words. */
+  enhancedPrompt?: string;
+  /** True when a rerun's model is no longer available, so another was picked. */
+  modelReplaced: boolean;
+}
+
+/**
+ * The generate form's first state. A rerun keeps the original prompt, avoid text, style, model, aspect, quality,
+ * transparency and seed where the model is still available and supports them; otherwise the style's model.
+ */
+export function initialForm(
+  styles: readonly PublicStyle[],
+  models: readonly PublicModel[],
+  rerun?: RerunSettings,
+): InitialForm {
+  const styleId = rerun?.style ?? DEFAULT_STYLE;
+  const original = rerun && models.find((model) => model.id === rerun.modelId);
+  const model = original ?? modelForStyle(styleId, styles, models);
+  const choices =
+    model &&
+    choicesForModel(model, {
+      quality: rerun?.quality ?? DEFAULT_QUALITY,
+      aspect: rerun?.aspect ?? '1:1',
+    });
+  return {
+    prompt: rerun?.prompt ?? '',
+    avoid: model?.capabilities.negativePrompt ? (rerun?.avoid ?? '') : '',
+    styleId,
+    choices,
+    transparent: Boolean(model?.capabilities.transparentBackground && rerun?.transparentBackground),
+    ...(original?.capabilities.seed && rerun?.seed !== undefined ? { seed: rerun.seed } : {}),
+    ...(rerun?.enhancedPrompt ? { enhancedPrompt: rerun.enhancedPrompt } : {}),
+    modelReplaced: rerun !== undefined && !original,
+  };
 }

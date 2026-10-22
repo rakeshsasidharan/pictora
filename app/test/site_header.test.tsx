@@ -7,6 +7,7 @@ describe('SiteHeader', () => {
     const html = renderToStaticMarkup(<SiteHeader />);
     expect(html).toContain('href="/auth/login"');
     expect(html).not.toContain('Sign out');
+    expect(html).not.toContain('href="/gallery"');
   });
 
   it('shows the signed-in email and a sign-out form that posts to /auth/logout', () => {
@@ -14,6 +15,8 @@ describe('SiteHeader', () => {
       <SiteHeader session={{ sub: 's', email: 'user@example.com', groups: [] }} />,
     );
     expect(html).toContain('user@example.com');
+    expect(html).toContain('href="/generate"');
+    expect(html).toContain('href="/gallery"');
     expect(html).toContain('<form action="/auth/logout" method="post">');
     expect(html).toContain('Sign out');
     expect(html).not.toContain('href="/auth/login"');
