@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { useOwnWords } from '../src/generate.js';
 import { expectStaticImagesLoaded } from '../src/images.js';
 
 /** The first bytes of every PNG file. */
@@ -28,6 +29,8 @@ test.describe('generate', () => {
     test.setTimeout(90_000);
     await page.goto('/generate');
     await expect(page.getByRole('heading', { name: 'Create an image' })).toBeVisible();
+    // The enhancer has its own spec.
+    await useOwnWords(page);
     const points = page.getByText(/points left today$/);
     const before = pointsLeft(await points.textContent());
 

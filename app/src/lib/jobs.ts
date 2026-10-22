@@ -16,6 +16,7 @@ import {
   parseReferenceKey,
   pausedQuality,
   promptAsksForText,
+  rateLimitPerMinute,
   routeModel,
   ttlAfter,
   userPk,
@@ -201,12 +202,13 @@ export async function createJob(
     GSI1SK: now.toISOString(),
     ttl: ttlAfter(now, JOB_TTL_DAYS * SECONDS_PER_DAY),
   };
-  const reserved = await reserveJob(deps.client, deps.tableName, { job, limit, now });
+  const rateLimit = rateLimitPerMinute(session.groups);
+  const reserved = await reserveJob(deps.client, deps.tableName, { job, limit, rateLimit, now });
   if (!reserved.ok) {
     if (reserved.reason === 'rate') {
       return apiError(
         'rate_limited',
-        "You've started 10 jobs in the last minute. Wait a moment, then try again.",
+        `You've started ${rateLimit} jobs in the last minute. Wait a moment, then try again.`,
       );
     }
     if (reserved.reason === 'points') return outOfPoints(deps, session.sub, usageDate, points);

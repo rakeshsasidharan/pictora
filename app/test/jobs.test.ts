@@ -431,20 +431,38 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
     expect((await profileOf(session.sub))?.activeJobs).toBe(1);
   });
 
-  it('allows 10 jobs a minute, then answers 429 until the next minute', async () => {
-    const session = await onboardedSession();
+  it('allows a user 10 jobs a minute, then answers 429 until the next minute', async () => {
+    // Outside the testers group, so on a real model rather than the Mock one.
+    const session = { ...(await onboardedSession()), groups: [] };
+    const draft = () => generate({ modelId: 'gpt-image-1-mini', quality: 'draft' });
     const d = deps({ defaultDailyPoints: 100 });
     for (let i = 0; i < 10; i++) {
+      expect((await createJob(d, session, draft())).status).toBe(202);
+      await finishJobs(session.sub);
+    }
+    const limited = await createJob(d, session, draft());
+    expect(limited).toMatchObject({ status: 429, body: { code: 'rate_limited' } });
+    expect(limited.body.error).toBe(
+      "You've started 10 jobs in the last minute. Wait a moment, then try again.",
+    );
+    expect(await usedToday(session.sub)).toBe(10);
+    expect(await getItem(userPk(session.sub), 'RATE#202610151200')).toMatchObject({ count: 10 });
+
+    clock = new Date('2026-10-15T12:01:00Z');
+    expect((await createJob(d, session, draft())).status).toBe(202);
+  });
+
+  it('allows the testers group 50 jobs a minute', async () => {
+    const session = await onboardedSession();
+    const d = deps({ defaultDailyPoints: 100 });
+    for (let i = 0; i < 50; i++) {
       expect((await createJob(d, session, generate())).status).toBe(202);
       await finishJobs(session.sub);
     }
     const limited = await createJob(d, session, generate());
     expect(limited).toMatchObject({ status: 429, body: { code: 'rate_limited' } });
-    expect(await usedToday(session.sub)).toBe(10);
-    expect(await getItem(userPk(session.sub), 'RATE#202610151200')).toMatchObject({ count: 10 });
-
-    clock = new Date('2026-10-15T12:01:00Z');
-    expect((await createJob(d, session, generate())).status).toBe(202);
+    expect(limited.body.error).toMatch(/^You've started 50 jobs in the last minute/);
+    expect(await getItem(userPk(session.sub), 'RATE#202610151200')).toMatchObject({ count: 50 });
   });
 
   it('allows 2 running jobs, then answers 429 until one finishes', async () => {

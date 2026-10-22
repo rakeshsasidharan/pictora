@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RATE_LIMIT_PER_MINUTE,
+  TESTER_RATE_LIMIT_PER_MINUTE,
+  TESTERS_GROUP,
   adminModerationQuerySchema,
   adminStatsQuerySchema,
   datesBetween,
   daysBefore,
+  rateLimitPerMinute,
   reviewRequestSchema,
   userSubSchema,
   utcDateSchema,
@@ -59,5 +63,18 @@ describe('date helpers', () => {
   it('counts days back across months', () => {
     expect(daysBefore('2026-03-01', 1)).toBe('2026-02-28');
     expect(daysBefore('2026-10-15', 13)).toBe('2026-10-02');
+  });
+});
+
+describe('rateLimitPerMinute', () => {
+  it('is 10 a minute for everyone outside the testers group (LIM-3)', () => {
+    expect(RATE_LIMIT_PER_MINUTE).toBe(10);
+    for (const groups of [[], ['admins']]) expect(rateLimitPerMinute(groups)).toBe(10);
+  });
+
+  it('is 50 a minute for the testers group', () => {
+    expect(TESTER_RATE_LIMIT_PER_MINUTE).toBe(50);
+    expect(rateLimitPerMinute([TESTERS_GROUP])).toBe(50);
+    expect(rateLimitPerMinute(['admins', TESTERS_GROUP])).toBe(50);
   });
 });

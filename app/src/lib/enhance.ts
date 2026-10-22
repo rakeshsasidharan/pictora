@@ -1,12 +1,12 @@
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
-  RATE_LIMIT_PER_MINUTE,
   RATE_TTL_SECONDS,
   SECONDS_PER_DAY,
   STATS_TTL_DAYS,
   blockingCategory,
   enhanceRequestSchema,
+  rateLimitPerMinute,
   rateSk,
   statsEnhancerSk,
   statsPk,
@@ -67,10 +67,11 @@ export async function enhancePrompt(
   const profile = await ensureProfile(deps.client, deps.tableName, session, now);
   const refusal = profileRefusal(profile, now);
   if (refusal) return refusal;
-  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now))) {
+  const rateLimit = rateLimitPerMinute(session.groups);
+  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now, rateLimit))) {
     return apiError(
       'rate_limited',
-      "You've made 10 requests in the last minute. Wait a moment, then try again.",
+      `You've made ${rateLimit} requests in the last minute. Wait a moment, then try again.`,
     );
   }
 
@@ -125,13 +126,14 @@ async function outputFlagged(deps: EnhanceDeps, enhancedPrompt: string): Promise
 
 /**
  * Counts the call in the minute's rate window that job creation also uses (tech design 4.1). False when the
- * user already made 10 requests this minute.
+ * user already made `max` requests this minute (`rateLimitPerMinute`).
  */
 export async function takeRateSlot(
   client: DynamoDBDocumentClient,
   tableName: string,
   sub: string,
   now: Date,
+  max: number,
 ): Promise<boolean> {
   try {
     await client.send(
@@ -143,7 +145,7 @@ export async function takeRateSlot(
         ExpressionAttributeNames: { '#count': 'count', '#ttl': 'ttl' },
         ExpressionAttributeValues: {
           ':one': 1,
-          ':max': RATE_LIMIT_PER_MINUTE,
+          ':max': max,
           ':ttl': ttlAfter(now, RATE_TTL_SECONDS),
         },
       }),

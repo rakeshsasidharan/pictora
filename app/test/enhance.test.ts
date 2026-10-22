@@ -2,6 +2,8 @@ import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   PROFILE_SK,
   RATE_LIMIT_PER_MINUTE,
+  TESTER_RATE_LIMIT_PER_MINUTE,
+  TESTERS_GROUP,
   TOS_VERSION,
   loadSeedRegistry,
   rateSk,
@@ -237,13 +239,26 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('enhancePrompt against DynamoDB Local', () =
     });
   });
 
+  it('gives the testers group 50 requests a minute in the shared window', async () => {
+    const session = { ...(await onboardedSession()), groups: [TESTERS_GROUP] };
+    for (let index = 0; index < TESTER_RATE_LIMIT_PER_MINUTE; index++) {
+      expect((await enhancePrompt(deps(), session, request)).status).toBe(200);
+    }
+    const refused = await enhancePrompt(deps(), session, request);
+    expect(refused).toMatchObject({ status: 429, body: { code: 'rate_limited' } });
+    expect(refused.body.error).toMatch(/^You've made 50 requests in the last minute/);
+  });
+
   it('takes a slot in a fresh minute again', async () => {
     const sub = newSession().sub;
-    for (let index = 0; index < RATE_LIMIT_PER_MINUTE; index++) {
-      await takeRateSlot(client, tableName, sub, now);
+    const max = RATE_LIMIT_PER_MINUTE;
+    for (let index = 0; index < max; index++) {
+      await takeRateSlot(client, tableName, sub, now, max);
     }
-    expect(await takeRateSlot(client, tableName, sub, now)).toBe(false);
-    expect(await takeRateSlot(client, tableName, sub, new Date('2026-10-15T12:01:00Z'))).toBe(true);
+    expect(await takeRateSlot(client, tableName, sub, now, max)).toBe(false);
+    expect(await takeRateSlot(client, tableName, sub, new Date('2026-10-15T12:01:00Z'), max)).toBe(
+      true,
+    );
   });
 
   it('keeps working when the stats write fails', async () => {
