@@ -8,6 +8,7 @@ import {
   qualityPaused,
   costPerImage,
   generateModels,
+  initialForm,
   modelCostSummary,
   modelForStyle,
   requestCost,
@@ -97,5 +98,74 @@ describe('attachment', () => {
   it('saves under the file name, keeping only safe characters', () => {
     expect(attachment('pictora-01J-v1.png')).toBe('attachment; filename="pictora-01J-v1.png"');
     expect(attachment('a"b;c.png')).toBe('attachment; filename="a_b_c.png"');
+  });
+});
+
+describe('initialForm', () => {
+  const available = generateModels(models);
+
+  it('starts empty, with the default style and its model', () => {
+    expect(initialForm(styles, available)).toEqual({
+      prompt: '',
+      avoid: '',
+      styleId: 'none',
+      choices: choicesForModel(modelForStyle('none', styles, available)!, {
+        quality: 'standard',
+        aspect: '1:1',
+      }),
+      transparent: false,
+      modelReplaced: false,
+    });
+  });
+
+  it("keeps a rerun's settings and seed with the original model", () => {
+    expect(
+      initialForm(styles, available, {
+        prompt: 'A fox',
+        enhancedPrompt: 'A red fox',
+        avoid: 'blur',
+        style: 'anime',
+        modelId: 'mock',
+        quality: 'draft',
+        aspect: '9:16',
+        seed: 5,
+        transparentBackground: true,
+      }),
+    ).toEqual({
+      prompt: 'A fox',
+      avoid: 'blur',
+      styleId: 'anime',
+      choices: { modelId: 'mock', quality: 'draft', aspect: '9:16' },
+      transparent: true,
+      seed: 5,
+      enhancedPrompt: 'A red fox',
+      modelReplaced: false,
+    });
+  });
+
+  it('drops options the model does not take', () => {
+    const form = initialForm(styles, available, {
+      prompt: 'A fox',
+      avoid: 'blur',
+      modelId: 'gpt-image-2',
+      seed: 5,
+      transparentBackground: true,
+    });
+    const gpt = model('gpt-image-2');
+    expect(form.avoid).toBe(gpt.capabilities.negativePrompt ? 'blur' : '');
+    expect(form.transparent).toBe(gpt.capabilities.transparentBackground);
+    expect('seed' in form).toBe(gpt.capabilities.seed);
+  });
+
+  it("picks the style's model, without the seed, when the original is gone", () => {
+    const form = initialForm(styles, available, {
+      prompt: 'A fox',
+      style: 'none',
+      modelId: 'retired',
+      seed: 5,
+    });
+    expect(form.modelReplaced).toBe(true);
+    expect(form.choices?.modelId).toBe(modelForStyle('none', styles, available)?.id);
+    expect(form).not.toHaveProperty('seed');
   });
 });

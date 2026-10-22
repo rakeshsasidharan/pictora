@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { GenerateScreen } from '../../components/generate_screen';
 import { documentClient, tableName } from '../../lib/dynamodb';
+import { rerunSettings } from '../../lib/images';
 import { getMe, type MeBody } from '../../lib/jobs';
 import { jobsDeps } from '../../lib/jobs_deps';
 import { modelsResponse } from '../../lib/models_response';
@@ -16,19 +17,27 @@ export const dynamic = 'force-dynamic';
 
 /**
  * The generate screen (GEN-1 to GEN-10): the enabled models with a queue, the style presets, today's points, and
- * any premium pause from the platform spend cap.
+ * any premium pause from the platform spend cap. `?rerun=<imageId>` fills it with one of the user's generated
+ * images' settings and seed (GAL-3); an image the user doesn't have is ignored.
  */
-export default async function GeneratePage() {
+export default async function GeneratePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rerun?: string | string[] }>;
+}) {
   const session = sessionFromHeaders(await headers());
   // The proxy sends signed-out visitors to sign in before they get here.
   if (!session) redirect('/');
   await requireOnboarding(session);
 
+  const { rerun } = await searchParams;
+  const rerunId = Array.isArray(rerun) ? rerun[0] : rerun;
   const deps = jobsDeps();
-  const [enabled, me, pause] = await Promise.all([
+  const [enabled, me, pause, settings] = await Promise.all([
     registryLoader().enabledModels(),
     getMe(deps, session).then((result) => result.body as unknown as MeBody),
     readPremiumPause(documentClient(), tableName(), deps.spendCapCents, new Date()),
+    rerunId ? rerunSettings(deps, session, rerunId) : Promise.resolve(undefined),
   ]);
   // Models without a queue in this environment would only be refused by POST /api/jobs.
   const { models, styles, premiumPausedUntil } = modelsResponse(
@@ -41,6 +50,7 @@ export default async function GeneratePage() {
       styles={styles}
       points={{ left: me.pointsLeft, limit: me.dailyLimit }}
       premiumPausedUntil={premiumPausedUntil}
+      rerun={settings}
     />
   );
 }

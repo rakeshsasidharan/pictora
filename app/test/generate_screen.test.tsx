@@ -7,6 +7,7 @@ import {
   GenerateScreen,
   type PointsLeft,
 } from '../src/components/generate_screen';
+import type { RerunSettings } from '../src/lib/images';
 import { modelsResponse } from '../src/lib/models_response';
 import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 
@@ -503,20 +504,117 @@ describe('GenerateScreen', () => {
       expect((generate() as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('shows coming soon for the gallery, and links each result to its edit panel', async () => {
+    it('links to the gallery while the job runs, and each result to its edit panel', async () => {
       stubApi({ statuses: [{ status: 'queued' }, { status: 'succeeded', images }] });
       renderScreen();
       fillAndGenerate();
-      fireEvent.click(await screen.findByRole('button', { name: 'gallery' }));
-      const toast = screen.getByText('Gallery coming soon.').closest('.toast') as HTMLElement;
-      expect(within(toast).getByRole('link').getAttribute('href')).toMatch(/\/issues\/23$/);
-      fireEvent.click(within(toast).getByRole('button', { name: 'Dismiss' }));
-      expect(screen.queryByText('Gallery coming soon.')).toBeNull();
+      const gallery = await screen.findByRole('link', { name: 'gallery' });
+      expect(gallery.getAttribute('href')).toBe('/gallery');
 
       await screen.findByText('Status: Done');
       expect(
         screen.getAllByRole('link', { name: 'Edit' }).map((link) => link.getAttribute('href')),
       ).toEqual(['/edit/IMG1?version=1', '/edit/IMG2?version=1']);
+    });
+  });
+
+  describe('rerun', () => {
+    const RERUN: RerunSettings = {
+      prompt: 'A lighthouse at dusk',
+      avoid: 'text',
+      style: 'watercolour',
+      modelId: 'mock',
+      quality: 'draft',
+      aspect: '16:9',
+      seed: 1234,
+      transparentBackground: true,
+    };
+
+    function renderRerun(rerun: RerunSettings) {
+      return render(
+        <GenerateScreen
+          models={models}
+          styles={styles}
+          points={{ left: 25, limit: 25 }}
+          rerun={rerun}
+          pollIntervalMs={5}
+          pollTimeoutMs={2_000}
+        />,
+      );
+    }
+
+    it("fills in the original settings and sends the same seed, in the user's own words", async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
+      renderRerun(RERUN);
+      expect((prompt() as HTMLTextAreaElement).value).toBe('A lighthouse at dusk');
+      expect(
+        (screen.getByRole('textbox', { name: 'Avoid (optional)' }) as HTMLInputElement).value,
+      ).toBe('text');
+      expect((radio('Watercolour') as HTMLInputElement).checked).toBe(true);
+      expect((radio('16:9') as HTMLInputElement).checked).toBe(true);
+      expect((radio(/^Draft/) as HTMLInputElement).checked).toBe(true);
+      expect((radio(/^Mock/) as HTMLInputElement).checked).toBe(true);
+      expect(
+        (screen.getByRole('checkbox', { name: 'Transparent background' }) as HTMLInputElement)
+          .checked,
+      ).toBe(true);
+      // The original used the user's own words, so the rerun does too.
+      expect(
+        (screen.getByRole('checkbox', { name: /Enhance prompt/ }) as HTMLInputElement).checked,
+      ).toBe(false);
+      expect(screen.getByText(/Uses seed 1234 from the original image/)).toBeTruthy();
+
+      fireEvent.click(generate());
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(0);
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toEqual({
+        type: 'generate',
+        prompt: 'A lighthouse at dusk',
+        avoid: 'text',
+        style: 'watercolour',
+        modelId: 'mock',
+        aspect: '16:9',
+        quality: 'draft',
+        count: 1,
+        seed: 1234,
+        transparentBackground: true,
+      });
+    });
+
+    it('reuses the original enhanced prompt without enhancing again', async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
+      renderRerun({ ...RERUN, enhancedPrompt: ENHANCED });
+      expect(
+        (screen.getByRole('textbox', { name: 'Enhanced prompt' }) as HTMLTextAreaElement).value,
+      ).toBe(ENHANCED);
+      fireEvent.click(generate());
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(0);
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({ enhancedPrompt: ENHANCED });
+    });
+
+    it('drops the seed when asked to, or when another model is chosen', async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
+      renderRerun(RERUN);
+      fireEvent.click(screen.getByRole('button', { name: 'Use a random seed' }));
+      expect(screen.queryByText(/Uses seed/)).toBeNull();
+      fireEvent.click(generate());
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).not.toHaveProperty('seed');
+      cleanup();
+
+      renderRerun(RERUN);
+      chooseModel(/^GPT Image 2/);
+      expect(screen.queryByText(/Uses seed/)).toBeNull();
+    });
+
+    it("picks another model when the original isn't available any more", () => {
+      renderRerun({ ...RERUN, modelId: 'retired-model' });
+      expect(screen.getByRole('status').textContent).toMatch(
+        /The model this image was made with isn't available any more, so we picked /,
+      );
+      expect((prompt() as HTMLTextAreaElement).value).toBe('A lighthouse at dusk');
+      expect(screen.queryByText(/Uses seed/)).toBeNull();
     });
   });
 

@@ -11,29 +11,27 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useState, useSyncExternalStore, type FormEvent } from 'react';
-import type { ComingSoonFeature } from '../lib/coming_soon';
 import {
   DEFAULT_QUALITY,
-  DEFAULT_STYLE,
   QUALITY_LABELS,
   aspectRatioStyle,
   choicesForModel,
   costPerImage,
   generateModels,
+  initialForm,
   modelCostSummary,
-  modelForStyle,
   pointsText,
   premiumPausedText,
   qualityPaused,
   requestCost,
   type ModelChoices,
 } from '../lib/generate_options';
+import type { RerunSettings } from '../lib/images';
 import type { MeBody } from '../lib/jobs';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
 import { SAMPLE_IMAGES } from '../lib/sample_images';
 import { EDIT_PATH } from '../lib/site';
 import { useJobStatus } from '../lib/use_job_status';
-import { ComingSoonToast } from './coming_soon_toast';
 import { JobProgress } from './job_progress';
 
 /** Today's points as the screen shows them (LIM-2). */
@@ -49,6 +47,8 @@ export interface GenerateScreenProps {
   points: PointsLeft;
   /** While premium qualities are paused because the month's budget is used up: when they return (ISO 8601). */
   premiumPausedUntil?: string;
+  /** A gallery image's settings to start from, for "Rerun" (GAL-3). */
+  rerun?: RerunSettings;
   /** Polling settings; tests shorten them. */
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
@@ -165,35 +165,51 @@ export function GenerateScreen({
   styles,
   points: initialPoints,
   premiumPausedUntil,
+  rerun,
   pollIntervalMs,
   pollTimeoutMs,
 }: GenerateScreenProps) {
   const available = generateModels(models);
-  const [prompt, setPrompt] = useState('');
-  const [avoid, setAvoid] = useState('');
-  const [styleId, setStyleId] = useState<StyleId>(DEFAULT_STYLE);
-  const [choices, setChoices] = useState<ModelChoices | undefined>(() => {
-    const model = modelForStyle(DEFAULT_STYLE, styles, available);
-    return model && choicesForModel(model, { quality: DEFAULT_QUALITY, aspect: '1:1' });
-  });
+  const [initial] = useState(() => initialForm(styles, available, rerun));
+  const [prompt, setPrompt] = useState(initial.prompt);
+  const [avoid, setAvoid] = useState(initial.avoid);
+  const [styleId, setStyleId] = useState<StyleId>(initial.styleId);
+  const [choices, setChoices] = useState<ModelChoices | undefined>(initial.choices);
   const [count, setCount] = useState(MIN_IMAGE_COUNT);
-  const [transparent, setTransparent] = useState(false);
+  const [transparent, setTransparent] = useState(initial.transparent);
+  /** A rerun's original seed (GAL-3), sent while the chosen model takes one. */
+  const [seed, setSeed] = useState(initial.seed);
   const [points, setPoints] = useState(initialPoints);
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<SubmittedJob>();
-  const [toast, setToast] = useState<ComingSoonFeature>();
   // The server render, and so hydration, assumes the default: on.
   const storedEnhanceOn = useSyncExternalStore(
     subscribeEnhanceSetting,
     storedEnhanceSetting,
     () => true,
   );
-  /** Set by "Use my words" for this visit only, without changing the remembered setting. */
-  const [enhanceOverride, setEnhanceOverride] = useState<boolean>();
+  /**
+   * Set by "Use my words" for this visit only, without changing the remembered setting. A rerun uses what the
+   * original used: its enhanced prompt, or the user's own words.
+   */
+  const [enhanceOverride, setEnhanceOverride] = useState<boolean | undefined>(
+    rerun ? initial.enhancedPrompt !== undefined : undefined,
+  );
   const enhanceOn = enhanceOverride ?? storedEnhanceOn;
-  const [enhanced, setEnhanced] = useState<EnhancedPrompt>();
-  const [notice, setNotice] = useState<string>();
+  const [enhanced, setEnhanced] = useState<EnhancedPrompt | undefined>(() =>
+    initial.enhancedPrompt && initial.choices
+      ? {
+          source: JSON.stringify([initial.prompt.trim(), initial.styleId, initial.choices.modelId]),
+          text: initial.enhancedPrompt,
+        }
+      : undefined,
+  );
+  const [notice, setNotice] = useState<string | undefined>(() => {
+    if (!initial.modelReplaced) return undefined;
+    const name = available.find((model) => model.id === initial.choices?.modelId)?.displayName;
+    return `The model this image was made with isn't available any more${name ? `, so we picked ${name}` : ''}.`;
+  });
 
   const refreshPoints = useCallback(async () => {
     try {
@@ -210,7 +226,6 @@ export function GenerateScreen({
     timeoutMs: pollTimeoutMs,
     onFinish: () => void refreshPoints(),
   });
-  const closeToast = useCallback(() => setToast(undefined), []);
 
   const model = available.find((candidate) => candidate.id === choices?.modelId);
   if (!model || !choices) {
@@ -234,6 +249,8 @@ export function GenerateScreen({
   const busy = submitting || jobActive;
 
   function chooseModel(next: PublicModel) {
+    // A rerun's seed only reproduces the image with the model that made it.
+    if (next.id !== choices?.modelId) setSeed(undefined);
     setChoices((current) =>
       choicesForModel(next, current ?? { quality: DEFAULT_QUALITY, aspect: '1:1' }),
     );
@@ -315,6 +332,7 @@ export function GenerateScreen({
           aspect: choices.aspect,
           quality: choices.quality,
           count,
+          ...(model.capabilities.seed && seed !== undefined ? { seed } : {}),
           ...(model.capabilities.transparentBackground && transparent
             ? { transparentBackground: true }
             : {}),
@@ -506,6 +524,15 @@ export function GenerateScreen({
           )}
         </div>
 
+        {model.capabilities.seed && seed !== undefined && (
+          <p className="form-notice seed-notice">
+            Uses seed {seed} from the original image, so the result comes out close to it.{' '}
+            <button type="button" className="link-button" onClick={() => setSeed(undefined)}>
+              Use a random seed
+            </button>
+          </p>
+        )}
+
         <details className="advanced">
           <summary>Advanced</summary>
           <fieldset className="model-picker">
@@ -589,10 +616,8 @@ export function GenerateScreen({
           poll={poll}
           pointsReserved={job.pointsReserved}
           prompt={job.prompt}
-          onComingSoon={setToast}
         />
       )}
-      {toast && <ComingSoonToast feature={toast} onClose={closeToast} />}
     </main>
   );
 }

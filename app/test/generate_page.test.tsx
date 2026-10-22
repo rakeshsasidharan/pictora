@@ -8,6 +8,9 @@ import { SESSION_HEADERS } from '../src/lib/session';
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 const onboarded = vi.hoisted(() => ({ current: true }));
 const pause = vi.hoisted(() => ({ current: undefined as { until: Date } | undefined }));
+const rerun = vi.hoisted(() => ({
+  settings: vi.fn<(deps: unknown, session: unknown, imageId: string) => Promise<unknown>>(),
+}));
 
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
@@ -52,7 +55,12 @@ vi.mock('../src/lib/jobs', () => ({
   getMe: async () => ({ status: 200, body: { pointsLeft: 19, dailyLimit: 25 } }),
 }));
 
+vi.mock('../src/lib/images', () => ({ rerunSettings: rerun.settings }));
+
 const { default: GeneratePage } = await import('../src/app/generate/page');
+
+const page = (query: { rerun?: string } = {}) =>
+  GeneratePage({ searchParams: Promise.resolve(query) });
 
 function signIn() {
   requestHeaders.current = new Headers({
@@ -66,12 +74,14 @@ describe('generate page', () => {
     requestHeaders.current = new Headers();
     onboarded.current = true;
     pause.current = undefined;
+    rerun.settings.mockReset();
   });
   afterEach(cleanup);
 
   it('shows the form with the models that have a queue and today’s points', async () => {
     signIn();
-    render(await GeneratePage());
+    render(await page());
+    expect(rerun.settings).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { level: 1, name: 'Create an image' })).toBeTruthy();
     expect(screen.getByText('19 of 25 points left today')).toBeTruthy();
     fireEvent.click(screen.getByText('Advanced'));
@@ -83,7 +93,7 @@ describe('generate page', () => {
   it('disables premium qualities while the platform cap is reached', async () => {
     signIn();
     pause.current = { until: new Date('2026-11-01T00:00:00.000Z') };
-    render(await GeneratePage());
+    render(await page());
     expect(screen.getByText(/Premium models are paused until 1 November/)).toBeTruthy();
     const draft = screen.getByRole<HTMLInputElement>('radio', { name: /^Draft/ });
     expect(draft.disabled).toBe(false);
@@ -92,13 +102,45 @@ describe('generate page', () => {
     expect(screen.getByRole<HTMLInputElement>('radio', { name: /^High/ }).disabled).toBe(true);
   });
 
+  it("fills the form with a gallery image's settings for a rerun", async () => {
+    signIn();
+    rerun.settings.mockResolvedValue({
+      prompt: 'A lighthouse at dusk',
+      style: 'watercolour',
+      modelId: 'mock',
+      quality: 'draft',
+      aspect: '16:9',
+      seed: 7,
+    });
+    render(await page({ rerun: '01JAAAAAAAAAAAAAAAAAAAAAAA' }));
+    expect(rerun.settings).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sub: 'user-sub' }),
+      '01JAAAAAAAAAAAAAAAAAAAAAAA',
+    );
+    expect(
+      screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Describe your image' }).value,
+    ).toBe('A lighthouse at dusk');
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: '16:9' }).checked).toBe(true);
+    expect(screen.getByText(/Uses seed 7 from the original image/)).toBeTruthy();
+  });
+
+  it("starts empty when the image to rerun isn't the user's", async () => {
+    signIn();
+    rerun.settings.mockResolvedValue(undefined);
+    render(await page({ rerun: '01JAAAAAAAAAAAAAAAAAAAAAAA' }));
+    expect(
+      screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Describe your image' }).value,
+    ).toBe('');
+  });
+
   it('sends users who have not accepted the current terms to onboarding', async () => {
     signIn();
     onboarded.current = false;
-    await expect(GeneratePage()).rejects.toMatchObject({ url: '/onboarding' });
+    await expect(page()).rejects.toMatchObject({ url: '/onboarding' });
   });
 
   it('sends signed-out visitors home', async () => {
-    await expect(GeneratePage()).rejects.toMatchObject({ url: '/' });
+    await expect(page()).rejects.toMatchObject({ url: '/' });
   });
 });

@@ -1,7 +1,9 @@
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   NotFound,
   NoSuchKey,
   PutObjectCommand,
@@ -43,6 +45,37 @@ export async function presignImage(key: string, downloadName?: string): Promise<
 /** A `Content-Disposition` value that saves the file under the name, keeping only safe characters. */
 export function attachment(name: string): string {
   return `attachment; filename="${name.replace(/[^A-Za-z0-9._-]/g, '_')}"`;
+}
+
+/** S3 deletes at most 1,000 objects in one `DeleteObjects` call. */
+const DELETE_OBJECTS_BATCH = 1000;
+
+/** Deletes every object in the images bucket whose key starts with the prefix, for example one image's files. */
+export async function removeImagePrefix(prefix: string): Promise<void> {
+  let continuationToken: string | undefined;
+  do {
+    const page = await s3().send(
+      new ListObjectsV2Command({
+        Bucket: bucketName(),
+        Prefix: prefix,
+        MaxKeys: DELETE_OBJECTS_BATCH,
+        ContinuationToken: continuationToken,
+      }),
+    );
+    const keys = (page.Contents ?? []).flatMap((object) => (object.Key ? [object.Key] : []));
+    if (keys.length > 0) {
+      const result = await s3().send(
+        new DeleteObjectsCommand({
+          Bucket: bucketName(),
+          Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+      if (result.Errors && result.Errors.length > 0) {
+        throw new Error(`${result.Errors.length} objects under ${prefix} could not be deleted`);
+      }
+    }
+    continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (continuationToken);
 }
 
 /** A presigned POST: the form's action URL and the fields to send before the file. */

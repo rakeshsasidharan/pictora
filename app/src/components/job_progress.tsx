@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { useState, type KeyboardEvent } from 'react';
-import { COMING_SOON, type ComingSoonFeature } from '../lib/coming_soon';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
-import { editImagePath } from '../lib/site';
+import { GALLERY_PATH, editImagePath } from '../lib/site';
 import type { JobPoll } from '../lib/use_job_status';
 import { ReportImage } from './report_image';
 
@@ -17,7 +16,6 @@ export interface JobProgressProps {
   pointsReserved: number;
   /** The prompt the job was made from, used as the images' alt text. */
   prompt: string;
-  onComingSoon: (feature: ComingSoonFeature) => void;
 }
 
 const STEPS = ['queued', 'running', 'succeeded'] as const;
@@ -26,7 +24,7 @@ const STEPS = ['queued', 'running', 'succeeded'] as const;
  * A submitted job: its status as queued, generating and done (GEN-8), then the results with a full-size view,
  * PNG download (GEN-7) and a Report action, or the reason it failed and the refund (GEN-10).
  */
-export function JobProgress({ poll, pointsReserved, prompt, onComingSoon }: JobProgressProps) {
+export function JobProgress({ poll, pointsReserved, prompt }: JobProgressProps) {
   const { job, timedOut, lost } = poll;
   const status = job?.status ?? 'queued';
   const failed = status === 'failed' || status === 'blocked';
@@ -58,19 +56,13 @@ export function JobProgress({ poll, pointsReserved, prompt, onComingSoon }: JobP
       {active && (
         <p className="job-note">
           You can leave this page; your images will be saved to your{' '}
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onComingSoon(COMING_SOON.gallery)}
-          >
-            gallery
-          </button>
-          .
+          <Link href={GALLERY_PATH}>gallery</Link>.
         </p>
       )}
       {timedOut && (
         <p className="job-note">
-          This is taking longer than usual. Your images will be in your gallery when they are ready.
+          This is taking longer than usual. Your images will be in your{' '}
+          <Link href={GALLERY_PATH}>gallery</Link> when they are ready.
         </p>
       )}
       {lost && (

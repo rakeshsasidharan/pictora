@@ -1,9 +1,8 @@
 'use client';
 
-import { MAX_PROMPT_LENGTH, QUALITIES, type Quality } from '@pictora/core';
+import { MAX_PROMPT_LENGTH, QUALITIES, imageKey, type Quality } from '@pictora/core';
 import Link from 'next/link';
 import { useCallback, useRef, useState, type FormEvent } from 'react';
-import { COMING_SOON, type ComingSoonFeature } from '../lib/coming_soon';
 import {
   defaultEditModel,
   editModels,
@@ -21,19 +20,21 @@ import {
   premiumPausedText,
   qualityPaused,
 } from '../lib/generate_options';
-import type { ImageDetailBody, ImageVersionBody } from '../lib/images';
+import type { GalleryImageBody, ImageDetailBody, ImageVersionBody } from '../lib/images';
 import type { JobStatusBody, MeBody } from '../lib/jobs';
 import type { PublicModel } from '../lib/models_response';
 import { GENERATE_PATH } from '../lib/site';
 import { browserUploadClient, UploadError, type UploadClient } from '../lib/upload_client';
 import { UPLOAD_ACCEPT, uploadFileError } from '../lib/upload_files';
 import { useJobStatus } from '../lib/use_job_status';
+import { GalleryPicker } from './gallery_picker';
 import type { PointsLeft } from './generate_screen';
-import { ComingSoonToast } from './coming_soon_toast';
 import { ReportImage } from './report_image';
 
 export interface EditPanelProps {
   detail: ImageDetailBody;
+  /** The signed-in user's `sub`, which gallery reference keys start with (`users/<sub>/…`). */
+  ownerSub: string;
   /** The enabled models the app can queue jobs for; only those that edit are offered. */
   models: PublicModel[];
   points: PointsLeft;
@@ -69,6 +70,7 @@ interface SubmittedEdit {
  */
 export function EditPanel({
   detail,
+  ownerSub,
   models,
   points: initialPoints,
   initialVersion,
@@ -100,9 +102,8 @@ export function EditPanel({
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<SubmittedEdit>();
   const [refreshError, setRefreshError] = useState<string>();
-  const [toast, setToast] = useState<ComingSoonFeature>();
+  const [picking, setPicking] = useState(false);
   const referenceInput = useRef<HTMLInputElement>(null);
-  const closeToast = useCallback(() => setToast(undefined), []);
 
   const refreshPoints = useCallback(async () => {
     try {
@@ -195,6 +196,17 @@ export function EditPanel({
     } finally {
       setReferenceStatus(undefined);
     }
+  }
+
+  /** A gallery image as a reference: its latest version, which the job API checks belongs to the user. */
+  function pickReference(image: GalleryImageBody) {
+    setPicking(false);
+    const key = imageKey(ownerSub, image.imageId, image.latestVersion);
+    setReferences((list) =>
+      list.some((reference) => reference.key === key)
+        ? list
+        : [...list, { key, name: image.title }],
+    );
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -446,7 +458,7 @@ export function EditPanel({
                 type="button"
                 className="button"
                 disabled={sentReferences.length >= allowedReferences}
-                onClick={() => setToast(COMING_SOON.gallery)}
+                onClick={() => setPicking(true)}
               >
                 Choose from gallery
               </button>
@@ -503,7 +515,7 @@ export function EditPanel({
           </button>
         </div>
       </form>
-      {toast && <ComingSoonToast feature={toast} onClose={closeToast} />}
+      {picking && <GalleryPicker onPick={pickReference} onClose={() => setPicking(false)} />}
     </main>
   );
 }
