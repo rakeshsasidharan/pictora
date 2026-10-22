@@ -34,6 +34,8 @@ export interface AuthProxyDeps {
   /** `process.env.NODE_ENV`; local development accepts state-changing requests without a site URL. */
   nodeEnv?: string;
   fetchFn?: FetchFn;
+  /** Extra headers for pages and route handlers, such as the CSP and its nonce, which Next.js applies to scripts. */
+  requestHeaders?: Record<string, string>;
 }
 
 type Access = 'public' | 'api' | 'page';
@@ -80,6 +82,9 @@ export async function authenticate(
 
   const requestHeaders = new Headers(request.headers);
   deleteSessionHeaders(requestHeaders);
+  for (const [name, value] of Object.entries(deps.requestHeaders ?? {})) {
+    requestHeaders.set(name, value);
+  }
   if (skipsSession(pathname)) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }

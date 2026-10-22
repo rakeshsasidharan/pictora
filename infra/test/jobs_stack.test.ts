@@ -384,7 +384,7 @@ describe('Jobs stack: account purge', () => {
     expect(actionsOf(cognito ?? {})).toEqual(['cognito-idp:AdminDeleteUser']);
     expect(JSON.stringify(cognito?.Resource)).toContain('UserPool');
     const s3Actions = statements.flatMap(actionsOf).filter((a) => a.startsWith('s3:'));
-    expect(s3Actions).toEqual(expect.arrayContaining(['s3:ListBucket', 's3:DeleteObject*']));
+    expect(s3Actions).toEqual(expect.arrayContaining(['s3:ListBucket', 's3:DeleteObject']));
     expect(s3Actions.filter((a) => /^s3:(Get|Put)/.test(a))).toEqual([]);
     expect(statements.flatMap(actionsOf)).toContain('sqs:SendMessage');
     for (const statement of statements) expect(statement.Resource).not.toBe('*');

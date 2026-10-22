@@ -130,13 +130,18 @@ describe('GET /api/models', () => {
   it('lists the mock model in dev only to the testers group', async () => {
     useRegistry(seed, 'dev');
     expect(ids(await (await GET(modelsRequest())).json())).toContain('mock');
-    for (const groups of [[], ['admins'], 'signed-out'] as const) {
-      const body = await (
-        await GET(modelsRequest(groups === 'signed-out' ? groups : [...groups]))
-      ).json();
+    for (const groups of [[], ['admins']] as const) {
+      const body = await (await GET(modelsRequest([...groups]))).json();
       expect(ids(body)).not.toContain('mock');
       expect(ids(body)).toHaveLength(seed.length - 1);
     }
+  });
+
+  it('answers 401 without a session, before reading the registry', async () => {
+    useRegistry(seed, 'dev');
+    const response = await GET(modelsRequest('signed-out'));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Unauthorized' });
   });
 });
 

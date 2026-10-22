@@ -189,7 +189,24 @@ export class WebStack extends Stack {
       );
     }
     props.table.grantReadWriteData(this.appFunction);
-    props.imagesBucket.grantReadWrite(this.appFunction);
+    // Exact actions rather than `grantReadWrite`, whose `s3:GetObject*`, `s3:List*` and `s3:DeleteObject*` are
+    // wildcards (tech design 12): presigned reads and upload POSTs, storing completed uploads, and deleting images.
+    this.appFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+        resources: [
+          props.imagesBucket.arnForObjects('users/*'),
+          props.imagesBucket.arnForObjects('uploads/*'),
+        ],
+      }),
+    );
+    // Deleting an image lists its prefix; listing also turns a missing object's 403 into a 404.
+    this.appFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [props.imagesBucket.bucketArn],
+      }),
+    );
     for (const provider of QUEUE_PROVIDERS)
       props.queues[provider].grantSendMessages(this.appFunction);
     props.purgeQueue.grantSendMessages(this.appFunction);

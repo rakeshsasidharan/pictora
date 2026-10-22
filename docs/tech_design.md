@@ -405,9 +405,45 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 - Least-privilege IAM per function. The app can read and write the table, send to the queues, presign for its bucket, and disable and sign out users of its user pool (account deletion). The purge Lambda can delete users of the pool and objects in the images bucket. The worker can also read the secrets, read objects under `users/` and `uploads/` (an edit's parent and references), and call Bedrock. Neither can delete the table or the buckets.
 - No secrets in the browser or in the repo. Provider calls happen only in the worker or the app's server side.
 - Every API checks ownership: users can reach only their own items under `USER#<sub>`, and job reads check `userId`.
-- Security headers via Next.js middleware: CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`.
-- Input limits: prompt up to 2,000 characters, avoid field up to 500, `n` from 1 to 4, and enum checks on every option.
+- Least-privilege means exact actions: no `*` in any action of a Pictora role, so the app's and workers' S3 access is spelled out (`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on `users/*` and `uploads/*`, `s3:ListBucket` on the bucket) rather than CDK's `grantReadWrite`, whose `s3:GetObject*`, `s3:List*` and `s3:DeleteObject*` reach further. The worker may put objects under `users/` only, and the purge may delete objects under `users/` and `uploads/`. No role may delete the table or a bucket, or change a bucket policy. The CDK assertion test `infra/test/iam_policies.test.ts` checks both; roles CDK owns (`BucketDeployment`, dev's bucket auto-delete, the custom resource provider) are exempt from the wildcard check only.
+- Security headers on every response the app sends, set by the proxy (`app/src/proxy.ts`, `app/src/lib/security_headers.ts`):
+  - `Content-Security-Policy`: `default-src 'self'`; `script-src 'self' 'nonce-<per request>' 'strict-dynamic'` (no `unsafe-eval` or `unsafe-inline`; `next dev` alone adds `unsafe-eval`); `style-src 'self' 'unsafe-inline'` (React renders `style` attributes); `img-src 'self' data:` and the images bucket; `connect-src 'self'`, the images bucket (upload POSTs) and the Cognito domain; `form-action 'self'` and the Cognito domain (sign-out redirects there); `frame-ancestors 'none'`; `base-uri 'self'`; `object-src 'none'`. The proxy passes the nonce to Next.js in the request's CSP header, and Next.js puts it on its own scripts.
+  - `Strict-Transport-Security: max-age=63072000; includeSubDomains` in prod.
+  - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, and `X-Frame-Options: DENY` for browsers without `frame-ancestors`.
+- Input limits: prompt up to 2,000 characters, avoid field up to 500, `n` from 1 to 4, and enum checks on every option. JSON bodies are at most 16 KB (`readJsonBody`, 413 `payload_too_large`, checked on the bytes read as well as `Content-Length`), and every body schema is a strict zod object, so unknown fields answer 400.
+- No secrets in the client bundles: CI scans `.next/static` (`app/scripts/check_bundle_secrets.mjs`) for key patterns (OpenAI and Google API keys, AWS access keys, private keys, Secrets Manager values) after the build, and fails on a match.
+- Dependencies: `npm audit --omit=dev --audit-level=high` runs in CI; Dependabot opens update PRs for npm weekly.
 - AWS WAF is **not** in v1 (it costs about $5–10 a month, against a $100 total cap). App-level rate limits and points cover abuse at launch. Add WAF with a rate-based rule if abuse appears.
+
+### 12.1 Endpoint audit
+
+Every `/api` route, as built. "Session" means the proxy answers 401 without one and the route checks again; "admins" means the proxy and the route both answer 403 outside the `admins` group. "Rate window" is the per-user minute counter jobs use (`RATE_LIMIT_PER_MINUTE`, 10; 50 for the testers group); 429 when full. Routes without a rate limit only read, or act once on the caller's own data; the app's reserved concurrency bounds them. `app/test/api_access.test.ts` checks that this table lists every route, that every route but the health check answers 401 without a session, and that another user's IDs answer 404 (403 for admin routes).
+
+| Method | Path | Auth | Ownership | Input schema | Rate limit |
+| --- | --- | --- | --- | --- | --- |
+| GET | `/api/health` | Public | None (no data) | None | None |
+| GET | `/api/models` | Session | Mock model for the testers group only | None | None; cached 60 s |
+| GET | `/api/me` | Session | Caller's profile (`USER#<sub>`) | None | None |
+| DELETE | `/api/me` | Session | Caller's account | None | None; once per account |
+| POST | `/api/me/onboarding` | Session | Caller's profile | `onboardingRequestSchema` | None; idempotent |
+| POST | `/api/enhance` | Session, onboarded, not suspended | Caller's profile | `enhanceRequestSchema` | Rate window |
+| POST | `/api/jobs` | Session, onboarded, not suspended | An edit's parent version and every reference must be the caller's (404) | `createJobRequestSchema` | Rate window, daily points, active jobs |
+| GET | `/api/jobs/:id` | Session | `userId` must be the caller (404) | ULID | None |
+| POST | `/api/uploads` | Session, onboarded, not suspended | Key under `uploads/<sub>/` | `uploadRequestSchema` | Rate window |
+| POST | `/api/uploads/:id/complete` | Session, onboarded, not suspended | Key built from the caller's `sub` (404 otherwise) | ULID | Once per upload |
+| GET | `/api/images` | Session | Caller's partition | `cursor` must be a ULID | None |
+| GET | `/api/images/:id` | Session | Caller's partition (404) | ULID | None |
+| DELETE | `/api/images/:id` | Session | Caller's partition (404) before any S3 delete | ULID | None |
+| GET | `/api/images/:id/versions/:n/download` | Session | Caller's partition (404) | ULID, version number | None |
+| POST | `/api/reports` | Session | Caller's version (404) | `reportRequestSchema` | Rate window |
+| GET | `/api/admin/stats` | Admins | Not user-scoped | `adminStatsQuerySchema` | None |
+| GET | `/api/admin/moderation` | Admins | Not user-scoped | `adminModerationQuerySchema` | None |
+| POST | `/api/admin/moderation/:date/:id/review` | Admins | Not user-scoped | Date, ULID, `reviewRequestSchema` | None |
+| GET | `/api/admin/users/:sub` | Admins | Not user-scoped | `userSubSchema` | None |
+| POST | `/api/admin/users/:sub/suspend` | Admins | An admin can't suspend themselves | `userSubSchema` | None |
+| POST | `/api/admin/users/:sub/unsuspend` | Admins | Not user-scoped | `userSubSchema` | None |
+
+Gaps fixed in this audit: `GET /api/models` checks the session itself instead of relying on the proxy alone; `POST /api/reports` counts in the rate window, so a script can't flood the review queue; JSON bodies are capped at 16 KB.
 
 ## 13. Testing strategy
 
