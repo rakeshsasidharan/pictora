@@ -224,6 +224,16 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",
     },
+    "TestersGroupAB5510CA": {
+      "Properties": {
+        "Description": "Test accounts that may use the dev-only Mock model",
+        "GroupName": "testers",
+        "UserPoolId": {
+          "Ref": "UserPool6BA7E5F2",
+        },
+      },
+      "Type": "AWS::Cognito::UserPoolGroup",
+    },
     "UserPool6BA7E5F2": {
       "DeletionPolicy": "Delete",
       "Properties": {

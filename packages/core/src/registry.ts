@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import seedModels from '../models.json' with { type: 'json' };
+import { TESTERS_GROUP } from './admin.js';
 import { mapAspect } from './size_mapping.js';
 import { STYLE_IDS, type StyleId } from './styles.js';
 
@@ -154,6 +155,18 @@ export function modelsForEnvironment(
   environment: Environment,
 ): ModelConfig[] {
   return models.filter((model) => model.environments.includes(environment));
+}
+
+/**
+ * The models a user may use: the Mock model only for the `testers` group (the e2e test account), so real
+ * accounts never see it or make images with it.
+ */
+export function modelsForGroups<T extends Pick<ModelConfig, 'provider'>>(
+  models: readonly T[],
+  groups: readonly string[],
+): T[] {
+  if (groups.includes(TESTERS_GROUP)) return [...models];
+  return models.filter((model) => model.provider !== 'mock');
 }
 
 export function findModel(models: readonly ModelConfig[], id: string): ModelConfig | undefined {

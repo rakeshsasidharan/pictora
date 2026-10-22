@@ -3,6 +3,7 @@ export {
   DEFAULT_STATS_RANGE_DAYS,
   MAX_STATS_RANGE_DAYS,
   STATS_MODERATION_SK,
+  TESTERS_GROUP,
   TOP_USERS_LIMIT,
   adminModerationQuerySchema,
   adminStatsQuerySchema,
@@ -147,6 +148,7 @@ export {
   loadSeedRegistry,
   modelConfigSchema,
   modelsForEnvironment,
+  modelsForGroups,
   parseRegistry,
   validateRegistry,
 } from './registry.js';

@@ -2,6 +2,7 @@ import { DeleteCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/l
 import {
   PLATFORM_PK,
   PROFILE_SK,
+  TESTERS_GROUP,
   TOS_VERSION,
   loadSeedRegistry,
   signUpFlagPk,
@@ -72,7 +73,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('platform cap and abuse flags with DynamoDB 
   });
   const newSession = (email = 'user@example.com'): Session => {
     sessions += 1;
-    return { sub: `cap-${sessions}-${Date.now()}`, email, groups: [] };
+    // A tester, since these jobs use the Mock model.
+    return { sub: `cap-${sessions}-${Date.now()}`, email, groups: [TESTERS_GROUP] };
   };
   const onboard = (sub: string) =>
     client.send(

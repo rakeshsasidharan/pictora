@@ -3,6 +3,7 @@ import {
   PLATFORM_PK,
   PROFILE_SK,
   STATS_MODERATION_SK,
+  TESTERS_GROUP,
   TOS_VERSION,
   imageKey,
   loadSeedRegistry,
@@ -398,7 +399,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('admin APIs against DynamoDB Local', () => {
   it('suspends a user, which stops their jobs until they are unsuspended', async () => {
     const sub = 'suspendee';
     await profile(sub);
-    const session: Session = { sub, email: `${sub}@example.com`, groups: [] };
+    // A tester, since the jobs it tries use the Mock model.
+    const session: Session = { sub, email: `${sub}@example.com`, groups: [TESTERS_GROUP] };
     const jobsDeps: JobsDeps = {
       client,
       tableName,

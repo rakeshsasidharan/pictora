@@ -44,6 +44,13 @@ describe('Auth stack: user pool', () => {
   it('has the admins group', () => {
     dev.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'admins' });
   });
+
+  // Prod never offers the Mock model, so its testers group stays empty; it exists so both stages match.
+  it('has the testers group for the e2e account', () => {
+    dev.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'testers' });
+    prod.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'testers' });
+    dev.resourceCountIs('AWS::Cognito::UserPoolGroup', 2);
+  });
 });
 
 describe('Auth stack: Google provider', () => {
