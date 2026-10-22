@@ -4,12 +4,14 @@ import type { ReactNode } from 'react';
 import { SiteFooter } from '../components/site_footer';
 import { SiteHeader } from '../components/site_header';
 import { sessionFromHeaders } from '../lib/session';
+import { SITE_DESCRIPTION } from '../lib/site';
 import './globals.css';
 
+// The favicon, icon and Apple touch icon come from the favicon.ico, icon.png and apple-icon.png files next to
+// this layout, and the manifest from manifest.ts; app/scripts/generate_icons.mjs makes the images.
 export const metadata: Metadata = {
   title: 'Pictora',
-  description:
-    'Turn text prompts into images, from watercolour to photorealism. Free, with a daily allowance.',
+  description: SITE_DESCRIPTION,
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
