@@ -11,6 +11,7 @@ import {
   type Quality,
   type StyleId,
 } from '@pictora/core';
+import { recordDiscarded, recordDownload } from '@pictora/core/metrics-store';
 import { apiError, imageFileName, logError, type ApiResult, type JobsDeps } from './jobs';
 import type { Session } from './session';
 
@@ -110,6 +111,10 @@ interface VersionItem {
   seed?: number;
   transparentBackground?: boolean;
   createdAt?: string;
+  /** The job that made it; absent for an upload. */
+  jobId?: string;
+  /** Set the first time it is downloaded (tech design 11.1). */
+  downloadedAt?: string;
 }
 
 /**
@@ -309,7 +314,8 @@ async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[
 
 /**
  * `GET /api/images/:id/versions/:n/download` (GAL-3, GEN-7): a presigned URL that saves the version's original
- * PNG (`Content-Disposition: attachment`), or undefined when the caller has no such version.
+ * PNG (`Content-Disposition: attachment`), or undefined when the caller has no such version. The first download
+ * of a generated version counts as `image_downloaded` for the keep rate (tech design 11.1).
  */
 export async function versionDownloadUrl(
   deps: ImagesDeps,
@@ -328,6 +334,13 @@ export async function versionDownloadUrl(
     )
   ).Item as VersionItem | undefined;
   if (!item?.s3Key.startsWith(`users/${session.sub}/`)) return undefined;
+  if (item.jobId && !item.downloadedAt) {
+    try {
+      await recordDownload(deps, session.sub, imageId, number, new Date());
+    } catch (error) {
+      logError('Counting a download failed', { imageId, error });
+    }
+  }
   return deps.presign(item.s3Key, imageFileName(imageId, number));
 }
 
@@ -336,7 +349,7 @@ export async function versionDownloadUrl(
  * the numbering included), then its `IMG#` and `VER#` items. Objects go first, so a failure leaves the image in
  * the gallery to delete again. The objects are swept once more at the end, in case an edit that was running
  * stored its result in between; that edit then fails with a refund, because the image is gone (tech design 5.3).
- * Another user's image answers 404.
+ * Another user's image answers 404. Generated versions deleted unkept count against the keep rate.
  */
 export async function deleteImage(
   deps: ImageDeleteDeps,
@@ -361,11 +374,28 @@ export async function deleteImage(
       await deleteBatch(deps, keys.slice(start, start + DELETE_BATCH));
     }
     await deps.removePrefix(prefix);
+    await countDiscarded(deps, imageId, versions);
   } catch (error) {
     logError('Deleting an image failed', { imageId, error });
     return apiError('deletion_failed', "We couldn't delete your image. Please try again.");
   }
   return { status: 200, body: { imageId, deleted: true } };
+}
+
+/**
+ * Generated versions deleted within 7 days without a download weren't kept (tech design 11.1). Logged, never
+ * thrown: the image is already gone.
+ */
+async function countDiscarded(
+  deps: ImagesDeps,
+  imageId: string,
+  versions: VersionItem[],
+): Promise<void> {
+  try {
+    await recordDiscarded(deps, versions, new Date());
+  } catch (error) {
+    logError('Counting a deleted image failed', { imageId, error });
+  }
 }
 
 async function deleteBatch(deps: ImagesDeps, keys: { PK: string; SK: string }[]): Promise<void> {

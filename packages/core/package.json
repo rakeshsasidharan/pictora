@@ -26,6 +26,10 @@
       "types": "./dist/src/block_store.d.ts",
       "default": "./dist/src/block_store.js"
     },
+    "./metrics-store": {
+      "types": "./dist/src/metrics_store.d.ts",
+      "default": "./dist/src/metrics_store.js"
+    },
     "./models.json": "./models.json"
   },
   "files": [

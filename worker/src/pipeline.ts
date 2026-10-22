@@ -27,6 +27,7 @@ import {
 } from '@pictora/providers';
 import type { EmitMetrics, MetricPoint } from '@pictora/core/observability';
 import { applyCooldown } from '@pictora/core/block-store';
+import { recordGeneration } from '@pictora/core/metrics-store';
 import { ulid } from 'ulid';
 import { EditSourceError, loadEditInputs, type EditInputs } from './edit.js';
 import {
@@ -253,6 +254,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     { name: 'ProviderCostCents', value: providerCostCents, unit: 'Count' },
   ]);
   if (deps.spend && providerCostCents > 0) await reportMonthlySpend(deps, deps.spend, deps.now());
+  await recordSuccessMetrics(deps, job, fields);
   log('INFO', 'Job succeeded', {
     ...fields,
     outcome: 'succeeded',
@@ -263,6 +265,23 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
     latencyMs,
   });
   return 'succeeded';
+}
+
+/**
+ * Records the success metrics that depend on the user (tech design 11.1): active today, and a first-session or
+ * returning generation. The job's own counts were written with its final status. A failure here is logged, never
+ * thrown: the job has already succeeded.
+ */
+async function recordSuccessMetrics(
+  deps: PipelineDeps,
+  job: JobItem,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await recordGeneration(deps, job.userId, job.createdAt, deps.now());
+  } catch (error) {
+    log('ERROR', 'Recording the success metrics failed', { ...fields, error });
+  }
 }
 
 /**

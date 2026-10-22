@@ -117,8 +117,9 @@ describe('EditPanel', () => {
     expect(versionButton(3).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Version 3' })).toBeTruthy();
     expect(screen.getByRole<HTMLImageElement>('img', { name: 'Add stars' }).src).toBe(STARS.url);
+    // Downloads go through the app, which counts them for the keep rate.
     expect(screen.getByRole('link', { name: 'Download PNG' }).getAttribute('href')).toBe(
-      STARS.downloadUrl,
+      `/api/images/${IMAGE_ID}/versions/3/download`,
     );
   });
 
@@ -153,7 +154,7 @@ describe('EditPanel', () => {
     fireEvent.click(versionButton(1));
     expect(versionButton(1).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('link', { name: 'Download PNG' }).getAttribute('href')).toBe(
-      ORIGINAL.downloadUrl,
+      `/api/images/${IMAGE_ID}/versions/1/download`,
     );
     expect(screen.getByText('Edits version 1. Earlier versions are always kept.')).toBeTruthy();
 

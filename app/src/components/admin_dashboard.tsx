@@ -5,13 +5,17 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ADMIN_RUNBOOK_URL, dollars, percent, providerLabel } from '../lib/admin_format';
 import type { AdminStatsBody } from '../lib/admin_stats';
 import { SpendChart } from './spend_chart';
+import { SuccessMetrics } from './success_metrics';
 
 type StatsState =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
   | { phase: 'ready'; stats: AdminStatsBody };
 
-/** The admin dashboard (ADM-3): KPI tiles, daily spend by provider, per-model totals and today's top users. */
+/**
+ * The admin dashboard (ADM-3): KPI tiles, daily spend by provider, per-model totals, today's top users, and the
+ * PRD's success metrics over the same range.
+ */
 export function AdminDashboard() {
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
   const [draft, setDraft] = useState<{ from: string; to: string }>({ from: '', to: '' });
@@ -87,6 +91,8 @@ export function AdminDashboard() {
         </p>
       )}
       {state.phase === 'ready' && <StatsView stats={state.stats} />}
+
+      <SuccessMetrics range={range} />
 
       <p className="admin-note">
         Model kill switches (ADM-2) and per-user point overrides (ADM-5) are changed with the AWS

@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useState, type KeyboardEvent } from 'react';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
-import { GALLERY_PATH, editImagePath } from '../lib/site';
+import { reportFirstImage } from '../lib/first_image';
+import { GALLERY_PATH, downloadPath, editImagePath } from '../lib/site';
 import type { JobPoll } from '../lib/use_job_status';
 import { ReportImage } from './report_image';
 
@@ -100,10 +101,10 @@ function ResultsGrid({ images, prompt }: { images: JobImage[]; prompt: string })
               onClick={() => setViewing(image)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-              <img src={image.url} alt={alt} />
+              <img src={image.url} alt={alt} onLoad={() => void reportFirstImage()} />
             </button>
             <div className="result-actions">
-              <a className="button" href={image.downloadUrl} download>
+              <a className="button" href={downloadPath(image.imageId, image.version)} download>
                 Download PNG
               </a>
               <Link className="button" href={editImagePath(image.imageId, image.version)}>
@@ -142,7 +143,11 @@ function FullSizeView({
       {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
       <img src={image.url} alt={alt} />
       <div className="result-actions">
-        <a className="button button-primary" href={image.downloadUrl} download>
+        <a
+          className="button button-primary"
+          href={downloadPath(image.imageId, image.version)}
+          download
+        >
           Download PNG
         </a>
         {/* Focused on open, so Escape and Enter work straight away. */}

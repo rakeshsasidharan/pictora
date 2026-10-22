@@ -60,6 +60,13 @@ export const MODEL_HEALTH_MEMORY_MB = 512;
 export const MODEL_HEALTH_TIMEOUT_SECONDS = 120;
 export const MODEL_HEALTH_HOUR_UTC = 6;
 
+/** The daily success metrics summary (tech design 11.1): same image, its own handler, at 00:30 UTC. */
+export const SUCCESS_METRICS_HANDLER = 'success_metrics.handler';
+export const SUCCESS_METRICS_MEMORY_MB = 512;
+export const SUCCESS_METRICS_TIMEOUT_SECONDS = 120;
+export const SUCCESS_METRICS_HOUR_UTC = 0;
+export const SUCCESS_METRICS_MINUTE_UTC = 30;
+
 /** The account purge (AUTH-3): same image, its own handler, fed by the purge queue. */
 export const PURGE_HANDLER = 'purge.handler';
 export const PURGE_MEMORY_MB = 512;
@@ -100,6 +107,8 @@ export class JobsStack extends Stack {
   readonly workerFunction: DockerImageFunction;
   readonly sweeperFunction: DockerImageFunction;
   readonly modelHealthFunction: DockerImageFunction;
+  /** Computes the daily success metrics summaries (tech design 11.1). */
+  readonly successMetricsFunction: DockerImageFunction;
   /** Takes `{ sub, username }` from `DELETE /api/me` and deletes the account's data and Cognito user. */
   readonly purgeQueue: Queue;
   readonly purgeFunction: DockerImageFunction;
@@ -259,6 +268,39 @@ export class JobsStack extends Stack {
       description: 'Checks every enabled Pictora model still exists with its provider',
       schedule: Schedule.cron({ minute: '0', hour: String(MODEL_HEALTH_HOUR_UTC) }),
       targets: [new LambdaFunction(this.modelHealthFunction, { retryAttempts: 0 })],
+    });
+
+    this.successMetricsFunction = new DockerImageFunction(this, 'SuccessMetricsFunction', {
+      code: DockerImageCode.fromEcr(repository, {
+        tagOrDigest: config.workerImageDigest,
+        cmd: [SUCCESS_METRICS_HANDLER],
+      }),
+      architecture: Architecture.ARM_64,
+      memorySize: SUCCESS_METRICS_MEMORY_MB,
+      timeout: Duration.seconds(SUCCESS_METRICS_TIMEOUT_SECONDS),
+      logGroup: new LogGroup(this, 'SuccessMetricsLogGroup', {
+        retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+        removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        PICTORA_ENV: config.envName,
+        GIT_SHA: config.gitSha,
+        TABLE_NAME: props.table.tableName,
+      },
+    });
+    // Reads the day's counters and stats, and writes only the `SUMMARY` items.
+    props.table.grantReadData(this.successMetricsFunction);
+    this.successMetricsFunction.addToRolePolicy(
+      new PolicyStatement({ actions: ['dynamodb:PutItem'], resources: [props.table.tableArn] }),
+    );
+    new Rule(this, 'SuccessMetricsSchedule', {
+      description: 'Computes the Pictora success metrics for the days before today',
+      schedule: Schedule.cron({
+        minute: String(SUCCESS_METRICS_MINUTE_UTC),
+        hour: String(SUCCESS_METRICS_HOUR_UTC),
+      }),
+      // A failed run is retried once; running twice gives the same summaries.
+      targets: [new LambdaFunction(this.successMetricsFunction, { retryAttempts: 1 })],
     });
 
     this.purgeQueue = new Queue(this, 'PurgeQueue', {

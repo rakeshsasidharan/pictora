@@ -84,6 +84,41 @@ export type {
 } from './jobs.js';
 export { TOS_VERSION } from './legal.js';
 export {
+  ACTIVE_WINDOW_DAYS,
+  FIRST_SESSION_MS,
+  KEEP_WINDOW_DAYS,
+  MAX_TTFI_MS,
+  METRICS_COUNTS_SK,
+  METRICS_SUMMARY_SK,
+  METRICS_TTL_DAYS,
+  METRIC_COUNTERS,
+  METRIC_IDS,
+  RETURN_WINDOW_MS,
+  TTFI_ACCOUNT_AGE_MS,
+  activeUserSk,
+  dailySummary,
+  median,
+  meetsTarget,
+  metricTargets,
+  metricsPk,
+  periodMetrics,
+  ratio,
+  ttfiRequestSchema,
+  ttfiSk,
+  windowClosed,
+} from './metrics.js';
+export type {
+  DailySummary,
+  MetricCounter,
+  MetricCounts,
+  MetricId,
+  MetricTarget,
+  PeriodMetrics,
+  Ratio,
+  SummaryInputs,
+  TtfiRequest,
+} from './metrics.js';
+export {
   ADMIN_ACTIONS,
   ALWAYS_BLOCKED_CATEGORIES,
   BLOCKED_CATEGORIES,
