@@ -19,6 +19,7 @@ These apply to every session, local or cloud.
 - A sub-feature that is out of scope shows a toast saying "<Feature> coming soon", and must have an open GitHub issue.
 - Write the tests the issue lists, plus any others the change needs (unit, component, CDK assertions). All checks must pass before work is called done: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx cdk synth` in `infra/` (it synthesises every stack; the CLI ignores `--all` for synth) (run whichever exist at the time).
 - Leave no lint, type or build warnings.
+- New UI uses shadcn/ui components (`app/src/components/ui/`) and Tailwind utilities only: no other CSS and no `style=` props (tech design 3.3).
 - Naming: `snake_case` file names and `PascalCase` classes and React components. Framework-mandated file names (`page.tsx`, `layout.tsx`, `route.ts`, `middleware.ts`, config files) are the exception.
 - Never commit secrets, AWS account IDs or API keys; the repo is public. Account-specific values come from GitHub variables or CDK context at deploy time.
 - No CDK context lookups (`fromLookup` and similar). Synth must work without AWS credentials.

@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     // Test against core's and providers' source, so tests don't need them built first.
     alias: [
+      { find: /^@\/(.*)$/, replacement: fileURLToPath(new URL('./src/$1', import.meta.url)) },
       { find: /^@pictora\/core$/, replacement: coreSource('index.ts') },
       { find: /^@pictora\/core\/registry-store$/, replacement: coreSource('registry_store.ts') },
       { find: /^@pictora\/core\/observability$/, replacement: coreSource('observability.ts') },

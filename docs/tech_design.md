@@ -31,7 +31,10 @@ Images use S3 presigned URLs rather than CloudFront signed URLs. They need no Cl
 pictora/
 ├── app/                    Next.js web app (UI + API route handlers)
 │   ├── src/app/            App Router pages and /api routes
-│   ├── src/lib/            auth, db, s3, rate limits, API helpers
+│   ├── src/lib/            auth, db, s3, rate limits, API helpers, cn() (utils.ts)
+│   ├── src/components/     screens and shared components; ui/ holds the shadcn/ui components (section 3.3)
+│   ├── src/hooks/          React hooks shared by components (use_mobile.ts)
+│   ├── components.json     shadcn/ui settings (style, aliases, base colour)
 │   ├── content/legal/      terms, content policy and privacy policy in Markdown
 │   ├── public/static/      landing page sample images (served from the assets bucket)
 │   └── Dockerfile          standalone build + Lambda Web Adapter
@@ -96,6 +99,14 @@ flowchart LR
   - `model_health` (daily, 06:00 UTC): checks every enabled registry model against its provider's models list: OpenAI's models list, the Gemini models list (same `@google/genai` backend as the adapter), and Bedrock `ListFoundationModels` for Stability AI (`bedrock:ListFoundationModels`). A model that is missing, marked legacy by Bedrock, or retiring within 60 days (the registry's `eolDate` or Bedrock's end of life) is logged by name and counted in `ModelHealthProblems`; the model health alarm emails the admin, which covers the model-retirement risk in the PRD. A provider whose list can't be read is logged and skipped, never flagged.
 - `success_metrics` (daily, 00:30 UTC): computes the success metrics summaries (section 11.1) for the 8 days before today. A failed run is retried once; a rerun gives the same summaries.
 - Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
+
+### 3.3 UI and styling
+
+- **Stack:** Tailwind CSS v4 (through `@tailwindcss/postcss`, `app/postcss.config.mjs`) and shadcn/ui (new-york style, base colour neutral, `lucide-react` icons). `app/components.json` holds the shadcn settings; the `@/*` import alias points at `app/src`.
+- **Rules for UI code:** style with Tailwind utilities and shadcn/ui components only. No other CSS, no `style=` props, no new classes in `globals.css`. Build screens from the components in `app/src/components/ui/`, which are shadcn's sources adapted to this repo (snake_case file names such as `dropdown_menu.tsx`, and fixes for the repo's lint rules), and join classes with `cn()` from `app/src/lib/utils.ts`. To add a shadcn component, add its source the same way: rename the file to snake_case and fix its imports.
+- **`globals.css`:** the Tailwind and shadcn setup comes first: the imports (`tailwindcss`, `tw-animate-css`), the `dark` custom variant, the `:root` and `.dark` tokens, and the `@theme inline` mapping. The old hand-written classes follow in the `legacy` cascade layer, which sits above Tailwind's preflight and below its utilities (`@layer theme, base, legacy, components, utilities`). They use `--legacy-*` colour variables with light and dark values, and the layer reverts preflight's resets to browser defaults for elements outside shadcn components (anything without `data-slot`), so the old screens look as they did. The redesign replaces them screen by screen and deletes the layer (#107 to #112).
+- **Themes:** `next-themes` (`ThemeProvider` in the root layout, `attribute="class"`, `defaultTheme="system"`, `enableSystem`) puts `light` or `dark` on `<html>`, follows the OS live while the choice is System, and keeps the choice in local storage. Its inline script sets the class before the first paint (`suppressHydrationWarning` on `<html>`), carrying the CSP nonce from the `x-nonce` request header when the proxy sets one. `ThemeSwitcher` (a `DropdownMenu`: Light, Dark, System) sits in the site header.
+- **Toasts:** shadcn's `Sonner` `Toaster` is mounted once in the root layout and follows the theme; show toasts with `toast()` from `sonner`, including the "<Feature> coming soon" ones.
 
 ## 4. Data model (DynamoDB)
 

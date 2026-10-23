@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { LandingMarker } from '../components/landing_marker';
 import { SiteFooter } from '../components/site_footer';
 import { SiteHeader } from '../components/site_header';
+import { ThemeProvider } from '../components/theme_provider';
+import { Toaster } from '../components/ui/sonner';
 import { sessionFromHeaders } from '../lib/session';
 import { SITE_DESCRIPTION } from '../lib/site';
 import './globals.css';
@@ -18,14 +20,19 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const session = sessionFromHeaders(await headers());
+  const requestHeaders = await headers();
+  const session = sessionFromHeaders(requestHeaders);
+  // next-themes changes the class on <html> before React hydrates, which is expected.
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <SiteHeader session={session} />
-        {children}
-        <SiteFooter />
-        <LandingMarker />
+        <ThemeProvider nonce={requestHeaders.get('x-nonce') ?? undefined}>
+          <SiteHeader session={session} />
+          {children}
+          <SiteFooter />
+          <LandingMarker />
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );
