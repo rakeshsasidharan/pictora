@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_HEADERS } from '../src/lib/session';
 
 const images = vi.hoisted(() => ({
+  GALLERY_MAX_LIMIT: 50,
   listImages: vi.fn(),
   deleteImage: vi.fn(),
   getImageDetail: vi.fn(),
@@ -50,7 +51,34 @@ describe('image routes', () => {
       expect.anything(),
       expect.objectContaining({ sub: 'user-sub' }),
       IMAGE_ID,
+      undefined,
     );
+  });
+
+  it('GET /api/images passes a limit from 1 to 50', async () => {
+    images.listImages.mockResolvedValue({ status: 200, body: { images: [] } });
+    for (const limit of [1, 10, 50]) {
+      const response = await list(new NextRequest(`${base}?limit=${limit}`, { headers: signedIn }));
+      expect(response.status).toBe(200);
+      expect(images.listImages).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sub: 'user-sub' }),
+        null,
+        limit,
+      );
+    }
+  });
+
+  it('GET /api/images rejects a limit outside 1 to 50, or not a whole number', async () => {
+    for (const limit of ['0', '51', 'ten', '', '2.5', '-3', '1e1']) {
+      const response = await list(
+        new NextRequest(`${base}?limit=${encodeURIComponent(limit)}`, { headers: signedIn }),
+      );
+      expect(response.status, limit).toBe(400);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(await response.json()).toMatchObject({ code: 'invalid_request' });
+    }
+    expect(images.listImages).not.toHaveBeenCalled();
   });
 
   it('DELETE /api/images/:id answers what the delete did', async () => {

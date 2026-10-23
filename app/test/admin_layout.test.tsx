@@ -19,7 +19,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-const { default: AdminLayout } = await import('../src/app/admin/layout');
+const { default: AdminLayout } = await import('../src/app/(app)/admin/layout');
 
 function signIn(groups: string) {
   requestHeaders.current = new Headers({

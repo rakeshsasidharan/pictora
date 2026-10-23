@@ -166,7 +166,8 @@
    * Tailwind's preflight resets margins, list styles, heading sizes and form controls, which the old screens
    * rely on. For elements outside shadcn/ui components (which carry data-slot) and Sonner's toasts, this
    * reverts to the browser's defaults; the old classes below still win where they set a property. It has no
-   * specificity, so any class or utility overrides it.
+   * specificity, so any class or utility overrides it. The sidebar shell's wrapper and inset hold the old
+   * screens, so they don't count as components here.
    */
   :where(
     h1,
@@ -224,7 +225,14 @@
     progress,
     meter,
     dialog
-  ):where(:not([data-slot], [data-slot] *, [data-sonner-toaster], [data-sonner-toaster] *)) {
+  ):where(
+    :not(
+      [data-slot],
+      [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *,
+      [data-sonner-toaster],
+      [data-sonner-toaster] *
+    )
+  ) {
     all: revert;
   }
 
@@ -232,55 +240,140 @@
    * Preflight also styles parts of form controls. One rule each: a browser drops a whole selector list when it
    * doesn't know one of its pseudo-elements.
    */
-  :where(input, textarea):where(:not([data-slot], [data-slot] *))::placeholder {
+  :where(input, textarea):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::placeholder {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::file-selector-button {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::file-selector-button {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-search-decoration {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-search-decoration {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-date-and-time-value {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-date-and-time-value {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-fields-wrapper {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-fields-wrapper {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-year-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-year-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-month-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-month-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-day-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-day-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-hour-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-hour-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-minute-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-minute-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-second-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-second-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-millisecond-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-millisecond-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-datetime-edit-meridiem-field {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-datetime-edit-meridiem-field {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-calendar-picker-indicator {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-calendar-picker-indicator {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-inner-spin-button {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-inner-spin-button {
     all: revert;
   }
-  :where(input):where(:not([data-slot], [data-slot] *))::-webkit-outer-spin-button {
+  :where(input):where(
+      :not(
+        [data-slot],
+        [data-slot]:not([data-slot='sidebar-wrapper'], [data-slot='sidebar-inset']) *
+      )
+    )::-webkit-outer-spin-button {
     all: revert;
   }
 
@@ -314,7 +407,8 @@
     padding: 24px 16px 48px;
   }
 
-  a {
+  /* Not shadcn/ui's links, such as the sidebar's. */
+  :where(a:not([data-slot])) {
     color: var(--legacy-accent);
   }
 

@@ -31,7 +31,8 @@ test.describe('generate', () => {
     await expect(page.getByRole('heading', { name: 'Create an image' })).toBeVisible();
     // The enhancer has its own spec.
     await useOwnWords(page);
-    const points = page.getByText(/points left today$/);
+    // The sidebar shows the points too; this is the generate screen's own line.
+    const points = page.getByRole('main').getByText(/points left today$/);
     const before = pointsLeft(await points.textContent());
 
     await page

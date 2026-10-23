@@ -21,6 +21,7 @@ import {
   qualityPaused,
 } from '../lib/generate_options';
 import type { GalleryImageBody, ImageDetailBody, ImageVersionBody } from '../lib/images';
+import { notifyImagesChanged } from '../lib/images_changed';
 import type { JobStatusBody, MeBody } from '../lib/jobs';
 import type { PublicModel } from '../lib/models_response';
 import { GENERATE_PATH, downloadPath } from '../lib/site';
@@ -119,6 +120,7 @@ export function EditPanel({
   const finished = useCallback(
     async (result: JobStatusBody) => {
       void refreshPoints();
+      notifyImagesChanged();
       if (result.status !== 'succeeded') return;
       const created = result.images?.[0]?.version;
       try {
@@ -146,12 +148,12 @@ export function EditPanel({
   const current = versions.find((version) => version.version === selected) ?? versions.at(-1);
   if (!model || !current) {
     return (
-      <main className="edit-panel">
+      <div className="edit-panel">
         <h1>Edit image</h1>
         <p className="form-error" role="alert">
           No image models can edit right now. Please try again later.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -267,7 +269,7 @@ export function EditPanel({
   const refunded = job ? job.pointsReserved - (poll.job?.pointsCharged ?? 0) : 0;
 
   return (
-    <main className="edit-panel">
+    <div className="edit-panel">
       <div className="generate-heading">
         <h1>Edit image</h1>
         <p className="points-display" aria-live="polite">
@@ -516,6 +518,6 @@ export function EditPanel({
         </div>
       </form>
       {picking && <GalleryPicker onPick={pickReference} onClose={() => setPicking(false)} />}
-    </main>
+    </div>
   );
 }

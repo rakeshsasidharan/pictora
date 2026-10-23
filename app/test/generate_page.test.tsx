@@ -57,7 +57,7 @@ vi.mock('../src/lib/jobs', () => ({
 
 vi.mock('../src/lib/images', () => ({ rerunSettings: rerun.settings }));
 
-const { default: GeneratePage } = await import('../src/app/generate/page');
+const { default: GeneratePage } = await import('../src/app/(app)/generate/page');
 
 const page = (query: { rerun?: string } = {}) =>
   GeneratePage({ searchParams: Promise.resolve(query) });

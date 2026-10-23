@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRef, useState, type DragEvent } from 'react';
+import { notifyImagesChanged } from '../lib/images_changed';
 import { editImagePath } from '../lib/site';
 import {
   browserUploadClient,
@@ -44,6 +45,7 @@ export function UploadImage({ client = browserUploadClient }: { client?: UploadC
       setState({ phase: 'checking', fileName: file.name });
       const image = await client.complete(ticket.uploadId);
       setState({ phase: 'done', image });
+      notifyImagesChanged();
     } catch (error) {
       setState({
         phase: 'error',

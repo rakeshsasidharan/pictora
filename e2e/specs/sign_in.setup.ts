@@ -17,7 +17,8 @@ setup('sign in as the test user', async ({ page }) => {
   await page.waitForURL(
     (url) => url.origin === config.baseUrl && !url.pathname.startsWith('/auth/'),
   );
-  await expect(page.getByRole('banner').getByText(credentials.email)).toBeVisible();
+  // Onboarding shows the email in the site header, every other signed-in page in the sidebar's user menu.
+  await expect(page.getByText(credentials.email).first()).toBeVisible();
 
   // A new test user, or one after the terms changed, lands on onboarding first (AUTH-4) and goes through it.
   if (new URL(page.url()).pathname === '/onboarding') {

@@ -59,7 +59,7 @@ vi.mock('../src/lib/jobs', () => ({
 
 vi.mock('../src/lib/images', () => ({ getImageDetail: async () => detail.current }));
 
-const { default: EditImagePage } = await import('../src/app/edit/[imageId]/page');
+const { default: EditImagePage } = await import('../src/app/(app)/edit/[imageId]/page');
 
 const IMAGE_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
 

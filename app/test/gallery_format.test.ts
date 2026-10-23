@@ -3,6 +3,7 @@ import {
   URL_REFRESH_AFTER_MS,
   createdText,
   placeholderText,
+  relativeTimeText,
   urlsMayHaveExpired,
   versionFields,
 } from '../src/lib/gallery_format';
@@ -100,5 +101,26 @@ describe('urlsMayHaveExpired', () => {
   it('is true only once the refresh window has passed', () => {
     expect(urlsMayHaveExpired(1_000, 1_000 + URL_REFRESH_AFTER_MS - 1)).toBe(false);
     expect(urlsMayHaveExpired(1_000, 1_000 + URL_REFRESH_AFTER_MS)).toBe(true);
+  });
+});
+
+describe('relativeTimeText', () => {
+  const now = Date.parse('2026-10-15T12:00:00.000Z');
+  const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString();
+
+  it('says how long ago, in the largest whole unit', () => {
+    expect(relativeTimeText(ago(10), now)).toBe('just now');
+    expect(relativeTimeText(ago(60), now)).toBe('1 minute ago');
+    expect(relativeTimeText(ago(5 * 60), now)).toBe('5 minutes ago');
+    expect(relativeTimeText(ago(3 * 60 * 60), now)).toBe('3 hours ago');
+    expect(relativeTimeText(ago(24 * 60 * 60), now)).toBe('yesterday');
+    expect(relativeTimeText(ago(3 * 24 * 60 * 60), now)).toBe('3 days ago');
+    expect(relativeTimeText(ago(14 * 24 * 60 * 60), now)).toBe('2 weeks ago');
+    expect(relativeTimeText(ago(60 * 24 * 60 * 60), now)).toBe('2 months ago');
+    expect(relativeTimeText(ago(400 * 24 * 60 * 60), now)).toBe('last year');
+  });
+
+  it('answers nothing for a date it cannot read', () => {
+    expect(relativeTimeText('not a date', now)).toBe('');
   });
 });

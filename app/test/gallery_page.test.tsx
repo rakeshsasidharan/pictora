@@ -47,8 +47,8 @@ vi.mock('../src/lib/registry', () => ({
 vi.mock('../src/lib/images_deps', () => ({ imagesDeps: () => ({}) }));
 vi.mock('../src/lib/images', () => ({ getImageDetail: async () => detail.current }));
 
-const { default: GalleryPage } = await import('../src/app/gallery/page');
-const { default: GalleryImagePage } = await import('../src/app/gallery/[imageId]/page');
+const { default: GalleryPage } = await import('../src/app/(app)/gallery/page');
+const { default: GalleryImagePage } = await import('../src/app/(app)/gallery/[imageId]/page');
 
 const IMAGE_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
 

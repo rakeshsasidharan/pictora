@@ -29,6 +29,9 @@ const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 /** Images per gallery page (GAL-1). */
 export const GALLERY_PAGE_SIZE = 24;
 
+/** The most images one `GET /api/images?limit=` page may ask for. */
+export const GALLERY_MAX_LIMIT = 50;
+
 /** DynamoDB deletes at most 25 items in one `BatchWriteItem` call. */
 const DELETE_BATCH = 25;
 const MAX_BATCH_ATTEMPTS = 5;
@@ -220,14 +223,16 @@ export interface GalleryPageBody {
 }
 
 /**
- * `GET /api/images?cursor=` (GAL-1, GEN-8): a page of the caller's images, newest first, 24 to a page, each with
- * a presigned thumbnail. The cursor is the ID of the last image on the previous page. The first page also lists
- * the caller's jobs that are still queued or running.
+ * `GET /api/images?cursor=&limit=` (GAL-1, GEN-8): a page of the caller's images, newest first, each with a
+ * presigned thumbnail. A page holds `limit` images (24 unless the caller asks for 1 to 50; the route checks
+ * the range). The cursor is the ID of the last image on the previous page. The first page also lists the
+ * caller's jobs that are still queued or running.
  */
 export async function listImages(
   deps: ImagesDeps,
   session: Session,
   cursor?: string | null,
+  limit: number = GALLERY_PAGE_SIZE,
 ): Promise<ApiResult> {
   if (cursor && !ULID_PATTERN.test(cursor)) {
     return apiError('invalid_request', 'That page of the gallery is not valid.');
@@ -240,7 +245,7 @@ export async function listImages(
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
         ExpressionAttributeValues: { ':pk': pk, ':prefix': 'IMG#' },
         ScanIndexForward: false,
-        Limit: GALLERY_PAGE_SIZE,
+        Limit: limit,
         ...(cursor ? { ExclusiveStartKey: { PK: pk, SK: imageSk(cursor) } } : {}),
       }),
     ),
