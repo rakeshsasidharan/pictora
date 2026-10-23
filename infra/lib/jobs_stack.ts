@@ -172,7 +172,14 @@ export class JobsStack extends Stack {
     });
 
     props.table.grantReadWriteData(this.workerFunction);
-    props.imagesBucket.grantPut(this.workerFunction);
+    // Exact actions rather than `grantPut`, whose `s3:Abort*` is a wildcard (tech design 12). Images and
+    // thumbnails go under `users/` only.
+    this.workerFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:PutObject'],
+        resources: [props.imagesBucket.arnForObjects('users/*')],
+      }),
+    );
     // Edits read the parent version and their reference images (tech design 5.3); nothing else is listed or read.
     this.workerFunction.addToRolePolicy(
       new PolicyStatement({
@@ -290,7 +297,16 @@ export class JobsStack extends Stack {
       },
     });
     props.table.grantReadWriteData(this.purgeFunction);
-    props.imagesBucket.grantDelete(this.purgeFunction);
+    // Objects only, with exact actions rather than `grantDelete`'s `s3:DeleteObject*` (tech design 12).
+    this.purgeFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:DeleteObject'],
+        resources: [
+          props.imagesBucket.arnForObjects('users/*'),
+          props.imagesBucket.arnForObjects('uploads/*'),
+        ],
+      }),
+    );
     this.purgeFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ['s3:ListBucket'],

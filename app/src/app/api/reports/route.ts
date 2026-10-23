@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { ulid } from 'ulid';
 import { documentClient, tableName } from '../../../lib/dynamodb';
-import { apiError } from '../../../lib/jobs';
+import { readJsonBody } from '../../../lib/json_body';
 import { createReport } from '../../../lib/reports';
 import { sessionFromHeaders } from '../../../lib/session';
 
@@ -13,13 +13,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  let input: unknown;
-  try {
-    input = await request.json();
-  } catch {
-    const result = apiError('invalid_request', 'The request body must be JSON.');
-    return Response.json(result.body, { status: result.status });
-  }
+  const body = await readJsonBody(request);
+  if (!body.ok) return Response.json(body.error.body, { status: body.error.status });
   const result = await createReport(
     {
       client: documentClient(),
@@ -28,7 +23,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       newId: () => ulid(),
     },
     session,
-    input,
+    body.value,
   );
   return Response.json(result.body, { status: result.status });
 }

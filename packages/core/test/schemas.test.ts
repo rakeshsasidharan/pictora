@@ -7,7 +7,10 @@ import {
   editJobRequestSchema,
   enhanceRequestSchema,
   generateJobRequestSchema,
+  onboardingRequestSchema,
   parseReferenceKey,
+  reportRequestSchema,
+  reviewRequestSchema,
   uploadRequestSchema,
 } from '../src/index.js';
 
@@ -276,5 +279,30 @@ describe('uploadRequestSchema', () => {
     expect(uploadRequestSchema.safeParse({ contentType: 'image/png', size: 1.5 }).success).toBe(
       false,
     );
+  });
+});
+
+describe('every JSON request body schema (tech design 12)', () => {
+  const bodies = [
+    ['POST /api/jobs (generate)', createJobRequestSchema, validGenerate],
+    ['POST /api/jobs (edit)', createJobRequestSchema, validEdit],
+    [
+      'POST /api/enhance',
+      enhanceRequestSchema,
+      { prompt: 'A fox', style: 'watercolour', modelId: 'gemini-3.1-flash-image' },
+    ],
+    [
+      'POST /api/me/onboarding',
+      onboardingRequestSchema,
+      { ageConfirmed: true, termsAccepted: true, tosVersion: '2026-10-01' },
+    ],
+    ['POST /api/uploads', uploadRequestSchema, { contentType: 'image/png', size: 1024 }],
+    ['POST /api/reports', reportRequestSchema, { imageId: IMAGE_ID, version: 1, reason: 'hate' }],
+    ['POST /api/admin/moderation/:date/:id/review', reviewRequestSchema, { verdict: 'ok' }],
+  ] as const;
+
+  it.each(bodies)('%s accepts a valid body and rejects unknown fields', (_route, schema, body) => {
+    expect(schema.safeParse(body).success).toBe(true);
+    expect(schema.safeParse({ ...body, isAdmin: true }).success).toBe(false);
   });
 });
