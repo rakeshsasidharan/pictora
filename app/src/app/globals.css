@@ -141,6 +141,7 @@
   --legacy-notice-border: #e0b84a;
   --legacy-danger: #b3261e;
   --legacy-danger-text: #ffffff;
+  --legacy-success: #1a7f37;
   color-scheme: light;
 }
 
@@ -156,6 +157,7 @@
   --legacy-notice-border: #8a6d1f;
   --legacy-danger: #f2b8b5;
   --legacy-danger-text: #141318;
+  --legacy-success: #6fdd8b;
   color-scheme: dark;
 }
 
@@ -1151,6 +1153,34 @@
   .kpi-value {
     font-size: 1.5rem;
     font-weight: 700;
+  }
+
+  /* Success metrics against their PRD targets: colour plus the words, never colour alone. */
+  .kpi-tile.metric-met {
+    border-left: 4px solid var(--legacy-success);
+  }
+
+  .kpi-tile.metric-missed {
+    border-left: 4px solid var(--legacy-danger);
+  }
+
+  .kpi-tile.metric-met strong,
+  td.metric-met {
+    color: var(--legacy-success);
+  }
+
+  .kpi-tile.metric-missed strong,
+  td.metric-missed {
+    color: var(--legacy-danger);
+  }
+
+  td.metric-pending,
+  td.metric-none {
+    color: var(--legacy-muted);
+  }
+
+  .success-metrics {
+    margin: 24px 0;
   }
 
   .spend-chart {

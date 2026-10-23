@@ -1,5 +1,5 @@
 import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
-import { userPk, versionSk } from '@pictora/core';
+import { RATE_LIMIT_PER_MINUTE, userPk, versionSk } from '@pictora/core';
 import { NextRequest } from 'next/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { POST } from '../src/app/api/reports/route';
@@ -106,6 +106,31 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('createReport', () => {
       await createReport(deps(), owner, { imageId: IMAGE_ID, version: 2, reason: 'hate' }),
     ).toEqual(notFound);
     expect(await modlog()).toHaveLength(before);
+  });
+
+  it('counts reports in the rate window and answers 429 once it is full', async () => {
+    const busy: Session = { sub: 'busy-reporter', email: 'busy@example.com', groups: [] };
+    await table.client.send(
+      new PutCommand({
+        TableName: table.tableName,
+        Item: {
+          PK: userPk(busy.sub),
+          SK: versionSk(IMAGE_ID, 1),
+          imageId: IMAGE_ID,
+          version: 1,
+          s3Key: `users/${busy.sub}/${IMAGE_ID}/v1.png`,
+          prompt: 'A lighthouse at dusk',
+        },
+      }),
+    );
+    const input = { imageId: IMAGE_ID, version: 1, reason: 'hate' };
+    for (let report = 0; report < RATE_LIMIT_PER_MINUTE; report++) {
+      expect((await createReport(deps(), busy, input)).status).toBe(201);
+    }
+    expect(await createReport(deps(), busy, input)).toMatchObject({
+      status: 429,
+      body: { code: 'rate_limited' },
+    });
   });
 
   it('rejects an invalid report', async () => {

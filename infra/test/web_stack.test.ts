@@ -140,6 +140,23 @@ describe('Web stack: app Lambda', () => {
     expect(JSON.stringify(cognito[0]?.Resource)).toMatch(/UserPool/);
   });
 
+  it('reads, writes and deletes image objects with exact actions, and lists only the images bucket', () => {
+    const statements = Object.values(dev.findResources('AWS::IAM::Policy'))
+      .filter((policy) =>
+        JSON.stringify(policy.Properties.Roles).includes('AppFunctionServiceRole'),
+      )
+      .flatMap((policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[]);
+    const s3 = statements.filter((s) => JSON.stringify(s.Action).includes('s3:'));
+    expect(s3.map((s) => s.Action)).toEqual([
+      ['s3:DeleteObject', 's3:GetObject', 's3:PutObject'],
+      's3:ListBucket',
+    ]);
+    const objects = JSON.stringify(s3[0]?.Resource);
+    expect(objects).toMatch(/ImagesBucket.*\/users\/\*/);
+    expect(objects).toMatch(/ImagesBucket.*\/uploads\/\*/);
+    expect(JSON.stringify(s3[1]?.Resource)).toMatch(/ImagesBucket/);
+  });
+
   it('reserves 20 concurrent executions in prod only', () => {
     expect(appFunction(prod).ReservedConcurrentExecutions).toBe(20);
     expect(appFunction(dev).ReservedConcurrentExecutions).toBeUndefined();

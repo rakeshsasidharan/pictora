@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { enhancePrompt } from '../../../lib/enhance';
 import { enhanceDeps } from '../../../lib/enhance_deps';
-import { apiError } from '../../../lib/jobs';
+import { readJsonBody } from '../../../lib/json_body';
 import { sessionFromHeaders } from '../../../lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -12,13 +12,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  let input: unknown;
-  try {
-    input = await request.json();
-  } catch {
-    const result = apiError('invalid_request', 'The request body must be JSON.');
-    return Response.json(result.body, { status: result.status });
-  }
-  const result = await enhancePrompt(enhanceDeps(), session, input);
+  const body = await readJsonBody(request);
+  if (!body.ok) return Response.json(body.error.body, { status: body.error.status });
+  const result = await enhancePrompt(enhanceDeps(), session, body.value);
   return Response.json(result.body, { status: result.status });
 }

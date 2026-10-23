@@ -6,6 +6,7 @@ import { AdminUser } from '../src/components/admin_user';
 import { ModerationReview } from '../src/components/moderation_review';
 import type { ModerationEntry } from '../src/lib/admin_moderation';
 import type { AdminStatsBody } from '../src/lib/admin_stats';
+import { metricsBody } from './metrics_fixtures';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -67,6 +68,13 @@ function stats(overrides: Partial<AdminStatsBody> = {}): AdminStatsBody {
   };
 }
 
+/** A fetch that answers the success metrics section with a fixture and everything else with `handle`. */
+function withMetrics(handle: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) =>
+    url.startsWith('/api/admin/metrics') ? json(metricsBody()) : handle(url, init),
+  );
+}
+
 describe('AdminDashboard', () => {
   afterEach(() => {
     cleanup();
@@ -75,7 +83,7 @@ describe('AdminDashboard', () => {
 
   it('shows loading, then the KPIs, chart, tables and top users', async () => {
     let answer: (response: Response) => void = () => undefined;
-    const fetchMock = vi.fn(
+    const fetchMock = withMetrics(
       () =>
         new Promise<Response>((resolve) => {
           answer = resolve;
@@ -83,7 +91,7 @@ describe('AdminDashboard', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     render(<AdminDashboard />);
-    expect(screen.getByRole('status').textContent).toBe('Loading stats…');
+    expect(screen.getByText('Loading stats…').getAttribute('role')).toBe('status');
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/stats', { cache: 'no-store' });
     answer(json(stats()));
 
@@ -112,12 +120,15 @@ describe('AdminDashboard', () => {
       '/admin/users/heavy',
     );
     expect(screen.getByRole('link', { name: 'documented commands' })).toBeTruthy();
+    // The success metrics for the same range follow.
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/metrics', { cache: 'no-store' });
+    expect(await screen.findByRole('heading', { name: 'Success metrics' })).toBeTruthy();
   });
 
   it('shows the split for a day on hover', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => json(stats())),
+      withMetrics(async () => json(stats())),
     );
     render(<AdminDashboard />);
     const day = await screen.findByRole('button', { name: '2026-10-14: $0.30' });
@@ -144,7 +155,7 @@ describe('AdminDashboard', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => json(quiet)),
+      withMetrics(async () => json(quiet)),
     );
     render(<AdminDashboard />);
     expect(await screen.findByText('No jobs or spend in this range.')).toBeTruthy();
@@ -153,7 +164,7 @@ describe('AdminDashboard', () => {
   });
 
   it('asks for a new range, and shows the API error', async () => {
-    const fetchMock = vi.fn(async (url: string) =>
+    const fetchMock = withMetrics(async (url: string) =>
       url.includes('from=2026-01-01')
         ? json({ error: 'Pick a range of at most 92 days.', code: 'invalid_request' }, 400)
         : json(stats()),
@@ -164,7 +175,11 @@ describe('AdminDashboard', () => {
     fireEvent.change(from, { target: { value: '2026-01-01' } });
     fireEvent.click(screen.getByRole('button', { name: 'Show' }));
     expect((await screen.findByRole('alert')).textContent).toBe('Pick a range of at most 92 days.');
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/admin/stats?from=2026-01-01&to=2026-10-15', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/stats?from=2026-01-01&to=2026-10-15', {
+      cache: 'no-store',
+    });
+    // The metrics section asks for the same range.
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/metrics?from=2026-01-01&to=2026-10-15', {
       cache: 'no-store',
     });
   });

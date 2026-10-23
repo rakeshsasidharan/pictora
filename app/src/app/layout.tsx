@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import type { ReactNode } from 'react';
+import { LandingMarker } from '../components/landing_marker';
 import { SiteFooter } from '../components/site_footer';
 import { SiteHeader } from '../components/site_header';
 import { ThemeProvider } from '../components/theme_provider';
@@ -29,6 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <SiteHeader session={session} />
           {children}
           <SiteFooter />
+          <LandingMarker />
           <Toaster />
         </ThemeProvider>
       </body>

@@ -326,12 +326,12 @@ describe('Jobs stack: sweeper', () => {
       Object.values(dev.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([30, 30, 30, 30]);
+    ).toEqual([30, 30, 30, 30, 30]);
     expect(
       Object.values(prod.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([90, 90, 90, 90]);
+    ).toEqual([90, 90, 90, 90, 90]);
   });
 
   it('can use the table and its indexes, and nothing else', () => {
@@ -384,7 +384,7 @@ describe('Jobs stack: account purge', () => {
     expect(actionsOf(cognito ?? {})).toEqual(['cognito-idp:AdminDeleteUser']);
     expect(JSON.stringify(cognito?.Resource)).toContain('UserPool');
     const s3Actions = statements.flatMap(actionsOf).filter((a) => a.startsWith('s3:'));
-    expect(s3Actions).toEqual(expect.arrayContaining(['s3:ListBucket', 's3:DeleteObject*']));
+    expect(s3Actions).toEqual(expect.arrayContaining(['s3:ListBucket', 's3:DeleteObject']));
     expect(s3Actions.filter((a) => /^s3:(Get|Put)/.test(a))).toEqual([]);
     expect(statements.flatMap(actionsOf)).toContain('sqs:SendMessage');
     for (const statement of statements) expect(statement.Resource).not.toBe('*');
@@ -439,5 +439,51 @@ describe('Jobs stack: model health', () => {
     expect(actions).not.toContain('dynamodb:PutItem');
     expect(actions).not.toContain('bedrock:InvokeModel');
     expect(JSON.stringify(statements)).toContain('secretsmanager:GetSecretValue');
+  });
+});
+
+describe('Jobs stack: success metrics', () => {
+  const functionId = () =>
+    logicalId(dev, 'AWS::Lambda::Function', {
+      ImageConfig: { Command: ['success_metrics.handler'] },
+    });
+
+  it('runs the success_metrics handler from the worker image with the table name', () => {
+    const props = imageFunction(dev, 'success_metrics.handler');
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.Timeout).toBe(120);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: expect.anything(),
+    });
+  });
+
+  it('runs daily at 00:30 UTC, retrying a failed run once', () => {
+    dev.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'cron(30 0 * * ? *)',
+      State: 'ENABLED',
+      Targets: [
+        Match.objectLike({
+          Arn: { 'Fn::GetAtt': [functionId(), 'Arn'] },
+          RetryPolicy: { MaximumRetryAttempts: 1 },
+        }),
+      ],
+    });
+  });
+
+  it('may read the table and put items, and nothing else', () => {
+    const statements = policyStatements(dev, 'SuccessMetricsFunctionServiceRole');
+    const actions = statements.flatMap((statement) => [statement.Action].flat());
+    expect(actions).toEqual(
+      expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem']),
+    );
+    for (const forbidden of [
+      'dynamodb:DeleteItem',
+      'dynamodb:UpdateItem',
+      'dynamodb:BatchWriteItem',
+    ]) {
+      expect(actions).not.toContain(forbidden);
+    }
+    expect(JSON.stringify(statements)).not.toContain('secretsmanager');
   });
 });

@@ -45,6 +45,7 @@ import {
   type ModlogItem,
   type PointsSettlement,
 } from '@pictora/core';
+import { metricsCountsUpdate } from '@pictora/core/metrics-store';
 import { log } from './log.js';
 
 /** The single table and a client for it. */
@@ -229,6 +230,14 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
       points: settlement.chargedPoints,
       providerCostCents,
     }),
+    {
+      Update: metricsCountsUpdate(
+        ctx.tableName,
+        utcDate(now),
+        { jobsSucceeded: 1, imagesGenerated: images.length },
+        now,
+      ),
+    },
     ...imageItems,
   ]);
 }
@@ -351,6 +360,14 @@ export async function completeEditJob(
       points: settlement.chargedPoints,
       providerCostCents,
     }),
+    {
+      Update: metricsCountsUpdate(
+        ctx.tableName,
+        utcDate(now),
+        { jobsSucceeded: 1, imagesGenerated: 1 },
+        now,
+      ),
+    },
     {
       Put: {
         TableName: ctx.tableName,
@@ -480,6 +497,14 @@ export async function refundJob(ctx: TableContext, input: RefundInput): Promise<
       [status === 'blocked' ? 'blocks' : 'failures']: 1,
       ...(cost > 0 ? { providerCostCents: cost } : {}),
     }),
+    {
+      Update: metricsCountsUpdate(
+        ctx.tableName,
+        utcDate(now),
+        { [status === 'blocked' ? 'jobsBlocked' : 'jobsFailed']: 1 },
+        now,
+      ),
+    },
     ...(cost > 0 ? [spendUpdate(ctx.tableName, now, cost)] : []),
     ...(input.block ? blockItems(ctx.tableName, job, input.block, now) : []),
   ]);

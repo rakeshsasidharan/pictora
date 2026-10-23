@@ -8,6 +8,7 @@
       "@pictora/core/registry-store": ["../packages/core/src/registry_store.ts"],
       "@pictora/core/observability": ["../packages/core/src/observability.ts"],
       "@pictora/core/block-store": ["../packages/core/src/block_store.ts"],
+      "@pictora/core/metrics-store": ["../packages/core/src/metrics_store.ts"],
       "@pictora/providers": ["../packages/providers/src/index.ts"]
     }
   },

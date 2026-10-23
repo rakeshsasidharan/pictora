@@ -50,6 +50,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Fails when anything shaped like an API key or private key reaches the browser bundles (tech design 12).
+      - name: Scan client bundles for secrets
+        run: npm run check:secrets --workspace @pictora/app
+
       # The CLI synthesises every stack; it ignores --all for synth.
       - name: CDK synth
         working-directory: infra

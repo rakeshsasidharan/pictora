@@ -4,6 +4,7 @@ import {
   SECONDS_PER_DAY,
   modlogPk,
   promptExcerpt,
+  rateLimitPerMinute,
   reportRequestSchema,
   ttlAfter,
   userPk,
@@ -11,6 +12,7 @@ import {
   versionSk,
   type ModlogItem,
 } from '@pictora/core';
+import { takeRateSlot } from './enhance';
 import { apiError, type ApiResult } from './jobs';
 import type { Session } from './session';
 
@@ -34,7 +36,8 @@ interface VersionItem {
 /**
  * `POST /api/reports` (PRD, Trust and safety): a user reports one of their own image versions. Writes a
  * `MODLOG#<date>` entry of type `report`, kept 90 days for review. Answers 404 for a version the user doesn't
- * own, the same as for one that doesn't exist.
+ * own, the same as for one that doesn't exist. Reports count in the minute's rate window with jobs (429), so a
+ * script can't flood the review queue.
  */
 export async function createReport(
   deps: ReportsDeps,
@@ -46,6 +49,14 @@ export async function createReport(
     return apiError('invalid_request', 'Pick a reason for the report, then try again.');
   }
   const { imageId, version, reason } = parsed.data;
+  const now = deps.now();
+  const rateLimit = rateLimitPerMinute(session.groups);
+  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now, rateLimit))) {
+    return apiError(
+      'rate_limited',
+      `You've made ${rateLimit} requests in the last minute. Wait a moment, then try again.`,
+    );
+  }
   const result = await deps.client.send(
     new GetCommand({
       TableName: deps.tableName,
@@ -55,7 +66,6 @@ export async function createReport(
   const found = result.Item as VersionItem | undefined;
   if (!found) return apiError('not_found', 'Image not found.');
 
-  const now = deps.now();
   const reportId = deps.newId();
   const entry: ModlogItem = {
     PK: modlogPk(utcDate(now)),

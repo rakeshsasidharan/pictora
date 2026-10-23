@@ -23,7 +23,7 @@ import {
 import type { GalleryImageBody, ImageDetailBody, ImageVersionBody } from '../lib/images';
 import type { JobStatusBody, MeBody } from '../lib/jobs';
 import type { PublicModel } from '../lib/models_response';
-import { GENERATE_PATH } from '../lib/site';
+import { GENERATE_PATH, downloadPath } from '../lib/site';
 import { browserUploadClient, UploadError, type UploadClient } from '../lib/upload_client';
 import { UPLOAD_ACCEPT, uploadFileError } from '../lib/upload_files';
 import { useJobStatus } from '../lib/use_job_status';
@@ -287,7 +287,7 @@ export function EditPanel({
             height={current.height}
           />
           <div className="result-actions">
-            <a className="button" href={current.downloadUrl} download>
+            <a className="button" href={downloadPath(imageId, current.version)} download>
               Download PNG
             </a>
             <ReportImage imageId={imageId} version={current.version} />

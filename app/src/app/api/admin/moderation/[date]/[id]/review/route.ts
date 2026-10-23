@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { reviewEntry } from '../../../../../../../lib/admin_moderation';
 import { adminRoute } from '../../../../../../../lib/admin_route';
-import { apiError } from '../../../../../../../lib/jobs';
+import { readJsonBody } from '../../../../../../../lib/json_body';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,12 +12,8 @@ export async function POST(
 ): Promise<Response> {
   const { date, id } = await context.params;
   return adminRoute(request, async (deps, session) => {
-    let input: unknown;
-    try {
-      input = await request.json();
-    } catch {
-      return apiError('invalid_request', 'The request body must be JSON.');
-    }
-    return reviewEntry(deps, session, date, id, input);
+    const body = await readJsonBody(request);
+    if (!body.ok) return body.error;
+    return reviewEntry(deps, session, date, id, body.value);
   });
 }
