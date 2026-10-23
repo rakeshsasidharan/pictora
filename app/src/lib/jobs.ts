@@ -83,6 +83,7 @@ export const API_ERROR_STATUS = {
   upload_wrong_type: 400,
   not_an_image: 400,
   upload_too_large: 413,
+  payload_too_large: 413,
   blocked: 422,
   out_of_points: 402,
   forbidden: 403,

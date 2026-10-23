@@ -1954,23 +1954,40 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               ],
             },
             {
-              "Action": "s3:DeleteObject*",
+              "Action": "s3:DeleteObject",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    {
-                      "Fn::GetStackOutput": {
-                        "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
-                        "Region": "us-west-2",
-                        "StackName": "PictoraDev-Data",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
                       },
-                    },
-                    "/*",
+                      "/uploads/*",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/users/*",
+                    ],
+                  ],
+                },
+              ],
             },
             {
               "Action": "s3:ListBucket",
@@ -2783,14 +2800,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               ],
             },
             {
-              "Action": [
-                "s3:Abort*",
-                "s3:PutObject",
-                "s3:PutObjectLegalHold",
-                "s3:PutObjectRetention",
-                "s3:PutObjectTagging",
-                "s3:PutObjectVersionTagging",
-              ],
+              "Action": "s3:PutObject",
               "Effect": "Allow",
               "Resource": {
                 "Fn::Join": [
@@ -2803,7 +2813,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
                         "StackName": "PictoraDev-Data",
                       },
                     },
-                    "/*",
+                    "/users/*",
                   ],
                 ],
               },
@@ -4464,25 +4474,26 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
             },
             {
               "Action": [
-                "s3:Abort*",
-                "s3:DeleteObject*",
-                "s3:GetBucket*",
-                "s3:GetObject*",
-                "s3:List*",
+                "s3:DeleteObject",
+                "s3:GetObject",
                 "s3:PutObject",
-                "s3:PutObjectLegalHold",
-                "s3:PutObjectRetention",
-                "s3:PutObjectTagging",
-                "s3:PutObjectVersionTagging",
               ],
               "Effect": "Allow",
               "Resource": [
                 {
-                  "Fn::GetStackOutput": {
-                    "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
-                    "Region": "us-west-2",
-                    "StackName": "PictoraDev-Data",
-                  },
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/uploads/*",
+                    ],
+                  ],
                 },
                 {
                   "Fn::Join": [
@@ -4495,11 +4506,22 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
                           "StackName": "PictoraDev-Data",
                         },
                       },
-                      "/*",
+                      "/users/*",
                     ],
                   ],
                 },
               ],
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Data",
+                },
+              },
             },
             {
               "Action": [
