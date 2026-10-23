@@ -29,4 +29,12 @@ describe('SiteHeader', () => {
     );
     expect(html).toContain('href="/admin"');
   });
+
+  it('offers the theme switcher to everyone', () => {
+    for (const session of [undefined, { sub: 's', email: 'user@example.com', groups: [] }]) {
+      expect(renderToStaticMarkup(<SiteHeader session={session} />)).toContain(
+        'aria-label="Theme"',
+      );
+    }
+  });
 });

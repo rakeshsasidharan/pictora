@@ -5,6 +5,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
+      "@/*": ["./src/*"],
       "@pictora/core": ["../packages/core/src/index.ts"],
       "@pictora/core/registry-store": ["../packages/core/src/registry_store.ts"],
       "@pictora/core/observability": ["../packages/core/src/observability.ts"],

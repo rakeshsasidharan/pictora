@@ -8,6 +8,8 @@
     "allowJs": false,
     "noEmit": true,
     "incremental": true,
+    // shadcn/ui's alias for app/src, used by components/ui and components.json.
+    "paths": { "@/*": ["./src/*"] },
     "plugins": [{ "name": "next" }]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
