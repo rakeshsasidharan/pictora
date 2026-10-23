@@ -475,7 +475,9 @@ Every `/api` route, as built. "Session" means the proxy answers 401 without one 
 | DELETE | `/api/images/:id` | Session | Caller's partition (404) before any S3 delete | ULID | None |
 | GET | `/api/images/:id/versions/:n/download` | Session | Caller's partition (404) | ULID, version number | None |
 | POST | `/api/reports` | Session | Caller's version (404) | `reportRequestSchema` | Rate window |
+| POST | `/api/metrics/ttfi` | Session | Caller's profile; one value per user | `ttfiRequestSchema` | Rate window |
 | GET | `/api/admin/stats` | Admins | Not user-scoped | `adminStatsQuerySchema` | None |
+| GET | `/api/admin/metrics` | Admins | Not user-scoped | `adminStatsQuerySchema` | None |
 | GET | `/api/admin/moderation` | Admins | Not user-scoped | `adminModerationQuerySchema` | None |
 | POST | `/api/admin/moderation/:date/:id/review` | Admins | Not user-scoped | Date, ULID, `reviewRequestSchema` | None |
 | GET | `/api/admin/users/:sub` | Admins | Not user-scoped | `userSubSchema` | None |
