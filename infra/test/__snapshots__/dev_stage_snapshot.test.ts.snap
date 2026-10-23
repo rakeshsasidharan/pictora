@@ -2148,6 +2148,251 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
       },
       "Type": "AWS::SQS::QueuePolicy",
     },
+    "SuccessMetricsFunctionA6A86A4B": {
+      "DependsOn": [
+        "SuccessMetricsFunctionServiceRoleDefaultPolicyF295E4DB",
+        "SuccessMetricsFunctionServiceRole2BABB0D0",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GIT_SHA": "local",
+            "PICTORA_ENV": "dev",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "success_metrics.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "SuccessMetricsLogGroup23ED2428",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "SuccessMetricsFunctionServiceRole2BABB0D0",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SuccessMetricsFunctionServiceRole2BABB0D0": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "SuccessMetricsFunctionServiceRoleDefaultPolicyF295E4DB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "dynamodb:PutItem",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetStackOutput": {
+                  "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                  "Region": "us-west-2",
+                  "StackName": "PictoraDev-Data",
+                },
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "SuccessMetricsFunctionServiceRoleDefaultPolicyF295E4DB",
+        "Roles": [
+          {
+            "Ref": "SuccessMetricsFunctionServiceRole2BABB0D0",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "SuccessMetricsLogGroup23ED2428": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "SuccessMetricsSchedule5B19DF9F": {
+      "Properties": {
+        "Description": "Computes the Pictora success metrics for the days before today",
+        "ScheduleExpression": "cron(30 0 * * ? *)",
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "SuccessMetricsFunctionA6A86A4B",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 1,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "SuccessMetricsScheduleAllowEventRulePictoraDevJobsSuccessMetricsFunction4188462209A03965": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "SuccessMetricsFunctionA6A86A4B",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "SuccessMetricsSchedule5B19DF9F",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
     "SweeperFunctionB5F2624B": {
       "DependsOn": [
         "SweeperFunctionServiceRoleDefaultPolicyD5F37340",

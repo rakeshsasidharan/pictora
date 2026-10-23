@@ -10,6 +10,7 @@
   --notice-border: #e0b84a;
   --danger: #b3261e;
   --danger-text: #ffffff;
+  --success: #1a7f37;
   color-scheme: light;
 }
 
@@ -882,6 +883,34 @@ img {
 .kpi-value {
   font-size: 1.5rem;
   font-weight: 700;
+}
+
+/* Success metrics against their PRD targets: colour plus the words, never colour alone. */
+.kpi-tile.metric-met {
+  border-left: 4px solid var(--success);
+}
+
+.kpi-tile.metric-missed {
+  border-left: 4px solid var(--danger);
+}
+
+.kpi-tile.metric-met strong,
+td.metric-met {
+  color: var(--success);
+}
+
+.kpi-tile.metric-missed strong,
+td.metric-missed {
+  color: var(--danger);
+}
+
+td.metric-pending,
+td.metric-none {
+  color: var(--muted);
+}
+
+.success-metrics {
+  margin: 24px 0;
 }
 
 .spend-chart {

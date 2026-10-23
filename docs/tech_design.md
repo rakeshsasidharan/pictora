@@ -94,6 +94,7 @@ flowchart LR
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min, or in `queued` for over 10 min, as `failed`, refunds points, and frees the concurrency slot. It finds them through the active-jobs index (section 4), and each refund is conditional on the job still being in the status it was found in.
   - `model_health` (daily, 06:00 UTC): checks every enabled registry model against its provider's models list: OpenAI's models list, the Gemini models list (same `@google/genai` backend as the adapter), and Bedrock `ListFoundationModels` for Stability AI (`bedrock:ListFoundationModels`). A model that is missing, marked legacy by Bedrock, or retiring within 60 days (the registry's `eolDate` or Bedrock's end of life) is logged by name and counted in `ModelHealthProblems`; the model health alarm emails the admin, which covers the model-retirement risk in the PRD. A provider whose list can't be read is logged and skipped, never flagged.
+- `success_metrics` (daily, 00:30 UTC): computes the success metrics summaries (section 11.1) for the 8 days before today. A failed run is retried once; a rerun gives the same summaries.
 - Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
 
 ## 4. Data model (DynamoDB)
@@ -102,11 +103,11 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 
 | Entity | PK | SK | Key attributes | TTL |
 | --- | --- | --- | --- | --- |
-| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), ageConfirmed, status (`active` \| `suspended` \| `deleting`), deletionRequestedAt, `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag | — |
+| User profile | `USER#<sub>` | `PROFILE` | email, createdAt, tosAcceptedAt, tosVersion (`TOS_VERSION` from `packages/core`), ageConfirmed, status (`active` \| `suspended` \| `deleting`), deletionRequestedAt, `dailyPoints` (optional override, ADM-5), activeJobs, cooldownUntil (ISO 8601 UTC), abuseFlag; success metric markers, each set once: signupCountedAt, firstSessionAt, returnedAt, firstImageShownAt | — |
 | Daily usage | `USER#<sub>` | `USAGE#<yyyy-mm-dd>` | `used` (points reserved + spent), `GSI1PK=USAGE#<date>`, `GSI1SK=<used, zero-padded>` | 35 days |
 | Rate window | `USER#<sub>` | `RATE#<yyyymmddHHMM>` | count | 2 min |
 | Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt, or `Uploaded image`), latestVersion, versionCount, versionsClaimed (the last version number an edit claimed, section 5.3), style, modelId, source (`upload` for an uploaded image), createdAt, thumbKey (the latest version's) | — |
-| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, source (`upload` for an uploaded version 1), parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, referenceCount, modelId, quality, aspect, seed, transparentBackground (what a rerun needs, GAL-3), jobId, costPoints | — |
+| Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, source (`upload` for an uploaded version 1), parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, referenceCount, modelId, quality, aspect, seed, transparentBackground (what a rerun needs, GAL-3), jobId, costPoints, createdAt, downloadedAt (first download, section 11.1) | — |
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId (or uploadId for a blocked upload), createdAt | 24 h |
 | Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
@@ -116,6 +117,10 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Daily stats | `STATS#<yyyy-mm-dd>` | `MODEL#<modelId>` | images, points, providerCostCents, failures, blocks | 400 days |
 | Moderation review stats | `STATS#<yyyy-mm-dd>` | `MODERATION` | blocksReviewed, falseBlocks (blocks reviewed `ok`, for the false-block metric), reportsReviewed; counted on the day of the entries reviewed (ADM-4) | 400 days |
 | Enhancer stats | `STATS#<yyyy-mm-dd>` | `ENHANCER#<enhancer model>` | calls, inputTokens, outputTokens, costCents (overhead, never charged to users), fallbacks (output failed moderation), failures | 400 days |
+| Success metric counters | `METRICS#<yyyy-mm-dd>` | `COUNTS` | signups, firstSessionGenerates, returnGenerates (these three on the sign-up day), jobsSucceeded, jobsFailed, jobsBlocked, imagesGenerated, imagesDownloaded, imagesDiscarded (on the day the image was made), firstImagesShown (section 11.1) | 400 days |
+| Time to first image | `METRICS#<yyyy-mm-dd>` | `TTFI#<sub>` | ms (first page load to first image shown), on the day it was shown; one per user | 400 days |
+| Active user | `METRICS#<yyyy-mm-dd>` | `ACTIVE#<sub>` | — (a job of the user's succeeded that day) | 400 days |
+| Success metrics summary | `METRICS#<yyyy-mm-dd>` | `SUMMARY` | the seven PRD metrics, each with its numerator and denominator, and the day's time-to-first-image samples; written by the daily job | 400 days |
 | Moderation log | `MODLOG#<yyyy-mm-dd>` | `<ulid>` | type (`block` \| `report` \| `admin_action`), userId, promptExcerpt (200 characters), modelId, createdAt. Blocks: stage, category, provider, jobId. Reports: reason, imageId, version, s3Key. Blocks and reports, once reviewed (ADM-4): review (`ok` \| `confirmed`), reviewedBy, reviewedAt. Admin actions: userId is the admin's sub, action (`suspend` \| `unsuspend` \| `review`), targetUserId, and for a review entryDate, entryId, verdict | 90 days |
 
 **Access patterns**
@@ -135,6 +140,8 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
 | Admin stats for a range (ADM-3) | Query `PK=STATS#<date>` for each day (at most 92), GetItem `PLATFORM/SPEND#<month>` |
 | Moderation review queue (ADM-4) | Query `PK=MODLOG#<date>`, descending, filtered to blocks and reports |
+| Success metrics for a range | BatchGetItem `METRICS#<date>/SUMMARY` for each day (at most 92) |
+| Daily success metrics job | GetItem `METRICS#<date>/COUNTS`, Query `METRICS#<date>` with `SK begins_with TTFI#` and `ACTIVE#`, and Query `STATS#<date>`, for each day it needs |
 | Account deletion (AUTH-3) | Query all items under `USER#<sub>` and delete them in batches; delete the S3 prefix `users/<sub>/` |
 
 ### 4.1 Points and limits
@@ -344,8 +351,10 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | GET | `/api/images/:id` | Image detail + versions | Owner only (404 otherwise); every version, oldest first, with its parent, edit instruction or prompt and enhanced prompt, model, style, quality, aspect, seed, size, date, and presigned `url`, `downloadUrl` and `thumbUrl`. The edit panel (`/edit/<imageId>`) reads it after each edit, and the gallery detail view (a modal on wide screens, `/gallery/<imageId>` otherwise) to refresh expired URLs (GAL-4) |
 | DELETE | `/api/images/:id` | Delete an image and all its versions (GAL-3) | Owner only (404 otherwise). Deletes every object under `users/<sub>/<imageId>/` first, so a failure (503 `deletion_failed`) leaves the image to delete again; an edit still running then fails with a refund (section 5.3) |
 | GET | `/api/images/:id/versions/:n/download` | Redirect to a presigned original PNG (GAL-3, GEN-7) | 302 to a 15-minute URL with `Content-Disposition: attachment`; owner only (404 otherwise). The detail view links here, so its download link never expires |
+| POST | `/api/metrics/ttfi` | Time to first image (section 11.1) | `{ ms }`, 0 to 86,400,000; 200 `{ recorded }`. Stored once per user, and only for an account at most a day old; counted in the rate window (429) |
 | POST | `/api/reports` | Report an output | `{ imageId, version, reason }`; 201 with `reportId`. Writes a `MODLOG` entry of type `report`; owner only (404 otherwise) |
 | GET | `/api/admin/stats?from=&to=` | Spend and usage dashboard (ADM-3) | `admins` Cognito group only. Range defaults to the 14 days ending today, at most 92 days. Spend by day and provider (the provider comes from the registry), totals per model, enhancer overhead, today's spend, images, failure rate (failed jobs ÷ failed jobs + images) and blocks (from today's `MODLOG`), month-to-date spend against the cap, false blocks among reviewed blocks, and the top 20 users by points today (GSI1 on `USAGE#<today>`) with email and status |
+| GET | `/api/admin/metrics?from=&to=` | Success metrics against the PRD targets (section 11.1) | Admins only; same range rules as the stats. Each day's summary (`computed: false` until the daily job has run), the metrics over the whole range, the targets, and when the newest summary was computed |
 | GET | `/api/admin/moderation?date=` | Blocks and reports for review (ADM-4) | Admins only; the day's `MODLOG` blocks and reports, newest first, with a presigned thumbnail for reported images |
 | POST | `/api/admin/moderation/:date/:id/review` | Mark an entry reviewed (ADM-4) | Admins only; `{ verdict: 'ok' \| 'confirmed' }`. One transaction records the verdict, moves the `STATS#<date>/MODERATION` counts, and logs an `admin_action` |
 | GET | `/api/admin/users/:sub` | A user's profile and today's points | Admins only |
@@ -400,6 +409,36 @@ Secrets are read once per Lambda cold start and cached for 5 minutes.
 - **Alarms** (sent to SNS, then email, with recovery notices): failed jobs above 5% of finished jobs over 15 min, p95 latency above 60 s per provider, dead-letter queue above 0, oldest message older than 5 min in any provider queue or the purge queue, app 5xx above 1%, monthly spend at 80% and 100% of the cap (`MonthlySpendCents`), and model health problems or a failed model health run.
 - **Budgets:** AWS Budgets alerts at 50%, 80% and 100% of the monthly budget, which is the platform cap (`spendCapUsd`), so AWS spend (Bedrock included) alerts at the same levels as provider spend. Set OpenAI and Google billing alerts at the same levels by hand.
 
+### 11.1 Success metrics
+
+The PRD's success metrics are measured in the table, with no third-party analytics and no personal data beyond the user's `sub`. Events add to counters on `METRICS#<date>` / `COUNTS` (section 4); a marker on the profile or version makes each per-user event count once, written in the same transaction as the counter.
+
+| Event | Where | Counted on |
+| --- | --- | --- |
+| `signup` | `ensureProfile`, when it creates the profile (marker `signupCountedAt`) | the sign-up day |
+| `first_session_generate` | worker, after a job succeeds, when the job was created within an hour of sign-up (marker `firstSessionAt`) | the sign-up day |
+| `return_generate_7d` | worker, after a job succeeds, when the job was created more than an hour and at most 7 days after sign-up (marker `returnedAt`) | the sign-up day |
+| `image_generated` | worker, in the job's finishing transaction, with `jobsSucceeded` (and `jobsFailed` or `jobsBlocked` on a refund, the sweeper's included) | the day the job finished |
+| `image_downloaded` | `GET /api/images/:id/versions/:n/download`, the first time for a generated version (marker `downloadedAt` on the version). Every Download PNG link for a generated image goes through this route | the day of the download |
+| `image_kept` | the daily job: images made on the day, less `imagesDiscarded`, which counts generated versions deleted (with their image, or with the account) within 7 days of being made without a download | the day the image was made |
+| `first_image_shown` | the browser: the root layout notes the first page load in the tab (session storage, so it survives the sign-in redirect), and the first result image to load posts the time since to `POST /api/metrics/ttfi`, once per browser. The server keeps one per user, for accounts at most a day old | the day it was shown |
+
+A user is active on a day when one of their jobs succeeds (`ACTIVE#<sub>`).
+
+The daily job (`success_metrics`, 00:30 UTC) writes `METRICS#<date>` / `SUMMARY` for each of the 8 days before today, recomputing each from the counters, so a rerun gives the same result and later reviews of a day's blocks are picked up for a week. The formulas are in `packages/core/src/metrics.ts`:
+
+| Metric | Formula | PRD target |
+| --- | --- | --- |
+| Activation | `firstSessionGenerates ÷ signups`, for the day's sign-ups | ≥ 70% |
+| Keep rate | `(imagesGenerated − imagesDiscarded) ÷ imagesGenerated`, once the day's 7-day window has closed (8 days later) | ≥ 35% |
+| Time to first image | p50 of the day's samples | < 60 s |
+| Generation success | `jobsSucceeded ÷ (jobsSucceeded + jobsFailed)`; blocks are neither | ≥ 98% |
+| Week-1 retention | `returnGenerates ÷ signups`, for the day's sign-ups, once their 7 days have passed | ≥ 25% |
+| Cost per active user | provider spend plus enhancer overhead over the 7 days ending on the day (`STATS#`) ÷ distinct users active in them | ≤ daily budget × 7 (`DAILY_POINTS` × 7 cents) |
+| Moderation false blocks | `falseBlocks ÷ blocksReviewed` from `STATS#<date>` / `MODERATION` (ADM-4) | < 2% |
+
+The admin dashboard shows a "Success metrics" section under the stats, for the same date range: a tile per metric over the range (set the range to the beta dates to judge the beta), green when it meets the target and red when it misses, always with the words as well, then a table of the days. Over a range, each share is the sum of the days' numerators over the sum of their denominators (days whose window is still open are left out of keep rate and retention), time to first image is the p50 of every sample, and cost per active user is the mean of the days' values.
+
 ## 12. Security
 
 - Least-privilege IAM per function. The app can read and write the table, send to the queues, presign for its bucket, and disable and sign out users of its user pool (account deletion). The purge Lambda can delete users of the pool and objects in the images bucket. The worker can also read the secrets, read objects under `users/` and `uploads/` (an edit's parent and references), and call Bedrock. Neither can delete the table or the buckets.
@@ -436,7 +475,9 @@ Every `/api` route, as built. "Session" means the proxy answers 401 without one 
 | DELETE | `/api/images/:id` | Session | Caller's partition (404) before any S3 delete | ULID | None |
 | GET | `/api/images/:id/versions/:n/download` | Session | Caller's partition (404) | ULID, version number | None |
 | POST | `/api/reports` | Session | Caller's version (404) | `reportRequestSchema` | Rate window |
+| POST | `/api/metrics/ttfi` | Session | Caller's profile; one value per user | `ttfiRequestSchema` | Rate window |
 | GET | `/api/admin/stats` | Admins | Not user-scoped | `adminStatsQuerySchema` | None |
+| GET | `/api/admin/metrics` | Admins | Not user-scoped | `adminStatsQuerySchema` | None |
 | GET | `/api/admin/moderation` | Admins | Not user-scoped | `adminModerationQuerySchema` | None |
 | POST | `/api/admin/moderation/:date/:id/review` | Admins | Not user-scoped | Date, ULID, `reviewRequestSchema` | None |
 | GET | `/api/admin/users/:sub` | Admins | Not user-scoped | `userSubSchema` | None |

@@ -9,6 +9,7 @@ const lib = vi.hoisted(() => ({
   createUpload: vi.fn(),
   completeOnboarding: vi.fn(),
   createReport: vi.fn(),
+  recordTtfi: vi.fn(),
 }));
 
 vi.mock('../src/lib/jobs', async (original) => ({
@@ -23,6 +24,7 @@ vi.mock('../src/lib/uploads_deps', () => ({ uploadsDeps: () => ({}) }));
 vi.mock('../src/lib/account', () => ({ completeOnboarding: lib.completeOnboarding }));
 vi.mock('../src/lib/account_deps', () => ({ accountDeps: () => ({}) }));
 vi.mock('../src/lib/reports', () => ({ createReport: lib.createReport }));
+vi.mock('../src/lib/ttfi', () => ({ recordTtfi: lib.recordTtfi }));
 vi.mock('../src/lib/dynamodb', () => ({
   documentClient: () => ({}),
   tableName: () => 'pictora-test',
@@ -33,6 +35,7 @@ const { POST: enhance } = await import('../src/app/api/enhance/route');
 const { POST: uploads } = await import('../src/app/api/uploads/route');
 const { POST: onboarding } = await import('../src/app/api/me/onboarding/route');
 const { POST: reports } = await import('../src/app/api/reports/route');
+const { POST: ttfi } = await import('../src/app/api/metrics/ttfi/route');
 
 const URL_BASE = 'https://pictora.example.dev';
 
@@ -103,6 +106,7 @@ describe('JSON routes', () => {
     ['POST /api/uploads', uploads, lib.createUpload],
     ['POST /api/me/onboarding', onboarding, lib.completeOnboarding],
     ['POST /api/reports', reports, lib.createReport],
+    ['POST /api/metrics/ttfi', ttfi, lib.recordTtfi],
   ] as const)('%s refuses a body over 16 KB before handling it', async (_name, handler, handle) => {
     const response = await handler(
       new NextRequest(`${URL_BASE}/api/x`, {

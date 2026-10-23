@@ -12,6 +12,7 @@ export default defineConfig({
       { find: /^@pictora\/core\/registry-store$/, replacement: coreSource('registry_store.ts') },
       { find: /^@pictora\/core\/observability$/, replacement: coreSource('observability.ts') },
       { find: /^@pictora\/core\/block-store$/, replacement: coreSource('block_store.ts') },
+      { find: /^@pictora\/core\/metrics-store$/, replacement: coreSource('metrics_store.ts') },
       {
         find: /^@pictora\/providers\/text$/,
         replacement: fileURLToPath(new URL('../packages/providers/src/text.ts', import.meta.url)),

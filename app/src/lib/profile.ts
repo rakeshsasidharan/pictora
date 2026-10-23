@@ -15,6 +15,8 @@ import {
   userPk,
   type AbuseFlag,
 } from '@pictora/core';
+import { recordSignup } from '@pictora/core/metrics-store';
+import { log } from './observability';
 import type { Session } from './session';
 
 /** `deleting` from the moment a user asks to delete their account until the purge removes the profile (AUTH-3). */
@@ -45,7 +47,8 @@ export interface Profile {
 /**
  * Returns the user's profile, creating it on first use with the email and `createdAt` (tech design 8). One
  * conditional-free update both creates and reads it; the email follows the latest verified token. When this
- * call created it, an abuse flag the pre-sign-up trigger left for the email is copied onto it.
+ * call created it, the sign-up is counted for the success metrics, and an abuse flag the pre-sign-up trigger left
+ * for the email is copied onto it.
  */
 export async function ensureProfile(
   client: DynamoDBDocumentClient,
@@ -78,9 +81,28 @@ export async function ensureProfile(
     }),
   );
   const profile = profileFromItem(session.sub, result.Attributes ?? {});
-  if (profile.createdAt !== values[':now'] || !session.email) return profile;
+  if (profile.createdAt !== values[':now']) return profile;
+  await countSignup(client, tableName, session.sub, now);
+  if (!session.email) return profile;
   const abuseFlag = await takeSignUpFlag(client, tableName, session.sub, session.email);
   return abuseFlag ? { ...profile, abuseFlag: profile.abuseFlag ?? abuseFlag } : profile;
+}
+
+/**
+ * Counts the `signup` success metric (tech design 11.1), once per user however many first requests race. A
+ * failure is logged, never thrown: metrics must not stop anyone using the app.
+ */
+async function countSignup(
+  client: DynamoDBDocumentClient,
+  tableName: string,
+  sub: string,
+  now: Date,
+): Promise<void> {
+  try {
+    await recordSignup({ client, tableName }, sub, now);
+  } catch (error) {
+    log('ERROR', 'Counting a sign-up failed', { userSub: sub, error });
+  }
 }
 
 /**

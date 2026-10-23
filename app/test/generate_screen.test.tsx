@@ -408,8 +408,9 @@ describe('GenerateScreen', () => {
       await screen.findByText('Status: Done');
       const results = screen.getByRole('list', { name: 'Results' });
       const downloads = within(results).getAllByRole('link', { name: 'Download PNG' });
+      // Downloads go through the app, which counts them for the keep rate.
       expect(downloads.map((link) => link.getAttribute('href'))).toEqual(
-        images.map((image) => image.downloadUrl),
+        images.map((image) => `/api/images/${image.imageId}/versions/${image.version}/download`),
       );
       expect(downloads[0]?.hasAttribute('download')).toBe(true);
       expect(within(results).getAllByRole('img', { name: 'A lighthouse at dusk' })).toHaveLength(2);
@@ -429,7 +430,7 @@ describe('GenerateScreen', () => {
       const dialog = screen.getByRole('dialog', { name: 'Full-size image' });
       expect(within(dialog).getByRole('img').getAttribute('src')).toBe(images[1]?.url);
       expect(within(dialog).getByRole('link', { name: 'Download PNG' }).getAttribute('href')).toBe(
-        images[1]?.downloadUrl,
+        `/api/images/${images[1]?.imageId}/versions/1/download`,
       );
       fireEvent.keyDown(dialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();

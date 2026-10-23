@@ -19,6 +19,7 @@ import {
   userPk,
   type PurgeMessage,
 } from '@pictora/core';
+import { recordDiscarded, type DeletedVersion } from '@pictora/core/metrics-store';
 import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import { log } from './log.js';
 
@@ -32,6 +33,8 @@ export interface PurgeDeps {
   deleteUser: (username: string) => Promise<void>;
   /** Puts a purge message back on the queue, to run again after `delaySeconds`. */
   requeue: (message: PurgeMessage, delaySeconds: number) => Promise<void>;
+  /** The clock for the keep-rate metric; the real time unless a test sets it. */
+  now?: () => Date;
 }
 
 /**
@@ -41,6 +44,9 @@ export interface PurgeDeps {
  */
 export const PURGE_WAIT_SECONDS = 60;
 export const MAX_PURGE_WAITS = 10;
+
+/** The sort key prefix of image version items (`VER#<imageId>#<n>`). */
+const VERSION_SK_PREFIX = 'VER#';
 
 /** DynamoDB deletes are at most 25 to a BatchWriteItem call; S3 deletes at most 1,000 to a DeleteObjects call. */
 const DYNAMO_BATCH = 25;
@@ -82,9 +88,15 @@ export async function purgeAccount(deps: PurgeDeps, message: PurgeMessage): Prom
   return 'purged';
 }
 
+/** A user item as the purge reads it: its key, and for an image version what the keep rate needs. */
+interface UserItem extends DeletedVersion {
+  PK: string;
+  SK: string;
+}
+
 async function deleteUserItems(deps: PurgeDeps, sub: string): Promise<number> {
   const pk = userPk(sub);
-  const keys: { PK: string; SK: string }[] = [];
+  const items: UserItem[] = [];
   let exclusiveStartKey: Record<string, unknown> | undefined;
   do {
     const page = await deps.client.send(
@@ -92,15 +104,16 @@ async function deleteUserItems(deps: PurgeDeps, sub: string): Promise<number> {
         TableName: deps.tableName,
         KeyConditionExpression: 'PK = :pk',
         ExpressionAttributeValues: { ':pk': pk },
-        ProjectionExpression: 'PK, SK',
+        ProjectionExpression: 'PK, SK, jobId, createdAt, downloadedAt',
         ConsistentRead: true,
         ExclusiveStartKey: exclusiveStartKey,
       }),
     );
-    keys.push(...((page.Items ?? []) as { PK: string; SK: string }[]));
+    items.push(...((page.Items ?? []) as UserItem[]));
     exclusiveStartKey = page.LastEvaluatedKey;
   } while (exclusiveStartKey);
 
+  const keys = items.map(({ PK, SK }) => ({ PK, SK }));
   const ordered = [
     ...keys.filter((key) => key.SK !== PROFILE_SK),
     ...keys.filter((key) => key.SK === PROFILE_SK),
@@ -108,7 +121,21 @@ async function deleteUserItems(deps: PurgeDeps, sub: string): Promise<number> {
   for (let start = 0; start < ordered.length; start += DYNAMO_BATCH) {
     await deleteBatch(deps, ordered.slice(start, start + DYNAMO_BATCH));
   }
+  await countDiscarded(deps, sub, items);
   return ordered.length;
+}
+
+/**
+ * Generated images the user deleted with their account, never downloaded and under 7 days old, weren't kept
+ * (tech design 11.1). Logged, not thrown, on failure: the purge itself succeeded.
+ */
+async function countDiscarded(deps: PurgeDeps, sub: string, items: UserItem[]): Promise<void> {
+  const versions = items.filter((item) => item.SK.startsWith(VERSION_SK_PREFIX));
+  try {
+    await recordDiscarded(deps, versions, deps.now?.() ?? new Date());
+  } catch (error) {
+    log('ERROR', 'Counting discarded images failed', { sub, error });
+  }
 }
 
 async function deleteBatch(deps: PurgeDeps, keys: { PK: string; SK: string }[]): Promise<void> {
