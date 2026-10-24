@@ -13,15 +13,18 @@ export {
   ProviderTimeoutError,
   toProviderError,
 } from './errors.js';
+export { createBatchProviderFactory, isBatchProvider } from './batch.js';
 export * from './enhancer.js';
 export { createProviderFactory, DEFAULT_ADAPTERS, guardProvider } from './factory.js';
 export type { AdapterFactory, ProviderFactoryOptions } from './factory.js';
 export {
+  GEMINI_API_BASE_URL,
   GEMINI_BACKENDS,
   GEMINI_DEFAULT_VERTEX_LOCATION,
   GEMINI_MAX_REFERENCE_IMAGES,
   GeminiProvider,
   geminiClientOptions,
+  geminiBatchResults,
   geminiConfigFromEnv,
   geminiRequest,
   toGeminiError,
@@ -49,6 +52,7 @@ export {
 } from './image.js';
 export type { NormalisedImage, PreparedUpload, Thumbnail } from './image.js';
 export {
+  MOCK_BATCH_PREFIX,
   MOCK_BLOCK_KEYWORD,
   MOCK_DEFAULT_DELAY_MS,
   MOCK_FAIL_KEYWORD,
@@ -66,6 +70,7 @@ export {
 } from './moderation.js';
 export type { Moderate, ModerationInput, ModeratorOptions } from './moderation.js';
 export {
+  OPENAI_BATCH_ENDPOINT,
   OPENAI_MAX_REFERENCE_IMAGES,
   OPENAI_TOKEN_PRICES,
   OpenAiProvider,
@@ -94,4 +99,15 @@ export {
 export type { RetryOptions } from './retry.js';
 export { SECRET_CACHE_MS, apiKeyFromSecret, secretApiKey, secretString } from './secrets.js';
 export type { SecretApiKeyOptions } from './secrets.js';
-export type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
+export { BATCH_PRICE_FACTOR } from './types.js';
+export type {
+  BatchImageProvider,
+  BatchImageRequest,
+  BatchItem,
+  BatchItemResult,
+  BatchPoll,
+  GeneratedImage,
+  ImageProvider,
+  ImageRequest,
+  ImageResult,
+} from './types.js';

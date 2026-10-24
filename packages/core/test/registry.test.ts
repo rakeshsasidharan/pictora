@@ -94,6 +94,30 @@ describe('validateRegistry', () => {
     expect(validateRegistry(models).errors).toContain('Duplicate model id: gpt-image-1-mini');
   });
 
+  it('allows batch only for providers with a batch API and models that generate', () => {
+    const models = seedCopy();
+    (entry(models, 'stable-image-core').capabilities as Record<string, unknown>).batch = true;
+    expect(validateRegistry(models).errors).toEqual([
+      'Model stable-image-core: bedrock has no batch API',
+    ]);
+
+    const editOnly = seedCopy();
+    const mock = entry(editOnly, 'mock').capabilities as Record<string, unknown>;
+    mock.generate = false;
+    mock.edit = true;
+    expect(validateRegistry(editOnly).errors).toContain(
+      'Model mock: batch jobs generate images, so it must support generate',
+    );
+  });
+
+  it('treats a missing batch capability as no batch', () => {
+    const models = seedCopy();
+    delete (entry(models, 'gpt-image-2').capabilities as Record<string, unknown>).batch;
+    const { models: parsed, errors } = validateRegistry(models);
+    expect(errors).toEqual([]);
+    expect(parsed.find((model) => model.id === 'gpt-image-2')?.capabilities.batch).toBeUndefined();
+  });
+
   it('reports a quality without a cost', () => {
     const models = seedCopy();
     const qualities = entry(models, 'gemini-3-pro-image').qualities as Record<

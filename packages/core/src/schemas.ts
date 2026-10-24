@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { REPORT_REASONS } from './moderation.js';
+import { DELIVERIES } from './jobs.js';
 import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT } from './points.js';
 import { ASPECTS, MAX_REFERENCE_IMAGES, MODEL_ID_PATTERN, QUALITIES } from './registry.js';
 import { STYLE_IDS } from './styles.js';
@@ -59,6 +60,8 @@ export const generateJobRequestSchema = z.strictObject({
   count: z.int().min(MIN_IMAGE_COUNT).max(MAX_IMAGE_COUNT),
   seed: z.int().min(0).max(4_294_967_295).optional(),
   transparentBackground: z.boolean().optional(),
+  /** `batch` sends the job through a provider batch at half the points, delivered within 24 hours (P1). */
+  delivery: z.enum(DELIVERIES).optional(),
 });
 
 /** `POST /api/jobs` with type `edit` (EDIT-1 to EDIT-5). */

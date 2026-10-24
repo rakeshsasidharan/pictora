@@ -28,5 +28,6 @@ export default defineConfig({
     // Powertools would write log lines and metrics to stdout; tests capture what they need themselves.
     env: { POWERTOOLS_LOG_LEVEL: 'SILENT', POWERTOOLS_METRICS_DISABLED: 'true' },
     include: ['test/**/*.test.{ts,tsx}'],
+    setupFiles: ['test/setup.ts'],
   },
 });

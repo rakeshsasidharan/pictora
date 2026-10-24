@@ -145,6 +145,24 @@ describe('generateJobRequestSchema', () => {
   });
 });
 
+describe('generateJobRequestSchema delivery', () => {
+  it('takes standard or batch delivery, or none', () => {
+    for (const delivery of ['standard', 'batch'] as const) {
+      expect(generateJobRequestSchema.parse({ ...validGenerate, delivery }).delivery).toBe(
+        delivery,
+      );
+    }
+    expect(generateJobRequestSchema.parse(validGenerate)).not.toHaveProperty('delivery');
+    expect(
+      generateJobRequestSchema.safeParse({ ...validGenerate, delivery: 'later' }).success,
+    ).toBe(false);
+  });
+
+  it('is not an edit option', () => {
+    expect(editJobRequestSchema.safeParse({ ...validEdit, delivery: 'batch' }).success).toBe(false);
+  });
+});
+
 describe('editJobRequestSchema', () => {
   it('accepts an edit with up to 3 reference images', () => {
     const request = { ...validEdit, referenceKeys: [UPLOAD_KEY, UPLOAD_KEY, UPLOAD_KEY] };

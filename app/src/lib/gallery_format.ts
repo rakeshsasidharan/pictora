@@ -79,9 +79,16 @@ export function createdText(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : `${CREATED_FORMAT.format(date)} UTC`;
 }
 
-/** What a running job's placeholder says (GEN-8). */
+/** What a running job's placeholder says (GEN-8); a batch job waiting for its provider batch is Scheduled. */
 export function placeholderText(job: ActiveJobBody): string {
-  const state = job.status === 'queued' ? 'Queued' : job.type === 'edit' ? 'Editing' : 'Generating';
+  const state =
+    job.status === 'scheduled' || job.status === 'submitted'
+      ? 'Scheduled'
+      : job.status === 'queued'
+        ? 'Queued'
+        : job.type === 'edit'
+          ? 'Editing'
+          : 'Generating';
   const images =
     job.type === 'edit' ? '' : ` · ${job.count} ${job.count === 1 ? 'image' : 'images'}`;
   return `${state}${images}`;

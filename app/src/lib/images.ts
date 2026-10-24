@@ -195,7 +195,10 @@ export interface GalleryImageBody {
   thumbUrl: string;
 }
 
-/** A job still queued or running, shown as a placeholder at the top of the gallery (GEN-8). */
+/**
+ * A job still queued or running, or a batch job still scheduled or submitted, shown as a placeholder at the top
+ * of the gallery (GEN-8, tech design 5.4).
+ */
 export interface ActiveJobBody {
   jobId: string;
   type: JobType;
@@ -207,6 +210,8 @@ export interface ActiveJobBody {
   count: number;
   /** The image an edit adds a version to. */
   imageId?: string;
+  /** `batch` for a job delivered later through a provider batch. */
+  delivery?: 'batch';
 }
 
 /** The `GET /api/images` body. */
@@ -272,11 +277,11 @@ export async function listImages(
 }
 
 /**
- * The caller's queued and running jobs, newest first. They come from the active-jobs index (tech design 4), which
+ * The caller's queued, running and batch jobs, newest first. They come from the active-jobs index (tech design 4), which
  * holds only unfinished jobs, filtered to the caller.
  */
 async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[]> {
-  const statuses: ActiveJobStatus[] = ['queued', 'running'];
+  const statuses: ActiveJobStatus[] = ['queued', 'running', 'scheduled', 'submitted'];
   const items: JobItem[] = [];
   for (const status of statuses) {
     let exclusiveStartKey: Record<string, unknown> | undefined;
@@ -296,7 +301,7 @@ async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[
     } while (exclusiveStartKey);
   }
   return items
-    .filter((job) => job.status === 'queued' || job.status === 'running')
+    .filter((job) => statuses.includes(job.status as ActiveJobStatus))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .map((job) => {
       const request = job.request;
@@ -307,7 +312,11 @@ async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[
         createdAt: job.createdAt,
         ...(request.type === 'edit'
           ? { text: request.instruction, count: 1, imageId: request.imageId }
-          : { text: request.prompt, count: request.count }),
+          : {
+              text: request.prompt,
+              count: request.count,
+              ...(request.delivery === 'batch' ? { delivery: 'batch' as const } : {}),
+            }),
       };
     });
 }

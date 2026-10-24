@@ -1,4 +1,10 @@
-import { STUCK_QUEUED_MS, STUCK_RUNNING_MS, jobError, type ActiveJobStatus } from '@pictora/core';
+import {
+  STUCK_QUEUED_MS,
+  STUCK_RUNNING_MS,
+  jobError,
+  type ActiveJobStatus,
+  type BatchJobStatus,
+} from '@pictora/core';
 import { powertoolsMetrics, type EmitMetrics } from '@pictora/core/observability';
 import { tableContext } from './deps.js';
 import { findStuckJobs, refundJob, type TableContext } from './job_store.js';
@@ -19,8 +25,8 @@ export interface SweepResult {
   errors: string[];
 }
 
-/** How long a job may stay in each active status before the sweeper fails it. */
-const STUCK_AFTER_MS: Readonly<Record<ActiveJobStatus, number>> = {
+/** How long a job may stay in each active status before the sweeper fails it; batch jobs have their own limits. */
+const STUCK_AFTER_MS: Readonly<Record<Exclude<ActiveJobStatus, BatchJobStatus>, number>> = {
   running: STUCK_RUNNING_MS,
   queued: STUCK_QUEUED_MS,
 };

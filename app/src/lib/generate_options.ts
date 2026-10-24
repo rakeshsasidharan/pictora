@@ -14,6 +14,13 @@ import type { PublicModel, PublicStyle } from './models_response';
 export const POLL_INTERVAL_MS = 2_000;
 export const POLL_TIMEOUT_MS = 3 * 60_000;
 
+/**
+ * How often the generate screen and the gallery ask about a batch job (tech design 5.4): it can take hours, so
+ * once a minute, for as long as the page stays open.
+ */
+export const BATCH_POLL_INTERVAL_MS = 60_000;
+export const BATCH_POLL_TIMEOUT_MS = 24 * 60 * 60_000;
+
 /** The style a new form starts with: the prompt as typed, with the model the registry picks for it. */
 export const DEFAULT_STYLE: StyleId = 'none';
 
@@ -30,6 +37,8 @@ export const QUALITY_LABELS: Record<Quality, string> = {
 export const STATUS_LABELS: Record<JobStatus, string> = {
   queued: 'Queued',
   running: 'Generating',
+  scheduled: 'Scheduled',
+  submitted: 'Scheduled',
   succeeded: 'Done',
   failed: 'Failed',
   blocked: 'Blocked',

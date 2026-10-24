@@ -394,8 +394,8 @@ export function splitPoints(points: number, count: number): number[] {
 }
 
 /** Writes version `version` of an image to S3 as a PNG and a WebP thumbnail. */
-async function storeImage(
-  deps: PipelineDeps,
+export async function storeImage(
+  deps: Pick<PipelineDeps, 's3' | 'bucket'>,
   sub: string,
   imageId: string,
   version: number,

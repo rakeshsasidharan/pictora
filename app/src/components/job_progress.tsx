@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Button } from '@/components/ui/button';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { reportFirstImage } from '../lib/first_image';
@@ -19,28 +20,45 @@ export interface JobProgressProps {
   prompt: string;
   /** The model the images are made with, which Auto may have picked. */
   modelName: string;
+  /** A batch job, delivered later (tech design 5.4): scheduled, then done. */
+  batch?: boolean;
 }
 
 const STEPS = ['queued', 'running', 'succeeded'] as const;
+const BATCH_STEPS = ['scheduled', 'succeeded'] as const;
+
+/** What a step is called; a batch job is Scheduled while it waits for or sits in its provider batch. */
+function stepIndex(steps: readonly string[], status: string): number {
+  const shown = status === 'submitted' ? 'scheduled' : status;
+  return steps.indexOf(shown);
+}
 
 /**
  * A submitted job: its status as queued, generating and done (GEN-8), then the results with a full-size view,
  * PNG download (GEN-7) and a Report action, or the reason it failed and the refund (GEN-10).
  */
-export function JobProgress({ poll, pointsReserved, prompt, modelName }: JobProgressProps) {
+export function JobProgress({
+  poll,
+  pointsReserved,
+  prompt,
+  modelName,
+  batch = false,
+}: JobProgressProps) {
   const { job, timedOut, lost } = poll;
-  const status = job?.status ?? 'queued';
+  const status = job?.status ?? (batch ? 'scheduled' : 'queued');
+  const steps: readonly JobStatusBody['status'][] = batch ? BATCH_STEPS : STEPS;
   const failed = status === 'failed' || status === 'blocked';
   const active = !failed && status !== 'succeeded' && !timedOut && !lost;
-  const current = failed ? 2 : STEPS.indexOf(status as (typeof STEPS)[number]);
+  const current = failed ? steps.length - 1 : stepIndex(steps, status);
   const refunded = pointsReserved - (job?.pointsCharged ?? 0);
 
   return (
     <section className="job-progress" aria-labelledby="job-heading">
       <h2 id="job-heading">Your images</h2>
       <ol className="job-steps">
-        {STEPS.map((step, index) => {
-          const label = index === 2 && failed ? STATUS_LABELS[status] : STATUS_LABELS[step];
+        {steps.map((step, index) => {
+          const label =
+            index === steps.length - 1 && failed ? STATUS_LABELS[status] : STATUS_LABELS[step];
           return (
             <li
               key={step}
@@ -57,7 +75,16 @@ export function JobProgress({ poll, pointsReserved, prompt, modelName }: JobProg
       </p>
       <p className="job-model">Model: {modelName}</p>
 
-      {active && (
+      {active && batch && (
+        <p className="job-note">
+          Your images will be in your <Link href={GALLERY_PATH}>gallery</Link> within 24 hours,
+          often much sooner. You can leave this page.
+        </p>
+      )}
+      {batch && (active || status === 'succeeded') && (
+        <ReadyNotification ready={status === 'succeeded'} prompt={prompt} />
+      )}
+      {active && !batch && (
         <p className="job-note">
           You can leave this page; your images will be saved to your{' '}
           <Link href={GALLERY_PATH}>gallery</Link>.
@@ -82,6 +109,51 @@ export function JobProgress({ poll, pointsReserved, prompt, modelName }: JobProg
       )}
       {status === 'succeeded' && job?.images && <ResultsGrid images={job.images} prompt={prompt} />}
     </section>
+  );
+}
+
+/** Whether the browser can show notifications at all. */
+function notificationsSupported(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+/**
+ * The optional "tell me when it's ready" for a batch job (tech design 5.4): asks for the browser's permission,
+ * then shows a notification when the job is done, as long as this page stays open. Renders nothing once
+ * the images are ready, or where notifications are unsupported or blocked.
+ */
+function ReadyNotification({ ready, prompt }: { ready: boolean; prompt: string }) {
+  const [wanted, setWanted] = useState(false);
+  const [denied, setDenied] = useState(
+    () => notificationsSupported() && Notification.permission === 'denied',
+  );
+  const shown = useRef(false);
+
+  useEffect(() => {
+    if (!ready || !wanted || shown.current || !notificationsSupported()) return;
+    shown.current = true;
+    new Notification('Your Pictora images are ready', { body: prompt, tag: 'pictora-batch' });
+  }, [ready, wanted, prompt]);
+
+  if (ready || !notificationsSupported() || denied) return null;
+  if (wanted) {
+    return (
+      <p className="text-sm text-muted-foreground" role="status">
+        We&apos;ll notify you here when your images are ready, while this page stays open.
+      </p>
+    );
+  }
+
+  async function ask() {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') setWanted(true);
+    else setDenied(true);
+  }
+
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={() => void ask()}>
+      Notify me when they&apos;re ready
+    </Button>
   );
 }
 

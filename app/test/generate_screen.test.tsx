@@ -22,6 +22,7 @@ function renderScreen(points: PointsLeft = { left: 25, limit: 25 }, pollTimeoutM
       points={points}
       pollIntervalMs={5}
       pollTimeoutMs={pollTimeoutMs}
+      batchPollIntervalMs={5}
     />,
   );
 }
@@ -358,6 +359,128 @@ describe('GenerateScreen', () => {
       fireEvent.click(radio(/^Draft/));
       expect((generate() as HTMLButtonElement).disabled).toBe(false);
       expect(screen.queryByText(/don't have enough points left today/)).toBeNull();
+    });
+  });
+
+  describe('deliver later (batch)', () => {
+    const later = () => screen.getByRole('checkbox', { name: 'Save points: deliver later' });
+
+    it('offers to save points, halving the cost, and explains the wait', () => {
+      renderScreen({ left: 20, limit: 25 });
+      expect(screen.getByText('Uses 6 of your 20 points today')).toBeTruthy();
+      expect(later().getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen.getByText(/Half the points\. Your images arrive in your gallery within 24 hours/),
+      ).toBeTruthy();
+
+      fireEvent.click(later());
+      expect(later().getAttribute('aria-checked')).toBe('true');
+      expect(
+        screen.getByText('Uses 3 of your 20 points today (half of 6, delivered later)'),
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Schedule' })).toBeTruthy();
+      fireEvent.click(radio(/^High/));
+      // 22 points, half rounded up.
+      expect(screen.getByText(/^Uses 11 of your 20 points today/)).toBeTruthy();
+    });
+
+    it('lets a batch fit where the full price would not', () => {
+      renderScreen({ left: 5, limit: 25 });
+      chooseModel(/^GPT Image 2/);
+      expect((generate() as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(later());
+      expect((screen.getByRole('button', { name: 'Schedule' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+
+    it('hides the option for a model without batches', () => {
+      renderScreen();
+      chooseModel(/^Stable Image Core/);
+      expect(screen.queryByRole('checkbox', { name: 'Save points: deliver later' })).toBeNull();
+    });
+
+    it('schedules the job, keeps the form open, and notifies when the images are ready', async () => {
+      const shown: { title: string; options?: NotificationOptions }[] = [];
+      class FakeNotification {
+        static permission: NotificationPermission = 'default';
+        static requestPermission = vi.fn(async () => 'granted' as NotificationPermission);
+        constructor(title: string, options?: NotificationOptions) {
+          shown.push({ title, options });
+        }
+      }
+      vi.stubGlobal('Notification', FakeNotification);
+      let ready = false;
+      const fetchMock = stubApi({
+        created: json({ jobId: JOB_ID, status: 'scheduled', pointsReserved: 3 }, 202),
+        me: { pointsLeft: 22 },
+      });
+      const images = [
+        { imageId: 'IMG1', version: 1, url: 'https://signed.example/IMG1.png', downloadUrl: 'd' },
+      ];
+      const statusOf = () =>
+        ready
+          ? { status: 'succeeded', pointsReserved: 3, pointsCharged: 3, images }
+          : { status: 'submitted', pointsReserved: 3 };
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === '/api/jobs' && init?.method === 'POST') {
+          return json({ jobId: JOB_ID, status: 'scheduled', pointsReserved: 3 }, 202);
+        }
+        if (url === `/api/jobs/${JOB_ID}`) return json({ jobId: JOB_ID, ...statusOf() });
+        if (url === '/api/me') return json({ pointsLeft: 22, dailyLimit: 25 });
+        if (url === '/api/enhance') {
+          const body = JSON.parse(init?.body as string) as { prompt: string };
+          return json({ enhancedPrompt: body.prompt });
+        }
+        return json({}, 404);
+      });
+      renderScreen({ left: 25, limit: 25 });
+      fireEvent.click(later());
+      fireEvent.change(prompt(), { target: { value: 'A lighthouse at dusk' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Schedule' }));
+
+      expect(await screen.findByText('Status: Scheduled')).toBeTruthy();
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({ delivery: 'batch' });
+      expect(screen.getByText(/often much sooner\. You can leave this page\./)).toBeTruthy();
+      // The form stays open for another request.
+      expect((screen.getByRole('button', { name: 'Schedule' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: "Notify me when they're ready" }));
+      expect(
+        await screen.findByText(/We'll notify you here when your images are ready/),
+      ).toBeTruthy();
+      expect(FakeNotification.requestPermission).toHaveBeenCalledOnce();
+
+      ready = true;
+      expect(await screen.findByText('Status: Done')).toBeTruthy();
+      await waitFor(() => expect(shown).toHaveLength(1));
+      expect(shown[0]).toEqual({
+        title: 'Your Pictora images are ready',
+        options: { body: 'A lighthouse at dusk', tag: 'pictora-batch' },
+      });
+      expect(screen.getAllByRole('img', { name: 'A lighthouse at dusk' })).toHaveLength(1);
+    });
+
+    it('hides the notification offer when the browser blocks notifications', async () => {
+      vi.stubGlobal(
+        'Notification',
+        class {
+          static permission: NotificationPermission = 'denied';
+        },
+      );
+      const fetchMock = stubApi({
+        created: json({ jobId: JOB_ID, status: 'scheduled', pointsReserved: 3 }, 202),
+        statuses: [{ status: 'scheduled' }],
+      });
+      renderScreen();
+      fireEvent.click(later());
+      fireEvent.change(prompt(), { target: { value: 'A lighthouse at dusk' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Schedule' }));
+      expect(await screen.findByText('Status: Scheduled')).toBeTruthy();
+      expect(fetchMock).toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: "Notify me when they're ready" })).toBeNull();
     });
   });
 

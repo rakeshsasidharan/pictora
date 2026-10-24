@@ -8,6 +8,7 @@ import {
   MAX_PROMPT_LENGTH,
   MIN_IMAGE_COUNT,
   QUALITIES,
+  batchPoints,
   promptAsksForText,
   routeModel,
   type Quality,
@@ -16,7 +17,10 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
+  BATCH_POLL_INTERVAL_MS,
+  BATCH_POLL_TIMEOUT_MS,
   DEFAULT_QUALITY,
   QUALITY_LABELS,
   aspectRatioStyle,
@@ -60,6 +64,8 @@ export interface GenerateScreenProps {
   /** Polling settings; tests shorten them. */
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
+  /** How often a batch job is checked (once a minute); tests shorten it. */
+  batchPollIntervalMs?: number;
 }
 
 interface SubmittedJob {
@@ -68,6 +74,8 @@ interface SubmittedJob {
   prompt: string;
   /** The model the job runs on, which Auto picks on the server. */
   modelId: string;
+  /** Delivered later through a provider batch, at half the points (tech design 5.4). */
+  batch: boolean;
 }
 
 /** The enhancer's output for one prompt, style and model, as the user may have edited it (ENH-2). */
@@ -178,6 +186,7 @@ export function GenerateScreen({
   rerun,
   pollIntervalMs,
   pollTimeoutMs,
+  batchPollIntervalMs = BATCH_POLL_INTERVAL_MS,
 }: GenerateScreenProps) {
   const available = generateModels(models);
   const [initial] = useState(() => initialForm(styles, available, rerun));
@@ -187,6 +196,8 @@ export function GenerateScreen({
   const [choices, setChoices] = useState<ModelChoices | undefined>(initial.choices);
   const [count, setCount] = useState(MIN_IMAGE_COUNT);
   const [transparent, setTransparent] = useState(initial.transparent);
+  /** "Save points: deliver later": a batch job at half the points, delivered within 24 hours. */
+  const [later, setLater] = useState(false);
   /**
    * Smart routing: the app picks the model from the style, quality, prompt and points left. A rerun starts on
    * the original model instead, unless it isn't available any more.
@@ -237,21 +248,30 @@ export function GenerateScreen({
     }
   }, []);
   const poll = useJobStatus(job?.id, {
-    intervalMs: pollIntervalMs,
-    timeoutMs: pollTimeoutMs,
+    intervalMs: job?.batch ? batchPollIntervalMs : pollIntervalMs,
+    timeoutMs: job?.batch ? BATCH_POLL_TIMEOUT_MS : pollTimeoutMs,
     onFinish: () => void refreshPoints(),
   });
 
+  // Auto picks among the models that take batch jobs when the user saves points.
+  const batchModels = available.filter((candidate) => candidate.capabilities.batch);
+  const deliverLater = later && batchModels.length > 0;
   const routing = choices && {
     style: styleId,
     aspect: choices.aspect,
     needs: { transparentBackground: transparent, text: promptAsksForText(prompt) },
-    models: routableModels(available),
+    models: routableModels(deliverLater ? batchModels : available),
     pausedQualities: pausedQualities(available),
   };
+  // A batch costs half, rounded up, so it fits when the full price is at most twice the points left.
   const route =
     auto && routing
-      ? routeModel({ ...routing, quality: choices.quality, pointsLeft: points.left, count })
+      ? routeModel({
+          ...routing,
+          quality: choices.quality,
+          pointsLeft: points.left * (deliverLater ? 2 : 1),
+          count,
+        })
       : undefined;
   const model = available.find(
     (candidate) => candidate.id === (auto ? route?.modelId : choices?.modelId),
@@ -268,7 +288,10 @@ export function GenerateScreen({
     );
   }
 
-  const cost = route?.points ?? requestCost(model, chosenQuality, count);
+  const batchOffered = auto ? batchModels.length > 0 : model.capabilities.batch === true;
+  const batch = later && batchOffered;
+  const fullCost = route?.points ?? requestCost(model, chosenQuality, count);
+  const cost = batch ? batchPoints(fullCost) : fullCost;
   const transparentOffered = auto
     ? available.some((candidate) => candidate.capabilities.transparentBackground)
     : model.capabilities.transparentBackground;
@@ -310,8 +333,10 @@ export function GenerateScreen({
     return { disabled: false, hint: `${pointsText(perImage)} per image` };
   }
   const affordable = cost <= points.left;
+  // A batch job takes hours and holds no slot, so the form stays open for the next request.
   const jobActive =
     job !== undefined &&
+    !job.batch &&
     !poll.timedOut &&
     !poll.lost &&
     (poll.job === undefined || ['queued', 'running'].includes(poll.job.status));
@@ -406,6 +431,7 @@ export function GenerateScreen({
           count,
           ...(!auto && model.capabilities.seed && seed !== undefined ? { seed } : {}),
           ...(transparentOffered && transparent ? { transparentBackground: true } : {}),
+          ...(batch ? { delivery: 'batch' } : {}),
         }),
       });
       const body = (await response.json().catch(() => ({}))) as {
@@ -425,6 +451,7 @@ export function GenerateScreen({
         pointsReserved: reserved,
         prompt: text,
         modelId: body.modelId ?? model.id,
+        batch,
       });
       setPoints((current) => ({ ...current, left: Math.max(0, current.left - reserved) }));
     } catch {
@@ -636,9 +663,31 @@ export function GenerateScreen({
           </fieldset>
         </details>
 
+        {batchOffered && (
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="deliver-later"
+              checked={later}
+              onCheckedChange={(checked) => setLater(checked === true)}
+              aria-describedby="deliver-later-hint"
+              className="mt-1"
+            />
+            <div className="grid gap-1">
+              <label htmlFor="deliver-later" className="font-medium">
+                Save points: deliver later
+              </label>
+              <span id="deliver-later-hint" className="text-sm text-muted-foreground">
+                Half the points. Your images arrive in your gallery within 24 hours, often much
+                sooner. The points stay reserved until then, and come back if the images don&apos;t.
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="generate-submit">
           <p id="cost" className="cost-display">
             Uses {cost} of your {points.left} points today
+            {batch ? ` (half of ${fullCost}, delivered later)` : ''}
           </p>
           {auto && (
             <p className="field-hint auto-pick" aria-live="polite">
@@ -663,7 +712,7 @@ export function GenerateScreen({
             disabled={!affordable || busy}
             aria-describedby="cost"
           >
-            {submitting ? 'Starting…' : jobActive ? 'Generating…' : 'Generate'}
+            {submitting ? 'Starting…' : jobActive ? 'Generating…' : batch ? 'Schedule' : 'Generate'}
           </button>
         </div>
       </form>
@@ -704,6 +753,7 @@ export function GenerateScreen({
           poll={poll}
           pointsReserved={job.pointsReserved}
           prompt={job.prompt}
+          batch={job.batch}
           modelName={
             models.find((candidate) => candidate.id === job.modelId)?.displayName ?? job.modelId
           }

@@ -19,7 +19,8 @@
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "draft": {
@@ -58,7 +59,8 @@
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "draft": {
@@ -85,7 +87,8 @@
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "standard": {
@@ -118,7 +121,8 @@
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "draft": {
@@ -145,7 +149,8 @@
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "standard": {
@@ -253,7 +258,8 @@
       "negativePrompt": true,
       "seed": true,
       "referenceImages": 3,
-      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"]
+      "aspects": ["1:1", "4:5", "3:2", "2:3", "16:9", "9:16"],
+      "batch": true
     },
     "qualities": {
       "draft": {

@@ -8,6 +8,7 @@ import {
   SECONDS_PER_DAY,
   activeJobsGsiPk,
   createJobRequestSchema,
+  deliveryPoints,
   estimatePoints,
   jobError,
   jobPk,
@@ -168,8 +169,13 @@ export async function createJob(
   } else {
     const unsupported = unsupportedOption(model, request);
     if (unsupported) return apiError('unsupported_option', unsupported);
-    points = estimatePoints(model, request.quality, request.aspect, request.count);
+    points = deliveryPoints(
+      estimatePoints(model, request.quality, request.aspect, request.count),
+      request.delivery,
+    );
   }
+  // A batch job waits for the batch submitter instead of a provider queue (tech design 5.4).
+  const batch = request.type === 'generate' && request.delivery === 'batch';
 
   const now = deps.now();
   if (pausedQuality(request.quality)) {
@@ -190,7 +196,7 @@ export async function createJob(
     jobId,
     userId: session.sub,
     type: request.type,
-    status: 'queued',
+    status: batch ? 'scheduled' : 'queued',
     request,
     modelId: model.id,
     provider: model.provider,
@@ -198,8 +204,8 @@ export async function createJob(
     usageDate,
     createdAt: now.toISOString(),
     attempts: 0,
-    // Indexed while queued, so the sweeper finds it if it's never picked up.
-    GSI1PK: activeJobsGsiPk('queued'),
+    // Indexed while queued, so the sweeper finds it if it's never picked up; a batch job waits for the submitter.
+    GSI1PK: activeJobsGsiPk(batch ? 'scheduled' : 'queued'),
     GSI1SK: now.toISOString(),
     ttl: ttlAfter(now, JOB_TTL_DAYS * SECONDS_PER_DAY),
   };
@@ -224,7 +230,7 @@ export async function createJob(
   }
 
   try {
-    await deps.enqueue(model.provider, jobId);
+    if (!batch) await deps.enqueue(model.provider, jobId);
   } catch (error) {
     logError('Enqueue failed; refunding the job', { jobId, provider: model.provider, error });
     const failure = jobError('enqueue_failed');
@@ -245,11 +251,11 @@ export async function createJob(
     modelId: model.id,
     provider: model.provider,
     pointsReserved: points,
-    outcome: 'queued',
+    outcome: job.status,
   });
   return {
     status: 202,
-    body: { jobId, status: 'queued', pointsReserved: points, modelId: model.id },
+    body: { jobId, status: job.status, pointsReserved: points, modelId: model.id },
   };
 }
 
@@ -272,8 +278,10 @@ async function routeAuto(
     readUsedPoints(deps.client, deps.tableName, session.sub, utcDate(now)),
   ]);
   const limit = profile ? dailyLimit(profile, deps.defaultDailyPoints) : deps.defaultDailyPoints;
+  const batch = request.delivery === 'batch';
   const enabled = modelsForGroups(models, session.groups).filter(
-    (model) => model.enabled && deps.hasQueue(model.provider),
+    (model) =>
+      model.enabled && deps.hasQueue(model.provider) && (!batch || model.capabilities.batch),
   );
   const route = routeModel({
     style: request.style,
@@ -283,7 +291,8 @@ async function routeAuto(
       transparentBackground: request.transparentBackground,
       text: promptAsksForText(request.prompt),
     },
-    pointsLeft: Math.max(0, limit - used),
+    // A batch costs half, rounded up, so it fits when the full price is at most twice the points left.
+    pointsLeft: Math.max(0, limit - used) * (batch ? 2 : 1),
     count: request.count,
     models: enabled,
     pausedQualities: pause ? QUALITIES.filter(pausedQuality) : [],
@@ -325,6 +334,9 @@ export function unsupportedOption(
   }
   if (request.seed !== undefined && !model.capabilities.seed) {
     return `${name} doesn't support a fixed seed. Clear the seed or pick another model.`;
+  }
+  if (request.delivery === 'batch' && !model.capabilities.batch) {
+    return `${name} can't deliver later. Turn off Save points or pick another model.`;
   }
   return undefined;
 }

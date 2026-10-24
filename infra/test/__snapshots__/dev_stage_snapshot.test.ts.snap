@@ -729,7 +729,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
       "DeletionPolicy": "Delete",
       "Properties": {
         "GitSha": "local",
-        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Transparent backgrounds","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"stable-image-core","provider":"bedrock","providerModelId":"stability.stable-image-core-v1:1","displayName":"Stable Image Core","strengths":["Fast","Low cost"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":4}},"defaultFor":[]},{"id":"sd3.5-large","provider":"bedrock","providerModelId":"stability.sd3-5-large-v1:0","displayName":"SD 3.5 Large","strengths":["Balanced","Broad styles","Negative prompts"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{},"costPoints":8}},"defaultFor":[]},{"id":"stable-image-ultra","provider":"bedrock","providerModelId":"stability.stable-image-ultra-v1:1","displayName":"Stable Image Ultra","strengths":["Photorealistic detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"high":{"providerParams":{},"costPoints":14}},"defaultFor":[]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"defaultFor":[]}]",
+        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Transparent backgrounds","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"stable-image-core","provider":"bedrock","providerModelId":"stability.stable-image-core-v1:1","displayName":"Stable Image Core","strengths":["Fast","Low cost"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":4}},"defaultFor":[]},{"id":"sd3.5-large","provider":"bedrock","providerModelId":"stability.sd3-5-large-v1:0","displayName":"SD 3.5 Large","strengths":["Balanced","Broad styles","Negative prompts"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{},"costPoints":8}},"defaultFor":[]},{"id":"stable-image-ultra","provider":"bedrock","providerModelId":"stability.stable-image-ultra-v1:1","displayName":"Stable Image Ultra","strengths":["Photorealistic detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"high":{"providerParams":{},"costPoints":14}},"defaultFor":[]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"defaultFor":[]}]",
         "ServiceToken": {
           "Fn::GetAtt": [
             "RegistrySeedProviderframeworkonEventFBCF8235",
@@ -1265,6 +1265,592 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
     },
   },
   "Resources": {
+    "BatchPollFunction99E2D8FB": {
+      "DependsOn": [
+        "BatchPollFunctionServiceRoleDefaultPolicy62306758",
+        "BatchPollFunctionServiceRoleDCB728AF",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GEMINI_BACKEND": "api",
+            "GEMINI_SECRET_ID": "pictora/dev/gemini",
+            "GIT_SHA": "local",
+            "IMAGES_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefImagesBucket1E86AFB2076BAF05",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+            "OPENAI_SECRET_ID": "pictora/dev/openai",
+            "PICTORA_ENV": "dev",
+            "SPEND_CAP_CENTS": "2000",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "batch_poll.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "BatchPollLogGroup38C467D9",
+          },
+        },
+        "MemorySize": 1536,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "BatchPollFunctionServiceRoleDCB728AF",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 600,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BatchPollFunctionServiceRoleDCB728AF": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BatchPollFunctionServiceRoleDefaultPolicy62306758": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:UpdateItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/gemini-??????",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/openai-??????",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:DeleteObject",
+                "s3:PutObject",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputFnGetAttImagesBucket1E86AFB2Arn21B63ACE",
+                        "Region": "us-west-2",
+                        "StackName": "PictoraDev-Data",
+                      },
+                    },
+                    "/users/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BatchPollFunctionServiceRoleDefaultPolicy62306758",
+        "Roles": [
+          {
+            "Ref": "BatchPollFunctionServiceRoleDCB728AF",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BatchPollLogGroup38C467D9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "BatchPollSchedule2E5E4B1C": {
+      "Properties": {
+        "Description": "Records or refunds the jobs of finished Pictora provider batches",
+        "ScheduleExpression": "rate(15 minutes)",
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "BatchPollFunction99E2D8FB",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "BatchPollScheduleAllowEventRulePictoraDevJobsBatchPollFunction0A0F06A72E2F3804": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BatchPollFunction99E2D8FB",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "BatchPollSchedule2E5E4B1C",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "BatchSubmitFunctionD36F362F": {
+      "DependsOn": [
+        "BatchSubmitFunctionServiceRoleDefaultPolicy6884B02C",
+        "BatchSubmitFunctionServiceRoleE2AF5B48",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Join": [
+              "",
+              [
+                {
+                  "Ref": "AWS::AccountId",
+                },
+                ".dkr.ecr.us-west-2.",
+                {
+                  "Ref": "AWS::URLSuffix",
+                },
+                "/pictora-worker@sha256:<asset-hash>",
+              ],
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "GEMINI_BACKEND": "api",
+            "GEMINI_SECRET_ID": "pictora/dev/gemini",
+            "GIT_SHA": "local",
+            "IMAGES_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefImagesBucket1E86AFB2076BAF05",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+            "OPENAI_SECRET_ID": "pictora/dev/openai",
+            "PICTORA_ENV": "dev",
+            "SPEND_CAP_CENTS": "2000",
+            "TABLE_NAME": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
+                "Region": "us-west-2",
+                "StackName": "PictoraDev-Data",
+              },
+            },
+          },
+        },
+        "ImageConfig": {
+          "Command": [
+            "batch_submit.handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "BatchSubmitLogGroup1F37772E",
+          },
+        },
+        "MemorySize": 1536,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "BatchSubmitFunctionServiceRoleE2AF5B48",
+            "Arn",
+          ],
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Timeout": 600,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "BatchSubmitFunctionServiceRoleDefaultPolicy6884B02C": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:UpdateItem",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetStackOutput": {
+                    "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                    "Region": "us-west-2",
+                    "StackName": "PictoraDev-Data",
+                  },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputFnGetAttTableCD117FA1Arn27EC6E03",
+                          "Region": "us-west-2",
+                          "StackName": "PictoraDev-Data",
+                        },
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/gemini-??????",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:secretsmanager:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:pictora/dev/openai-??????",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "BatchSubmitFunctionServiceRoleDefaultPolicy6884B02C",
+        "Roles": [
+          {
+            "Ref": "BatchSubmitFunctionServiceRoleE2AF5B48",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "BatchSubmitFunctionServiceRoleE2AF5B48": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "BatchSubmitLogGroup1F37772E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "RetentionInDays": 30,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "BatchSubmitSchedule3E6097A8": {
+      "Properties": {
+        "Description": "Sends scheduled Pictora batch jobs to the provider batch APIs",
+        "ScheduleExpression": "rate(15 minutes)",
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "BatchSubmitFunctionD36F362F",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "BatchSubmitScheduleAllowEventRulePictoraDevJobsBatchSubmitFunction7BAE2BC5260B2F5D": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "BatchSubmitFunctionD36F362F",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "BatchSubmitSchedule3E6097A8",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
     "BedrockQueue897D9489": {
       "DeletionPolicy": "Delete",
       "Properties": {
