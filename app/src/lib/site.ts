@@ -1,3 +1,6 @@
+/** The Pictora app icon (#117), rounded with real transparency: the manifest's 192 px icon, and the logo. */
+export const APP_ICON_PATH = '/icons/icon_192.png';
+
 /** The one-line description in page metadata and the web app manifest. */
 export const SITE_DESCRIPTION =
   'Turn text prompts into images, from watercolour to photorealism. Free, with a daily allowance.';

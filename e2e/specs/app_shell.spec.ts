@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { e2eConfig, requireCredentials } from '../src/config.js';
 import { startMockImage, uniquePrompt } from '../src/generate.js';
 
 // The sidebar shell around every signed-in page (#107).
@@ -23,7 +24,11 @@ test.describe('app shell', () => {
     await expect(page).toHaveURL(/\/edit$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Edit an image' })).toBeVisible();
 
-    await pages.getByRole('link', { name: 'Account' }).click();
+    // The account page is in the user menu, not the page links (#124).
+    await expect(pages.getByRole('link', { name: 'Account' })).toHaveCount(0);
+    const { email } = requireCredentials(e2eConfig());
+    await page.getByRole('button', { name: email }).click();
+    await page.getByRole('menuitem', { name: 'Account' }).click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
 
@@ -33,6 +38,27 @@ test.describe('app shell', () => {
     await page.getByRole('link', { name: 'New image' }).click();
     await expect(page).toHaveURL(/\/generate$/);
     await expect(page.getByRole('textbox', { name: 'Describe your image' })).toHaveValue('');
+  });
+
+  test('shows the Pictora icon, and the theme switcher at the right of the page header', async ({
+    page,
+  }) => {
+    await page.goto('/gallery');
+    const sidebar = page.locator('[data-slot="sidebar"]');
+    const logo = sidebar.locator('[data-slot="sidebar-header"] img').first();
+    await expect(logo).toHaveAttribute('src', '/icons/icon_192.png');
+    await expect
+      .poll(() => logo.evaluate((image: { naturalWidth: number }) => image.naturalWidth))
+      .toBeGreaterThan(0);
+
+    const header = page.locator('[data-slot="sidebar-inset"] > header');
+    const theme = header.getByRole('button', { name: 'Theme' });
+    await expect(theme).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Theme' })).toHaveCount(0);
+    // Right-aligned: the button ends within a few pixels of the header's right padding.
+    const [headerBox, themeBox] = [await header.boundingBox(), await theme.boundingBox()];
+    expect(headerBox && themeBox).toBeTruthy();
+    expect(headerBox!.x + headerBox!.width - (themeBox!.x + themeBox!.width)).toBeLessThan(24);
   });
 
   test('collapses to icons and back with Ctrl+B', async ({ page }) => {
