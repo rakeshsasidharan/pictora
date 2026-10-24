@@ -110,11 +110,14 @@ describe('EditPanel', () => {
     renderPanel();
     const list = screen.getByRole('list', { name: 'Versions' });
     const items = within(list).getAllByRole('listitem');
+    // Each card: the select button (number, parent), then its words in their own scroll box (#125).
     expect(items.map((item) => item.textContent)).toEqual([
       'Version 1A lighthouse at dusk',
-      'Version 2Make it nightEdited from version 1',
-      'Version 3Add starsEdited from version 2',
+      'Version 2Edited from version 1Make it night',
+      'Version 3Edited from version 2Add stars',
     ]);
+    expect(list.className).toMatch(/overflow-y-auto/);
+    expect(list.className).toMatch(/max-h-/);
     expect(versionButton(3).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Version 3' })).toBeTruthy();
     expect(screen.getByRole<HTMLImageElement>('img', { name: 'Add stars' }).src).toBe(STARS.url);

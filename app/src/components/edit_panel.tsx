@@ -9,7 +9,6 @@ import {
   editQualityFor,
   maxReferences,
   versionAltText,
-  versionDescription,
 } from '../lib/edit_options';
 import {
   DEFAULT_QUALITY,
@@ -31,6 +30,7 @@ import { useJobStatus } from '../lib/use_job_status';
 import { GalleryPicker } from './gallery_picker';
 import type { PointsLeft } from './generate_screen';
 import { ReportImage } from './report_image';
+import { VersionCard } from './version_card';
 
 export interface EditPanelProps {
   detail: ImageDetailBody;
@@ -298,35 +298,33 @@ export function EditPanel({
 
         <section className="edit-history" aria-labelledby="versions-heading">
           <h2 id="versions-heading">Versions</h2>
-          <ol className="version-list" aria-label="Versions">
+          {/* Capped near the viewer's height, so many versions scroll here instead of down the page. */}
+          <ol
+            data-slot="version-list"
+            aria-label="Versions"
+            className="m-0 flex max-h-[min(520px,70vh)] list-none flex-col gap-2 overflow-y-auto p-1"
+          >
             {versions.map((version) => (
-              <li key={version.version}>
-                <button
-                  type="button"
-                  className="version-item"
-                  aria-pressed={version.version === current.version}
-                  aria-label={`Version ${version.version}`}
-                  onClick={() => setSelected(version.version)}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-                  <img src={version.thumbUrl} alt="" width={56} height={56} />
-                  <span className="version-text">
-                    <span className="version-number">Version {version.version}</span>
-                    <span>{versionDescription(version)}</span>
-                    {version.parentVersion !== undefined && (
-                      <span className="field-hint">
-                        Edited from version {version.parentVersion}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              </li>
+              <VersionCard
+                key={version.version}
+                version={version}
+                selected={version.version === current.version}
+                onSelect={setSelected}
+              />
             ))}
             {job && jobActive && (
-              <li className="version-pending" role="status">
-                <span className="version-number">{STATUS_LABELS[status ?? 'queued']}…</span>
-                <span>{job.instruction}</span>
-                <span className="field-hint">From version {job.parentVersion}</span>
+              <li
+                data-slot="version-pending"
+                role="status"
+                className="flex flex-col rounded-lg border border-dashed border-primary p-2 text-sm"
+              >
+                <span className="font-semibold">{STATUS_LABELS[status ?? 'queued']}…</span>
+                <span className="max-h-20 overflow-y-auto break-words whitespace-pre-wrap">
+                  {job.instruction}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  From version {job.parentVersion}
+                </span>
               </li>
             )}
           </ol>
