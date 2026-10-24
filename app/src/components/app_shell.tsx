@@ -6,9 +6,9 @@ import {
   PlusIcon,
   ShieldIcon,
   SparklesIcon,
-  UserIcon,
   type LucideIcon,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -29,8 +29,9 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 import { ADMIN_PATH } from '../lib/admin_access';
-import { ACCOUNT_PATH, EDIT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
+import { APP_ICON_PATH, EDIT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
 import { SidebarAccount } from './sidebar_account';
 import { SidebarHistory } from './sidebar_history';
 import { ThemeSwitcher } from './theme_switcher';
@@ -41,12 +42,11 @@ interface PageLink {
   Icon: LucideIcon;
 }
 
-/** The signed-in pages the sidebar links to, in order. */
+/** The signed-in pages the sidebar links to, in order. The account page is in the user menu instead. */
 export const PAGE_LINKS: readonly PageLink[] = [
   { title: 'Generate', href: GENERATE_PATH, Icon: SparklesIcon },
   { title: 'Gallery', href: GALLERY_PATH, Icon: ImagesIcon },
   { title: 'Edit', href: EDIT_PATH, Icon: PencilIcon },
-  { title: 'Account', href: ACCOUNT_PATH, Icon: UserIcon },
 ];
 
 const ADMIN_LINK: PageLink = { title: 'Admin', href: ADMIN_PATH, Icon: ShieldIcon };
@@ -68,9 +68,10 @@ export interface AppShellProps {
 }
 
 /**
- * The frame of every signed-in page: a sidebar with the Pictora name, a New image button, links to each page,
- * the user's recent images, today's points, the user menu and the theme switcher. On desktop it collapses to
- * icons (the trigger, or Ctrl/Cmd+B); on mobile it opens as a sheet.
+ * The frame of every signed-in page: a sidebar with the Pictora icon and name, a New image button, links to each
+ * page, the user's recent images, today's points and, last, the user menu; and a page header with the theme
+ * switcher at its right edge. On desktop the sidebar collapses to icons (the trigger, or Ctrl/Cmd+B); on mobile
+ * it opens as a sheet.
  */
 export function AppShell({ email, admin, defaultOpen, footer, children }: AppShellProps) {
   const pathname = usePathname();
@@ -102,12 +103,16 @@ export function AppShell({ email, admin, defaultOpen, footer, children }: AppShe
           />
           <Link
             href={GENERATE_PATH}
-            className="font-semibold text-foreground no-underline md:hidden"
+            className="flex items-center gap-2 font-semibold text-foreground no-underline md:hidden"
           >
+            <PictoraIcon className="size-6" />
             Pictora
           </Link>
+          <div className="ml-auto">
+            <ThemeSwitcher />
+          </div>
         </header>
-        <div key={pageKey} className="mx-auto w-full max-w-[1040px] flex-1 px-4 pt-6 pb-12">
+        <div key={pageKey} className="mx-auto w-full max-w-260 flex-1 px-4 pt-6 pb-12">
           {children}
         </div>
         {footer}
@@ -139,9 +144,7 @@ function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg" tooltip="Pictora">
               <Link href={GENERATE_PATH} onClick={closeOnMobile}>
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sm font-bold text-sidebar-primary-foreground">
-                  P
-                </span>
+                <PictoraIcon className="size-8" />
                 <span className="truncate text-base font-semibold">Pictora</span>
               </Link>
             </SidebarMenuButton>
@@ -191,15 +194,24 @@ function AppSidebar({
         <SidebarHistory />
       </SidebarContent>
       <SidebarFooter>
+        {/* Points, then the user menu as the bottom-most item. */}
         <SidebarAccount email={email} />
-        <div className="flex items-center justify-between gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
-            Theme
-          </span>
-          <ThemeSwitcher />
-        </div>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/** The Pictora app icon (#117), decorative: the name beside it labels the link. */
+function PictoraIcon({ className }: { className: string }) {
+  return (
+    <Image
+      src={APP_ICON_PATH}
+      alt=""
+      width={32}
+      height={32}
+      className={cn('shrink-0 rounded-md', className)}
+      unoptimized
+    />
   );
 }

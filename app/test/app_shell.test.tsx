@@ -111,7 +111,6 @@ describe('AppShell', () => {
         ['Generate', '/generate'],
         ['Gallery', '/gallery'],
         ['Edit', '/edit'],
-        ['Account', '/account'],
       ]);
       const gallery = within(pages()).getByRole('link', { name: 'Gallery' });
       expect(gallery.getAttribute('aria-current')).toBe('page');
@@ -347,10 +346,53 @@ describe('AppShell', () => {
       expect(submit).toHaveBeenCalledOnce();
     });
 
-    it('offers the theme switcher', async () => {
+    it('keeps Account in the user menu only, not in the page links', async () => {
       stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
       renderShell();
-      expect(screen.getByRole('button', { name: 'Theme' })).toBeTruthy();
+      expect(within(sidebar() as HTMLElement).queryByRole('link', { name: 'Account' })).toBeNull();
+      await screen.findByText('No images yet');
+    });
+
+    it('ends the sidebar footer with the user menu', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
+      renderShell();
+      await screen.findByText('18 of 25 points left today');
+      const footer = document.querySelector<HTMLElement>('[data-slot="sidebar-footer"]')!;
+      const items = footer.querySelectorAll('[data-slot="sidebar-menu-item"]');
+      expect(within(items[items.length - 1] as HTMLElement).getByRole('button')).toBe(
+        screen.getByRole('button', { name: 'user@example.com' }),
+      );
+      expect(within(footer).queryByRole('button', { name: 'Theme' })).toBeNull();
+    });
+
+    it('puts the theme switcher at the right edge of the page header', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
+      renderShell();
+      const header = document.querySelector<HTMLElement>('[data-slot="sidebar-inset"] > header')!;
+      const theme = within(header).getByRole('button', { name: 'Theme' });
+      // The last thing in the header, pushed to the edge.
+      expect(header.lastElementChild?.contains(theme)).toBe(true);
+      expect(header.lastElementChild?.className).toContain('ml-auto');
+      expect(within(sidebar() as HTMLElement).queryByRole('button', { name: 'Theme' })).toBeNull();
+      await screen.findByText('No images yet');
+    });
+  });
+
+  describe('logo', () => {
+    it('shows the Pictora app icon in the sidebar and the mobile header', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
+      renderShell();
+      const sidebarLogo = document.querySelector<HTMLImageElement>(
+        '[data-slot="sidebar-header"] img',
+      );
+      expect(sidebarLogo?.getAttribute('src')).toBe('/icons/icon_192.png');
+      expect(sidebarLogo?.getAttribute('alt')).toBe('');
+      const headerLogo = document.querySelector<HTMLImageElement>(
+        '[data-slot="sidebar-inset"] > header img',
+      );
+      expect(headerLogo?.getAttribute('src')).toBe('/icons/icon_192.png');
+      // The letter placeholder is gone; the link is named by the text beside the icon.
+      expect(screen.getAllByRole('link', { name: 'Pictora' }).length).toBeGreaterThan(0);
       await screen.findByText('No images yet');
     });
   });
