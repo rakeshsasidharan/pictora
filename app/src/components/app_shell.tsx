@@ -1,17 +1,10 @@
 'use client';
 
-import {
-  ImagesIcon,
-  PencilIcon,
-  PlusIcon,
-  ShieldIcon,
-  SparklesIcon,
-  type LucideIcon,
-} from 'lucide-react';
+import { ImagesIcon, PencilIcon, ShieldIcon, SparklesIcon, type LucideIcon } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
@@ -68,32 +61,17 @@ export interface AppShellProps {
 }
 
 /**
- * The frame of every signed-in page: a sidebar with the Pictora icon and name, a New image button, links to each
- * page, the user's recent images, today's points and, last, the user menu; and a page header with the theme
- * switcher at its right edge. On desktop the sidebar collapses to icons (the trigger, or Ctrl/Cmd+B); on mobile
+ * The frame of every signed-in page: a sidebar with the Pictora icon and name, links to each page, the user's
+ * recent images, today's points and, last, the user menu; and a page header with the theme switcher at its
+ * right edge. On desktop the sidebar collapses to icons (the trigger, or Ctrl/Cmd+B); on mobile
  * it opens as a sheet.
  */
 export function AppShell({ email, admin, defaultOpen, footer, children }: AppShellProps) {
   const pathname = usePathname();
-  const search = useSearchParams().toString();
-  // Changing the key starts the page afresh, so New image empties a generate screen already open.
-  const [pageKey, setPageKey] = useState(0);
-  const [resetPending, setResetPending] = useState(false);
-  const onEmptyGenerate = pathname === GENERATE_PATH && search === '';
-  if (resetPending && onEmptyGenerate) {
-    setResetPending(false);
-    setPageKey((key) => key + 1);
-  }
-
-  function newImage() {
-    // Leaving `/generate?rerun=…` for `/generate` keeps the screen mounted; reset it once the URL changes.
-    if (onEmptyGenerate) setPageKey((key) => key + 1);
-    else if (pathname === GENERATE_PATH) setResetPending(true);
-  }
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
-      <AppSidebar email={email} admin={admin} pathname={pathname} onNewImage={newImage} />
+      <AppSidebar email={email} admin={admin} pathname={pathname} />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />
@@ -112,9 +90,7 @@ export function AppShell({ email, admin, defaultOpen, footer, children }: AppShe
             <ThemeSwitcher />
           </div>
         </header>
-        <div key={pageKey} className="mx-auto w-full max-w-260 flex-1 px-4 pt-6 pb-12">
-          {children}
-        </div>
+        <div className="mx-auto w-full max-w-260 flex-1 px-4 pt-6 pb-12">{children}</div>
         {footer}
       </SidebarInset>
     </SidebarProvider>
@@ -125,12 +101,10 @@ function AppSidebar({
   email,
   admin,
   pathname,
-  onNewImage,
 }: {
   email: string;
   admin: boolean;
   pathname: string;
-  onNewImage: () => void;
 }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const links = admin ? [...PAGE_LINKS, ADMIN_LINK] : PAGE_LINKS;
@@ -146,20 +120,6 @@ function AppSidebar({
               <Link href={GENERATE_PATH} onClick={closeOnMobile}>
                 <PictoraIcon className="size-8" />
                 <span className="truncate text-base font-semibold">Pictora</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild variant="outline" tooltip="New image">
-              <Link
-                href={GENERATE_PATH}
-                onClick={() => {
-                  onNewImage();
-                  closeOnMobile();
-                }}
-              >
-                <PlusIcon />
-                <span>New image</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
