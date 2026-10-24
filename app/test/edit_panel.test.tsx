@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditPanel } from '../src/components/edit_panel';
 import type { ImageDetailBody, ImageVersionBody } from '../src/lib/images';
 import { modelsResponse, type PublicModel } from '../src/lib/models_response';
+import { IMAGES_CHANGED_EVENT } from '../src/lib/images_changed';
 import type { UploadClient } from '../src/lib/upload_client';
 
 const { models } = modelsResponse(modelsForEnvironment(loadSeedRegistry(), 'dev'));
@@ -150,6 +151,8 @@ describe('EditPanel', () => {
         version(4, { parentVersion: 1, editInstruction: 'Add snow' }),
       ]),
     });
+    const imagesChanged = vi.fn();
+    window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
     renderPanel();
     fireEvent.click(versionButton(1));
     expect(versionButton(1).getAttribute('aria-pressed')).toBe('true');
@@ -178,6 +181,9 @@ describe('EditPanel', () => {
     expect(within(versionButton(4)).getByText('Edited from version 1')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Version 4' })).toBeTruthy();
     await waitFor(() => expect(screen.getByText('24 of 25 points left today')).toBeTruthy());
+    // The sidebar history and points refresh.
+    expect(imagesChanged).toHaveBeenCalledOnce();
+    window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
   });
 
   it('asks for an instruction before submitting', () => {

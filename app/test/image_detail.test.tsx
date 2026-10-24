@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImageDetail } from '../src/components/image_detail';
 import type { ImageDetailBody, ImageVersionBody } from '../src/lib/images';
+import { IMAGES_CHANGED_EVENT } from '../src/lib/images_changed';
 
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
@@ -199,6 +200,8 @@ describe('ImageDetail', () => {
     const fetchMock = vi.fn().mockResolvedValue(json({ imageId: IMAGE_ID, deleted: true }));
     vi.stubGlobal('fetch', fetchMock);
     const onDeleted = vi.fn();
+    const imagesChanged = vi.fn();
+    window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
     render(
       <ImageDetail
         imageId={IMAGE_ID}
@@ -214,6 +217,9 @@ describe('ImageDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete image' }));
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(IMAGE_ID));
     expect(fetchMock).toHaveBeenCalledWith(`/api/images/${IMAGE_ID}`, { method: 'DELETE' });
+    // The sidebar history drops it.
+    expect(imagesChanged).toHaveBeenCalledOnce();
+    window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
   });
 
   it('says so when the delete fails, and keeps the image', async () => {

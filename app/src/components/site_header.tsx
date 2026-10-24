@@ -6,9 +6,10 @@ import { ACCOUNT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
 import { ThemeSwitcher } from './theme_switcher';
 
 /**
- * The top bar: for a signed-in user, links to create an image and to their gallery, an Admin link for admins,
- * their email linking to their account, and a sign-out button; otherwise a sign-in link. The theme switcher sits
- * at the end until the redesign moves it (#107, #111).
+ * The top bar of the public pages (landing, legal pages, onboarding); signed-in pages have the sidebar instead.
+ * For a signed-in user, links to create an image and to their gallery, an Admin link for admins, their email
+ * linking to their account, and a sign-out button; otherwise a sign-in link. The theme switcher sits at the end
+ * until the landing restyle moves it (#111).
  */
 export function SiteHeader({ session }: { session?: Session }) {
   return (

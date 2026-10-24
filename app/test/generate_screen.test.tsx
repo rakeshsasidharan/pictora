@@ -8,6 +8,7 @@ import {
   type PointsLeft,
 } from '../src/components/generate_screen';
 import type { RerunSettings } from '../src/lib/images';
+import { IMAGES_CHANGED_EVENT } from '../src/lib/images_changed';
 import { modelsResponse } from '../src/lib/models_response';
 import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 
@@ -378,6 +379,8 @@ describe('GenerateScreen', () => {
         ],
         me: { pointsLeft: 23 },
       });
+      const imagesChanged = vi.fn();
+      window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
       renderScreen();
       chooseModel(/^Mock/);
       fireEvent.click(radio(/^Draft/));
@@ -420,6 +423,9 @@ describe('GenerateScreen', () => {
       expect(screen.getByText('23 of 25 points left today')).toBeTruthy();
       expect((generate() as HTMLButtonElement).disabled).toBe(false);
       expect(screen.queryByText(/You can leave this page/)).toBeNull();
+      // The sidebar history and points refresh.
+      expect(imagesChanged).toHaveBeenCalledOnce();
+      window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
     });
 
     it('opens a full-size view with a download, closed with Escape', async () => {

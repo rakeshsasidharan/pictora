@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { TOS_VERSION } from '@pictora/core';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import ContentPolicyPage from '../src/app/content-policy/page';
-import PrivacyPage from '../src/app/privacy/page';
-import TermsPage from '../src/app/terms/page';
+import ContentPolicyPage from '../src/app/(site)/content-policy/page';
+import PrivacyPage from '../src/app/(site)/privacy/page';
+import TermsPage from '../src/app/(site)/terms/page';
 import {
   LEGAL_CONTENT_DIR,
   LEGAL_DRAFT_NOTICE,
