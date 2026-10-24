@@ -1,8 +1,13 @@
 'use client';
 
+import { DownloadIcon, Loader2Icon, PencilIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { reportFirstImage } from '../lib/first_image';
@@ -22,10 +27,14 @@ export interface JobProgressProps {
   modelName: string;
   /** A batch job, delivered later (tech design 5.4): scheduled, then done. */
   batch?: boolean;
+  /** How many images were asked for, shown as placeholders while they are made. */
+  count?: number;
 }
 
 const STEPS = ['queued', 'running', 'succeeded'] as const;
 const BATCH_STEPS = ['scheduled', 'succeeded'] as const;
+
+const GALLERY_LINK_CLASS = 'font-medium text-foreground underline underline-offset-4';
 
 /** What a step is called; a batch job is Scheduled while it waits for or sits in its provider batch. */
 function stepIndex(steps: readonly string[], status: string): number {
@@ -43,7 +52,9 @@ export function JobProgress({
   prompt,
   modelName,
   batch = false,
+  count = 1,
 }: JobProgressProps) {
+  const headingId = useId();
   const { job, timedOut, lost } = poll;
   const status = job?.status ?? (batch ? 'scheduled' : 'queued');
   const steps: readonly JobStatusBody['status'][] = batch ? BATCH_STEPS : STEPS;
@@ -53,59 +64,88 @@ export function JobProgress({
   const refunded = pointsReserved - (job?.pointsCharged ?? 0);
 
   return (
-    <section className="job-progress" aria-labelledby="job-heading">
-      <h2 id="job-heading">Your images</h2>
-      <ol className="job-steps">
-        {steps.map((step, index) => {
-          const label =
-            index === steps.length - 1 && failed ? STATUS_LABELS[status] : STATUS_LABELS[step];
-          return (
-            <li
-              key={step}
-              className={index < current ? 'step-done' : index === current ? 'step-current' : ''}
-              aria-current={index === current ? 'step' : undefined}
-            >
-              {label}
-            </li>
-          );
-        })}
-      </ol>
-      <p className="job-status" role="status">
-        Status: {STATUS_LABELS[status]}
-      </p>
-      <p className="job-model">Model: {modelName}</p>
+    <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-xl border p-4">
+      <h2 id={headingId} className="sr-only">
+        Your images
+      </h2>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <ol aria-label="Progress" className="flex flex-wrap items-center gap-1">
+          {steps.map((step, index) => {
+            const last = index === steps.length - 1;
+            const label = last && failed ? STATUS_LABELS[status] : STATUS_LABELS[step];
+            return (
+              <li
+                key={step}
+                aria-current={index === current ? 'step' : undefined}
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-xs font-medium',
+                  index < current && 'bg-primary/10 text-primary',
+                  index === current && 'bg-primary text-primary-foreground',
+                  index === current && last && failed && 'bg-destructive text-white',
+                  index > current && 'bg-muted text-muted-foreground',
+                )}
+              >
+                {label}
+              </li>
+            );
+          })}
+        </ol>
+        <p role="status" className="flex items-center gap-1.5 font-medium">
+          {active && <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />}
+          Status: {STATUS_LABELS[status]}
+        </p>
+        <p className="text-muted-foreground">Model: {modelName}</p>
+      </div>
 
       {active && batch && (
-        <p className="job-note">
-          Your images will be in your <Link href={GALLERY_PATH}>gallery</Link> within 24 hours,
-          often much sooner. You can leave this page.
+        <p className="text-sm text-muted-foreground">
+          Your images will be in your{' '}
+          <Link href={GALLERY_PATH} className={GALLERY_LINK_CLASS}>
+            gallery
+          </Link>{' '}
+          within 24 hours, often much sooner. You can leave this page.
         </p>
       )}
       {batch && (active || status === 'succeeded') && (
         <ReadyNotification ready={status === 'succeeded'} prompt={prompt} />
       )}
       {active && !batch && (
-        <p className="job-note">
-          You can leave this page; your images will be saved to your{' '}
-          <Link href={GALLERY_PATH}>gallery</Link>.
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground">
+            You can leave this page; your images will be saved to your{' '}
+            <Link href={GALLERY_PATH} className={GALLERY_LINK_CLASS}>
+              gallery
+            </Link>
+            .
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" aria-hidden="true">
+            {Array.from({ length: count }, (_, index) => (
+              <Skeleton key={index} className="aspect-square w-full rounded-lg" />
+            ))}
+          </div>
+        </>
       )}
       {timedOut && (
-        <p className="job-note">
+        <p className="text-sm text-muted-foreground">
           This is taking longer than usual. Your images will be in your{' '}
-          <Link href={GALLERY_PATH}>gallery</Link> when they are ready.
+          <Link href={GALLERY_PATH} className={GALLERY_LINK_CLASS}>
+            gallery
+          </Link>{' '}
+          when they are ready.
         </p>
       )}
       {lost && (
-        <p className="form-error" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           We can&apos;t show this job any more. Refresh the page to check your points.
         </p>
       )}
       {failed && (
-        <div className="job-failure" role="alert">
-          <p>{job?.error ?? 'Something went wrong while creating your images.'}</p>
-          {refunded > 0 && <p>{pointsText(refunded)} returned to your allowance.</p>}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            <p>{job?.error ?? 'Something went wrong while creating your images.'}</p>
+            {refunded > 0 && <p>{pointsText(refunded)} returned to your allowance.</p>}
+          </AlertDescription>
+        </Alert>
       )}
       {status === 'succeeded' && job?.images && <ResultsGrid images={job.images} prompt={prompt} />}
     </section>
@@ -151,7 +191,13 @@ function ReadyNotification({ ready, prompt }: { ready: boolean; prompt: string }
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={() => void ask()}>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="self-start"
+      onClick={() => void ask()}
+    >
       Notify me when they&apos;re ready
     </Button>
   );
@@ -163,25 +209,36 @@ function ResultsGrid({ images, prompt }: { images: JobImage[]; prompt: string })
 
   return (
     <>
-      <ul className="results-grid" aria-label="Results">
+      <ul aria-label="Results" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {images.map((image, index) => (
-          <li key={`${image.imageId}-${image.version}`}>
+          <li key={`${image.imageId}-${image.version}`} className="flex flex-col gap-2">
             <button
               type="button"
-              className="result-image"
               aria-label={`View image ${index + 1} full size`}
+              className="cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               onClick={() => setViewing(image)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-              <img src={image.url} alt={alt} onLoad={() => void reportFirstImage()} />
+              <img
+                src={image.url}
+                alt={alt}
+                className="h-auto w-full"
+                onLoad={() => void reportFirstImage()}
+              />
             </button>
-            <div className="result-actions">
-              <a className="button" href={downloadPath(image.imageId, image.version)} download>
-                Download PNG
-              </a>
-              <Link className="button" href={editImagePath(image.imageId, image.version)}>
-                Edit
-              </Link>
+            <div className="flex flex-wrap gap-1">
+              <Button asChild variant="outline" size="sm">
+                <a href={downloadPath(image.imageId, image.version)} download>
+                  <DownloadIcon aria-hidden="true" />
+                  Download PNG
+                </a>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={editImagePath(image.imageId, image.version)}>
+                  <PencilIcon aria-hidden="true" />
+                  Edit
+                </Link>
+              </Button>
             </div>
           </li>
         ))}
@@ -200,34 +257,36 @@ function FullSizeView({
   alt: string;
   onClose: () => void;
 }) {
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') onClose();
-  }
+  const close = useRef<HTMLButtonElement>(null);
 
   return (
-    <div
-      className="lightbox"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Full-size image"
-      onKeyDown={onKeyDown}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-      <img src={image.url} alt={alt} />
-      <div className="result-actions">
-        <a
-          className="button button-primary"
-          href={downloadPath(image.imageId, image.version)}
-          download
-        >
-          Download PNG
-        </a>
-        {/* Focused on open, so Escape and Enter work straight away. */}
-        <button type="button" className="button" onClick={onClose} autoFocus>
-          Close
-        </button>
-        <ReportImage imageId={image.imageId} version={image.version} />
-      </div>
-    </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          // Close takes the focus, so Escape and Enter work straight away.
+          event.preventDefault();
+          close.current?.focus();
+        }}
+        showCloseButton={false}
+        className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-3xl"
+      >
+        <DialogTitle className="sr-only">Full-size image</DialogTitle>
+        {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
+        <img src={image.url} alt={alt} className="max-h-[70svh] w-full rounded-md object-contain" />
+        <div className="flex flex-wrap items-start gap-2">
+          <Button asChild>
+            <a href={downloadPath(image.imageId, image.version)} download>
+              <DownloadIcon aria-hidden="true" />
+              Download PNG
+            </a>
+          </Button>
+          <Button ref={close} type="button" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+          <ReportImage imageId={image.imageId} version={image.version} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,9 +1,9 @@
-import { loadSeedRegistry, modelsForEnvironment } from '@pictora/core';
+import { ASPECTS, loadSeedRegistry, modelsForEnvironment } from '@pictora/core';
 import { describe, expect, it } from 'vitest';
 import {
+  ASPECT_SHAPES,
   MAX_ALT_TEXT_LENGTH,
   altTextFor,
-  aspectRatioStyle,
   choicesForModel,
   qualityPaused,
   costPerImage,
@@ -82,8 +82,10 @@ describe('generate options', () => {
     expect(modelCostSummary(model('gpt-image-1-mini'))).toBe('Draft 1 point per image');
   });
 
-  it('turns an aspect into a CSS aspect ratio', () => {
-    expect(aspectRatioStyle('16:9')).toBe('16 / 9');
+  it('draws every aspect as a shape with its own ratio', () => {
+    expect(Object.keys(ASPECT_SHAPES)).toEqual([...ASPECTS]);
+    expect(ASPECT_SHAPES['16:9']).toContain('aspect-video');
+    expect(new Set(Object.values(ASPECT_SHAPES)).size).toBe(ASPECTS.length);
   });
 
   it('uses the prompt, trimmed to 150 characters, as alt text', () => {

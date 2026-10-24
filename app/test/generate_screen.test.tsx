@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ENHANCE_STORAGE_KEY,
+  EXAMPLE_PROMPTS,
   GenerateScreen,
   type PointsLeft,
 } from '../src/components/generate_screen';
@@ -35,9 +36,12 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/** The job ID the stub gives the nth job (from 1): JOB_ID first, so tests of one job can name it. */
+const jobIdFor = (n: number) => (n === 1 ? JOB_ID : `${JOB_ID.slice(0, -1)}${n}`);
+
 /**
- * A fetch stand-in: POST /api/jobs answers `created`, each job poll the next status, /api/me `me`.
- * POST /api/enhance answers `enhance`, or by default returns the prompt unchanged.
+ * A fetch stand-in: POST /api/jobs answers `created` (by default a new job ID each time), each job poll the next
+ * status, /api/me `me`. POST /api/enhance answers `enhance`, or by default returns the prompt unchanged.
  */
 function stubApi(options: {
   created?: Response;
@@ -46,6 +50,7 @@ function stubApi(options: {
   enhance?: (body: { prompt: string; style: string; modelId: string }) => Response;
 }) {
   const statuses = [...(options.statuses ?? [])];
+  let jobs = 0;
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/enhance' && init?.method === 'POST') {
       const body = JSON.parse(init.body as string) as {
@@ -56,11 +61,14 @@ function stubApi(options: {
       return options.enhance?.(body) ?? json({ enhancedPrompt: body.prompt });
     }
     if (url === '/api/jobs' && init?.method === 'POST') {
-      return options.created ?? json({ jobId: JOB_ID, status: 'queued', pointsReserved: 2 }, 202);
+      jobs += 1;
+      return (
+        options.created ?? json({ jobId: jobIdFor(jobs), status: 'queued', pointsReserved: 2 }, 202)
+      );
     }
-    if (url === `/api/jobs/${JOB_ID}`) {
+    if (url.startsWith('/api/jobs/')) {
       const next = statuses.length > 1 ? statuses.shift() : statuses[0];
-      return json({ jobId: JOB_ID, pointsReserved: 2, ...next });
+      return json({ jobId: url.slice('/api/jobs/'.length), pointsReserved: 2, ...next });
     }
     if (url === '/api/me') return json({ pointsLeft: 25, dailyLimit: 25, ...options.me });
     if (url === '/api/reports') return json({ reportId: 'R1' }, 201);
@@ -70,13 +78,65 @@ function stubApi(options: {
   return fetchMock;
 }
 
-const prompt = () => screen.getByRole('textbox', { name: 'Describe your image' });
-const generate = () => screen.getByRole('button', { name: /Generate|Starting|Generating/ });
+const prompt = () =>
+  screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Describe your image' });
+const generate = () =>
+  screen.getByRole<HTMLButtonElement>('button', { name: /^(Generate|Starting|Generating)/ });
 const radio = (name: string | RegExp) => screen.getByRole('radio', { name });
+const checked = (element: HTMLElement) => element.getAttribute('aria-checked') === 'true';
+const pressed = (element: HTMLElement) => element.getAttribute('aria-pressed') === 'true';
+const toggleButton = (name: string) => screen.getByRole('button', { name });
 
+/** Opens the Advanced popover and picks a model, or Auto. */
 function chooseModel(name: string | RegExp) {
-  fireEvent.click(screen.getByText('Advanced'));
+  if (!screen.queryByRole('radiogroup', { name: 'Model' })) {
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+  }
   fireEvent.click(radio(name));
+}
+
+/** Opens the style popover and picks a style. */
+function chooseStyle(name: string) {
+  if (!screen.queryByRole('radiogroup', { name: 'Style' })) {
+    fireEvent.click(screen.getByRole('button', { name: /^Style:/ }));
+  }
+  fireEvent.click(radio(name));
+}
+
+/** Opens a select from the keyboard, as Radix's select does in jsdom, and returns its options. */
+function openSelect(label: string): HTMLElement[] {
+  fireEvent.keyDown(screen.getByRole('combobox', { name: label }), { key: 'Enter' });
+  return screen.getAllByRole('option');
+}
+
+/** Picks an option in the Quality or Aspect ratio select. */
+function chooseOption(label: string, option: string | RegExp) {
+  openSelect(label);
+  fireEvent.click(screen.getByRole('option', { name: option }));
+}
+
+/** The quality option's text, with its cost per image, and whether it is disabled; closes the select. */
+function qualityOption(name: RegExp): { text: string; disabled: boolean } {
+  openSelect('Quality');
+  const option = screen.getByRole('option', { name });
+  const result = {
+    text: option.textContent ?? '',
+    disabled: option.getAttribute('aria-disabled') === 'true',
+  };
+  fireEvent.keyDown(option, { key: 'Escape' });
+  return result;
+}
+
+function chooseCount(count: number) {
+  fireEvent.click(radio(`${count} ${count === 1 ? 'image' : 'images'}`));
+}
+
+/** Opens the Avoid popover and returns its field. */
+function avoidField(): HTMLInputElement {
+  if (!screen.queryByRole('textbox', { name: 'Avoid (optional)' })) {
+    fireEvent.click(screen.getByRole('button', { name: /^Avoid/ }));
+  }
+  return screen.getByRole<HTMLInputElement>('textbox', { name: 'Avoid (optional)' });
 }
 
 function fillAndGenerate(text = 'A lighthouse at dusk') {
@@ -101,22 +161,21 @@ describe('GenerateScreen', () => {
   });
 
   describe('prompt enhancer', () => {
-    const toggle = () =>
-      screen.getByRole('checkbox', { name: /Enhance prompt/ }) as HTMLInputElement;
+    const toggle = () => toggleButton('Enhance prompt');
     const panel = () => screen.queryByRole('region', { name: 'Enhanced prompt' });
     const enhancedBox = () =>
       screen.getByRole('textbox', { name: 'Enhanced prompt' }) as HTMLTextAreaElement;
 
     it('is on by default and remembers being turned off', () => {
       renderScreen();
-      expect(toggle().checked).toBe(true);
+      expect(pressed(toggle())).toBe(true);
       fireEvent.click(toggle());
-      expect(toggle().checked).toBe(false);
+      expect(pressed(toggle())).toBe(false);
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('off');
       cleanup();
 
       renderScreen();
-      expect(toggle().checked).toBe(false);
+      expect(pressed(toggle())).toBe(false);
       fireEvent.click(toggle());
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('on');
     });
@@ -205,7 +264,7 @@ describe('GenerateScreen', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Use my words' }));
       expect(panel()).toBeNull();
-      expect(toggle().checked).toBe(false);
+      expect(pressed(toggle())).toBe(false);
       // Only for this visit: the remembered setting stays on.
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBeNull();
       fireEvent.click(generate());
@@ -270,21 +329,29 @@ describe('GenerateScreen', () => {
     });
   });
 
-  describe('form', () => {
-    it('shows each style sample straight from /static/, not through the image optimizer', () => {
-      const { container } = renderScreen();
-      const group = screen.getByRole('group', { name: 'Style' });
-      const sources = Array.from(group.querySelectorAll('img'), (img) => img.getAttribute('src'));
-      expect(sources).toEqual(SAMPLE_IMAGES.map((sample) => sample.src));
-      expect(container.querySelector('img[src^="/_next/image"]')).toBeNull();
-    });
-
+  describe('composer', () => {
     it('limits the prompt to 2,000 characters and counts them', () => {
       renderScreen();
       expect(prompt().getAttribute('maxlength')).toBe(String(MAX_PROMPT_LENGTH));
       expect(screen.getByText('0 / 2000')).toBeTruthy();
       fireEvent.change(prompt(), { target: { value: 'A red fox' } });
       expect(screen.getByText('9 / 2000')).toBeTruthy();
+      fireEvent.change(prompt(), { target: { value: 'x'.repeat(MAX_PROMPT_LENGTH) } });
+      expect(screen.getByText('2000 / 2000')).toBeTruthy();
+    });
+
+    it('sends on Enter, but not on Shift+Enter', async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
+      renderScreen();
+      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.change(prompt(), { target: { value: 'A red fox' } });
+      fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(0);
+
+      fireEvent.keyDown(prompt(), { key: 'Enter' });
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({ prompt: 'A red fox' });
     });
 
     it('asks for a prompt instead of submitting an empty one', () => {
@@ -296,47 +363,106 @@ describe('GenerateScreen', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('greets with example prompts that fill the composer', () => {
+      const fetchMock = stubApi({});
+      renderScreen();
+      expect(screen.getByRole('heading', { name: 'What would you like to create?' })).toBeTruthy();
+      const examples = within(screen.getByRole('list', { name: 'Example prompts' })).getAllByRole(
+        'button',
+      );
+      expect(examples.map((button) => button.textContent)).toEqual([...EXAMPLE_PROMPTS]);
+      fireEvent.click(examples[1]!);
+      expect(prompt().value).toBe(EXAMPLE_PROMPTS[1]);
+      expect(document.activeElement).toBe(prompt());
+      // Filling the composer doesn't send anything.
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('options', () => {
+    it('shows each style sample straight from /static/, not through the image optimizer', () => {
+      const { baseElement } = renderScreen();
+      fireEvent.click(screen.getByRole('button', { name: 'Style: None' }));
+      const group = screen.getByRole('radiogroup', { name: 'Style' });
+      const sources = Array.from(group.querySelectorAll('img'), (img) => img.getAttribute('src'));
+      expect(sources).toEqual(SAMPLE_IMAGES.map((sample) => sample.src));
+      expect(baseElement.querySelector('img[src^="/_next/image"]')).toBeNull();
+      expect(within(group).getAllByRole('radio')).toHaveLength(styles.length);
+    });
+
+    it('shows the picked style on its button', () => {
+      renderScreen();
+      chooseStyle('Watercolour');
+      expect(checked(radio('Watercolour'))).toBe(true);
+      expect(screen.getByRole('button', { name: 'Style: Watercolour' })).toBeTruthy();
+    });
+
     it('shows the avoid field only for models that take a negative prompt', () => {
       renderScreen();
-      expect(screen.queryByRole('textbox', { name: /Avoid/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Avoid/ })).toBeNull();
       chooseModel(/^Mock/);
-      expect(screen.getByRole('textbox', { name: /Avoid/ })).toBeTruthy();
+      expect(avoidField()).toBeTruthy();
     });
 
     it('shows the transparent background toggle only for models that support it', () => {
       renderScreen();
-      expect(screen.getByRole('checkbox', { name: 'Transparent background' })).toBeTruthy();
+      expect(toggleButton('Transparent background')).toBeTruthy();
       chooseModel(/^Gemini 3 Pro Image/);
-      expect(screen.queryByRole('checkbox', { name: 'Transparent background' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Transparent background' })).toBeNull();
     });
 
     it('sets the suggested model when a style is picked, keeping a quality it offers', () => {
       renderScreen();
       chooseModel(/^GPT Image 2/);
-      fireEvent.click(radio('Photorealistic'));
-      expect((radio(/^Gemini 3 Pro Image/) as HTMLInputElement).checked).toBe(true);
-      expect((radio(/^Standard/) as HTMLInputElement).checked).toBe(true);
-      expect((radio(/^Draft/) as HTMLInputElement).disabled).toBe(true);
+      chooseStyle('Photorealistic');
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+      expect(checked(radio(/^Gemini 3 Pro Image/))).toBe(true);
+      expect(screen.getByRole('combobox', { name: 'Quality' }).textContent).toBe('Standard');
+      expect(qualityOption(/^Draft/).disabled).toBe(true);
       expect(screen.getByText('Uses 14 of your 25 points today')).toBeTruthy();
     });
 
     it('offers every aspect ratio with a shape icon', () => {
-      const { container } = renderScreen();
-      for (const aspect of ['1:1', '4:5', '3:2', '2:3', '16:9', '9:16']) {
-        expect(radio(aspect)).toBeTruthy();
+      renderScreen();
+      const options = openSelect('Aspect ratio');
+      expect(options.map((option) => option.textContent)).toEqual([
+        '1:1',
+        '4:5',
+        '3:2',
+        '2:3',
+        '16:9',
+        '9:16',
+      ]);
+      for (const option of options) {
+        expect(option.querySelector('[data-aspect-icon]')).not.toBeNull();
       }
-      expect(container.querySelectorAll('.aspect-icon')).toHaveLength(6);
+      fireEvent.click(screen.getByRole('option', { name: '16:9' }));
+      expect(screen.getByRole('combobox', { name: 'Aspect ratio' }).textContent).toBe('16:9');
     });
 
     it('lists each model with its strengths and cost per image behind Advanced', () => {
       renderScreen();
-      const details = screen.getByText('Advanced').closest('details') as HTMLDetailsElement;
-      expect(details.open).toBe(false);
-      const option = radio(/^GPT Image 2/).closest('label') as HTMLElement;
+      expect(screen.queryByRole('radiogroup', { name: 'Model' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+      const option = radio(/^GPT Image 2/);
       expect(within(option).getByText(/Follows prompts closely/)).toBeTruthy();
       expect(
         within(option).getByText('Draft 1 · Standard 6 · High 22 points per image'),
       ).toBeTruthy();
+    });
+
+    it('picks one to four images', () => {
+      renderScreen();
+      const group = screen.getByRole('radiogroup', { name: 'Number of images' });
+      expect(
+        within(group)
+          .getAllByRole('radio')
+          .map((item) => item.textContent),
+      ).toEqual(['1', '2', '3', '4']);
+      expect(checked(radio('1 image'))).toBe(true);
+      chooseCount(3);
+      expect(checked(radio('3 images'))).toBe(true);
+      expect(checked(radio('1 image'))).toBe(false);
     });
   });
 
@@ -344,43 +470,45 @@ describe('GenerateScreen', () => {
     it('shows what the request uses of the points left, following quality and count', () => {
       renderScreen({ left: 20, limit: 25 });
       expect(screen.getByText('Uses 6 of your 20 points today')).toBeTruthy();
-      expect(radio(/^High/).closest('label')?.textContent).toContain('22 points per image');
-      fireEvent.click(radio(/^Draft/));
-      fireEvent.change(screen.getByRole('combobox', { name: 'Number of images' }), {
-        target: { value: '4' },
-      });
+      expect(qualityOption(/^High/).text).toContain('22 points per image');
+      chooseOption('Quality', /^Draft/);
+      chooseCount(4);
       expect(screen.getByText('Uses 4 of your 20 points today')).toBeTruthy();
     });
 
     it("disables generate when the user can't afford the request", () => {
       renderScreen({ left: 5, limit: 25 });
       chooseModel(/^GPT Image 2/);
-      expect((generate() as HTMLButtonElement).disabled).toBe(true);
+      expect(generate().disabled).toBe(true);
       expect(screen.getByText(/don't have enough points left today/)).toBeTruthy();
-      fireEvent.click(radio(/^Draft/));
-      expect((generate() as HTMLButtonElement).disabled).toBe(false);
+      chooseOption('Quality', /^Draft/);
+      expect(generate().disabled).toBe(false);
       expect(screen.queryByText(/don't have enough points left today/)).toBeNull();
     });
   });
 
   describe('deliver later (batch)', () => {
-    const later = () => screen.getByRole('checkbox', { name: 'Save points: deliver later' });
+    const later = () => toggleButton('Save points: deliver later');
 
     it('offers to save points, halving the cost, and explains the wait', () => {
       renderScreen({ left: 20, limit: 25 });
       expect(screen.getByText('Uses 6 of your 20 points today')).toBeTruthy();
-      expect(later().getAttribute('aria-checked')).toBe('false');
-      expect(
-        screen.getByText(/Half the points\. Your images arrive in your gallery within 24 hours/),
-      ).toBeTruthy();
+      expect(pressed(later())).toBe(false);
+      // The explanation is read out with the toggle, and shown once it is on.
+      const hint = screen.getByText(
+        /Half the points\. Your images arrive in your gallery within 24 hours/,
+      );
+      expect(later().getAttribute('aria-describedby')).toBe(hint.id);
+      expect(hint.className).toBe('sr-only');
 
       fireEvent.click(later());
-      expect(later().getAttribute('aria-checked')).toBe('true');
+      expect(pressed(later())).toBe(true);
+      expect(hint.className).not.toBe('sr-only');
       expect(
         screen.getByText('Uses 3 of your 20 points today (half of 6, delivered later)'),
       ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Schedule' })).toBeTruthy();
-      fireEvent.click(radio(/^High/));
+      chooseOption('Quality', /^High/);
       // 22 points, half rounded up.
       expect(screen.getByText(/^Uses 11 of your 20 points today/)).toBeTruthy();
     });
@@ -388,7 +516,7 @@ describe('GenerateScreen', () => {
     it('lets a batch fit where the full price would not', () => {
       renderScreen({ left: 5, limit: 25 });
       chooseModel(/^GPT Image 2/);
-      expect((generate() as HTMLButtonElement).disabled).toBe(true);
+      expect(generate().disabled).toBe(true);
       fireEvent.click(later());
       expect((screen.getByRole('button', { name: 'Schedule' }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -398,7 +526,7 @@ describe('GenerateScreen', () => {
     it('hides the option for a model without batches', () => {
       renderScreen();
       chooseModel(/^Stable Image Core/);
-      expect(screen.queryByRole('checkbox', { name: 'Save points: deliver later' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Save points: deliver later' })).toBeNull();
     });
 
     it('schedules the job, keeps the form open, and notifies when the images are ready', async () => {
@@ -506,19 +634,15 @@ describe('GenerateScreen', () => {
       window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
       renderScreen();
       chooseModel(/^Mock/);
-      fireEvent.click(radio(/^Draft/));
-      fireEvent.change(screen.getByRole('combobox', { name: 'Number of images' }), {
-        target: { value: '2' },
-      });
-      fireEvent.change(screen.getByRole('textbox', { name: /Avoid/ }), {
-        target: { value: 'blur' },
-      });
+      chooseOption('Quality', /^Draft/);
+      chooseCount(2);
+      fireEvent.change(avoidField(), { target: { value: 'blur' } });
       fillAndGenerate('  A lighthouse at dusk ');
 
       await screen.findByText('Status: Queued');
       expect(screen.getByText('23 of 25 points left today')).toBeTruthy();
       expect(screen.getByText(/You can leave this page/)).toBeTruthy();
-      expect((generate() as HTMLButtonElement).disabled).toBe(true);
+      expect(generate().disabled).toBe(true);
       const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/jobs')!;
       expect(JSON.parse(init!.body as string)).toEqual({
         type: 'generate',
@@ -544,7 +668,7 @@ describe('GenerateScreen', () => {
         expect(fetchMock.mock.calls.filter(([url]) => url === '/api/me')).toHaveLength(1),
       );
       expect(screen.getByText('23 of 25 points left today')).toBeTruthy();
-      expect((generate() as HTMLButtonElement).disabled).toBe(false);
+      expect(generate().disabled).toBe(false);
       expect(screen.queryByText(/You can leave this page/)).toBeNull();
       // The sidebar history and points refresh.
       expect(imagesChanged).toHaveBeenCalledOnce();
@@ -592,7 +716,7 @@ describe('GenerateScreen', () => {
         me: { pointsLeft: 25 },
       });
       renderScreen();
-      fireEvent.click(radio(/^Draft/));
+      chooseOption('Quality', /^Draft/);
       fillAndGenerate();
       await screen.findByText('Status: Failed');
       const alert = screen.getByRole('alert');
@@ -632,7 +756,7 @@ describe('GenerateScreen', () => {
       expect(fetchMock.mock.calls.filter(([url]) => url === `/api/jobs/${JOB_ID}`)).toHaveLength(
         polls,
       );
-      expect((generate() as HTMLButtonElement).disabled).toBe(false);
+      expect(generate().disabled).toBe(false);
     });
 
     it('links to the gallery while the job runs, and each result to its edit panel', async () => {
@@ -649,25 +773,132 @@ describe('GenerateScreen', () => {
     });
   });
 
+  describe('thread', () => {
+    const imageOf = (n: number) => ({
+      imageId: `IMG${n}`,
+      version: 1,
+      url: `https://signed.example/IMG${n}.png`,
+      downloadUrl: `https://signed.example/IMG${n}.png?download`,
+    });
+
+    it('keeps each request and its results in the thread, newest last', async () => {
+      let polls = 0;
+      const fetchMock = stubApi({});
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === '/api/jobs' && init?.method === 'POST') {
+          const n = bodiesOf(fetchMock, '/api/jobs').length;
+          return json({ jobId: jobIdFor(n), status: 'queued', pointsReserved: 2 }, 202);
+        }
+        if (url.startsWith('/api/jobs/')) {
+          polls += 1;
+          const n = url.endsWith(JOB_ID) ? 1 : 2;
+          return json({
+            jobId: url.slice('/api/jobs/'.length),
+            pointsReserved: 2,
+            pointsCharged: 2,
+            status: 'succeeded',
+            images: [imageOf(n)],
+          });
+        }
+        if (url === '/api/me') return json({ pointsLeft: 21, dailyLimit: 25 });
+        return json({}, 404);
+      });
+      const imagesChanged = vi.fn();
+      window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
+      renderScreen();
+      fireEvent.click(toggleButton('Enhance prompt'));
+      chooseModel(/^Mock/);
+      chooseOption('Quality', /^Draft/);
+      fillAndGenerate('A red fox');
+      await screen.findByText('Status: Done');
+      // The greeting gives way to the thread.
+      expect(screen.queryByRole('list', { name: 'Example prompts' })).toBeNull();
+
+      chooseStyle('Watercolour');
+      chooseCount(2);
+      fillAndGenerate('A blue whale');
+      await waitFor(() => expect(screen.getAllByText('Status: Done')).toHaveLength(2));
+
+      const turns = within(screen.getByRole('list', { name: 'Your requests' }))
+        .getAllByRole('listitem')
+        .filter((item) => item.parentElement?.getAttribute('aria-label') === 'Your requests');
+      expect(turns).toHaveLength(2);
+      expect(within(turns[0]!).getByText('A red fox')).toBeTruthy();
+      expect(
+        within(within(turns[0]!).getByRole('list', { name: 'Options' }))
+          .getAllByRole('listitem')
+          .map((chip) => chip.textContent),
+      ).toEqual(['No style', '1:1', 'Draft', '1 image', 'Mock (dev only)']);
+      expect(within(turns[0]!).getByRole('img', { name: 'A red fox' }).getAttribute('src')).toBe(
+        imageOf(1).url,
+      );
+      expect(within(turns[1]!).getByText('A blue whale')).toBeTruthy();
+      expect(within(turns[1]!).getByText('Watercolour')).toBeTruthy();
+      expect(within(turns[1]!).getByText('2 images')).toBeTruthy();
+      expect(within(turns[1]!).getByRole('img', { name: 'A blue whale' }).getAttribute('src')).toBe(
+        imageOf(2).url,
+      );
+      expect(polls).toBeGreaterThanOrEqual(2);
+      // Each finished job refreshes the sidebar history and the points.
+      expect(imagesChanged).toHaveBeenCalledTimes(2);
+      await screen.findByText('21 of 25 points left today');
+      window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
+    });
+
+    it('blocks a new request while the latest job runs, and opens again when it ends', async () => {
+      let done = false;
+      const fetchMock = stubApi({});
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === '/api/jobs' && init?.method === 'POST') {
+          return json({ jobId: JOB_ID, status: 'queued', pointsReserved: 2 }, 202);
+        }
+        if (url.startsWith('/api/jobs/')) {
+          return json(
+            done
+              ? { jobId: JOB_ID, status: 'failed', pointsReserved: 2, pointsCharged: 0 }
+              : { jobId: JOB_ID, status: 'running', pointsReserved: 2 },
+          );
+        }
+        if (url === '/api/me') return json({ pointsLeft: 25, dailyLimit: 25 });
+        return json({}, 404);
+      });
+      renderScreen();
+      fireEvent.click(toggleButton('Enhance prompt'));
+      fillAndGenerate('A red fox');
+      await screen.findByText('Status: Generating');
+      expect(generate().textContent).toBe('Generating…');
+      expect(generate().disabled).toBe(true);
+      // Enter doesn't start a second job either.
+      fireEvent.keyDown(prompt(), { key: 'Enter' });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1);
+
+      done = true;
+      await screen.findByText('Status: Failed');
+      await waitFor(() => expect(generate().disabled).toBe(false));
+      expect(generate().textContent).toBe('Generate');
+    });
+  });
+
   describe('Auto model', () => {
     const autoLine = () => screen.getByText(/^Auto picks/).textContent;
 
     it('is selected by default and shows the model it picks for the style', () => {
       renderScreen();
-      fireEvent.click(screen.getByText('Advanced'));
-      expect((radio(/^Auto \(recommended\)/) as HTMLInputElement).checked).toBe(true);
-      expect((radio(/^GPT Image 2/) as HTMLInputElement).checked).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+      expect(checked(radio(/^Auto \(recommended\)/))).toBe(true);
+      expect(checked(radio(/^GPT Image 2/))).toBe(false);
       expect(autoLine()).toBe('Auto picks GPT Image 2: the best fit for your prompt.');
 
-      fireEvent.click(radio('Photorealistic'));
+      chooseStyle('Photorealistic');
       expect(autoLine()).toBe('Auto picks Gemini 3 Pro Image: the best fit for Photorealistic.');
       expect(screen.getByText('Uses 14 of your 25 points today')).toBeTruthy();
-      expect(radio(/^Standard/).closest('label')?.textContent).toContain('14 points per image');
+      expect(qualityOption(/^Standard/).text).toContain('14 points per image');
     });
 
     it('prefers a text model when the prompt asks for words', () => {
       renderScreen();
-      fireEvent.click(radio('Watercolour'));
+      chooseStyle('Watercolour');
       expect(autoLine()).toMatch(/^Auto picks Gemini 3\.1 Flash Image/);
       fireEvent.change(prompt(), { target: { value: 'A poster that says "Summer Fair"' } });
       expect(autoLine()).toBe('Auto picks GPT Image 2: best at words in images.');
@@ -675,18 +906,18 @@ describe('GenerateScreen', () => {
 
     it('picks an affordable model, then a lower quality, when points are low', () => {
       renderScreen({ left: 10, limit: 25 });
-      fireEvent.click(radio('Photorealistic'));
+      chooseStyle('Photorealistic');
       expect(autoLine()).toBe('Auto picks GPT Image 2: it fits the points you have left.');
       expect(screen.getByText('Uses 6 of your 10 points today')).toBeTruthy();
       cleanup();
 
       // Even the dev-only mock model costs 2 points at Standard.
       renderScreen({ left: 1, limit: 25 });
-      fireEvent.click(radio('Photorealistic'));
+      chooseStyle('Photorealistic');
       expect(autoLine()).toBe(
         'Auto picks GPT Image 2: Draft quality fits the points you have left.',
       );
-      expect((generate() as HTMLButtonElement).disabled).toBe(false);
+      expect(generate().disabled).toBe(false);
     });
 
     it('sends auto to the job API and shows the model the server picked', async () => {
@@ -698,8 +929,8 @@ describe('GenerateScreen', () => {
         statuses: [{ status: 'queued', modelId: 'gemini-3.1-flash-image' }],
       });
       renderScreen();
-      fireEvent.click(radio('Anime'));
-      fireEvent.click(screen.getByRole('checkbox', { name: /Enhance prompt/ }));
+      chooseStyle('Anime');
+      fireEvent.click(toggleButton('Enhance prompt'));
       fillAndGenerate();
       await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
       expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({
@@ -712,8 +943,8 @@ describe('GenerateScreen', () => {
 
     it('offers a transparent background and routes to a model that makes one', () => {
       renderScreen();
-      fireEvent.click(radio('Watercolour'));
-      fireEvent.click(screen.getByRole('checkbox', { name: 'Transparent background' }));
+      chooseStyle('Watercolour');
+      fireEvent.click(toggleButton('Transparent background'));
       expect(autoLine()).toMatch(/^Auto picks GPT Image 2/);
     });
 
@@ -721,7 +952,7 @@ describe('GenerateScreen', () => {
       renderScreen();
       chooseModel(/^Gemini 3 Pro Image/);
       expect(screen.queryByText(/^Auto picks/)).toBeNull();
-      fireEvent.click(radio(/^Auto \(recommended\)/));
+      chooseModel(/^Auto \(recommended\)/);
       expect(autoLine()).toMatch(/^Auto picks GPT Image 2/);
     });
   });
@@ -754,22 +985,16 @@ describe('GenerateScreen', () => {
     it("fills in the original settings and sends the same seed, in the user's own words", async () => {
       const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
       renderRerun(RERUN);
-      expect((prompt() as HTMLTextAreaElement).value).toBe('A lighthouse at dusk');
-      expect(
-        (screen.getByRole('textbox', { name: 'Avoid (optional)' }) as HTMLInputElement).value,
-      ).toBe('text');
-      expect((radio('Watercolour') as HTMLInputElement).checked).toBe(true);
-      expect((radio('16:9') as HTMLInputElement).checked).toBe(true);
-      expect((radio(/^Draft/) as HTMLInputElement).checked).toBe(true);
-      expect((radio(/^Mock/) as HTMLInputElement).checked).toBe(true);
-      expect(
-        (screen.getByRole('checkbox', { name: 'Transparent background' }) as HTMLInputElement)
-          .checked,
-      ).toBe(true);
+      expect(prompt().value).toBe('A lighthouse at dusk');
+      expect(avoidField().value).toBe('text');
+      expect(screen.getByRole('button', { name: 'Style: Watercolour' })).toBeTruthy();
+      expect(screen.getByRole('combobox', { name: 'Aspect ratio' }).textContent).toBe('16:9');
+      expect(screen.getByRole('combobox', { name: 'Quality' }).textContent).toBe('Draft');
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+      expect(checked(radio(/^Mock/))).toBe(true);
+      expect(pressed(toggleButton('Transparent background'))).toBe(true);
       // The original used the user's own words, so the rerun does too.
-      expect(
-        (screen.getByRole('checkbox', { name: /Enhance prompt/ }) as HTMLInputElement).checked,
-      ).toBe(false);
+      expect(pressed(toggleButton('Enhance prompt'))).toBe(false);
       expect(screen.getByText(/Uses seed 1234 from the original image/)).toBeTruthy();
 
       fireEvent.click(generate());
@@ -821,7 +1046,7 @@ describe('GenerateScreen', () => {
       expect(screen.getByRole('status').textContent).toMatch(
         /The model this image was made with isn't available any more, so we picked /,
       );
-      expect((prompt() as HTMLTextAreaElement).value).toBe('A lighthouse at dusk');
+      expect(prompt().value).toBe('A lighthouse at dusk');
       expect(screen.queryByText(/Uses seed/)).toBeNull();
     });
   });

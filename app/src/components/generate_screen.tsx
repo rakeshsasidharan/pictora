@@ -3,32 +3,35 @@
 import {
   ASPECTS,
   AUTO_MODEL_ID,
-  MAX_AVOID_LENGTH,
-  MAX_IMAGE_COUNT,
   MAX_PROMPT_LENGTH,
   MIN_IMAGE_COUNT,
-  QUALITIES,
   batchPoints,
   promptAsksForText,
   routeModel,
   type Quality,
   type StyleId,
 } from '@pictora/core';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useCallback, useState, useSyncExternalStore, type FormEvent } from 'react';
-import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowUpIcon, ClockIcon, SparklesIcon, SquareDashedIcon } from 'lucide-react';
+import {
+  useCallback,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Toggle } from '@/components/ui/toggle';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   BATCH_POLL_INTERVAL_MS,
-  BATCH_POLL_TIMEOUT_MS,
   DEFAULT_QUALITY,
   QUALITY_LABELS,
-  aspectRatioStyle,
   choicesForModel,
   costPerImage,
   generateModels,
   initialForm,
-  modelCostSummary,
   pausedQualities,
   pointsText,
   premiumPausedText,
@@ -42,10 +45,16 @@ import type { RerunSettings } from '../lib/images';
 import { notifyImagesChanged } from '../lib/images_changed';
 import type { MeBody } from '../lib/jobs';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
-import { SAMPLE_IMAGES } from '../lib/sample_images';
-import { EDIT_PATH } from '../lib/site';
-import { useJobStatus } from '../lib/use_job_status';
-import { JobProgress } from './job_progress';
+import {
+  AspectPicker,
+  AvoidPicker,
+  CountPicker,
+  ModelPicker,
+  QualityPicker,
+  StylePicker,
+  type QualityOption,
+} from './generate_controls';
+import { GenerateTurnView, type GenerateTurn } from './generate_turn';
 
 /** Today's points as the screen shows them (LIM-2). */
 export interface PointsLeft {
@@ -67,16 +76,6 @@ export interface GenerateScreenProps {
   pollTimeoutMs?: number;
   /** How often a batch job is checked (once a minute); tests shorten it. */
   batchPollIntervalMs?: number;
-}
-
-interface SubmittedJob {
-  id: string;
-  pointsReserved: number;
-  prompt: string;
-  /** The model the job runs on, which Auto picks on the server. */
-  modelId: string;
-  /** Delivered later through a provider batch, at half the points (tech design 5.4). */
-  batch: boolean;
 }
 
 /** The enhancer's output for one prompt, style and model, as the user may have edited it (ENH-2). */
@@ -167,17 +166,18 @@ async function requestEnhancement(
   }
 }
 
-const COUNTS = Array.from(
-  { length: MAX_IMAGE_COUNT - MIN_IMAGE_COUNT + 1 },
-  (_, index) => MIN_IMAGE_COUNT + index,
-);
-
-const SAMPLE_BY_STYLE = new Map(SAMPLE_IMAGES.map((sample) => [sample.style, sample]));
-const THUMBNAIL_SIZE = 72;
+/** Prompts the empty thread offers; picking one fills the composer. */
+export const EXAMPLE_PROMPTS = [
+  'A lighthouse on a rocky coast at dusk, warm light in its windows',
+  'A fox curled up asleep in autumn leaves',
+  'A cosy reading nook by a rainy window, with a cup of tea',
+  'A poster that says "Summer Fair" with paper lanterns',
+] as const;
 
 /**
- * The generate screen (GEN-1 to GEN-10, LIM-2): prompt, style, aspect ratio, quality, model and count, the
- * cost before generating, then the job's status and results.
+ * The generate screen (GEN-1 to GEN-10, LIM-2), laid out like a chat: a thread of this visit's requests, each
+ * prompt with its options and then its job's status and results, above a composer pinned to the bottom with
+ * the prompt, the enhancer, the options (style, aspect ratio, quality, count, model) and the cost.
  */
 export function GenerateScreen({
   models,
@@ -209,7 +209,11 @@ export function GenerateScreen({
   const [points, setPoints] = useState(initialPoints);
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<SubmittedJob>();
+  /** This visit's requests, oldest first; they go when the page is left. */
+  const [turns, setTurns] = useState<GenerateTurn[]>([]);
+  /** Jobs the screen stopped following: finished, timed out or lost. */
+  const [endedJobs, setEndedJobs] = useState<ReadonlySet<string>>(() => new Set());
+  const promptBox = useRef<HTMLTextAreaElement>(null);
   // The server render, and so hydration, assumes the default: on.
   const storedEnhanceOn = useSyncExternalStore(
     subscribeEnhanceSetting,
@@ -248,14 +252,14 @@ export function GenerateScreen({
       // The display catches up on the next refresh.
     }
   }, []);
-  const poll = useJobStatus(job?.id, {
-    intervalMs: job?.batch ? batchPollIntervalMs : pollIntervalMs,
-    timeoutMs: job?.batch ? BATCH_POLL_TIMEOUT_MS : pollTimeoutMs,
-    onFinish: () => {
-      void refreshPoints();
-      notifyImagesChanged();
-    },
-  });
+  const onJobFinish = useCallback(() => {
+    void refreshPoints();
+    // The sidebar history and points load again.
+    notifyImagesChanged();
+  }, [refreshPoints]);
+  const onJobEnd = useCallback((jobId: string) => {
+    setEndedJobs((ended) => (ended.has(jobId) ? ended : new Set(ended).add(jobId)));
+  }, []);
 
   // Auto picks among the models that take batch jobs when the user saves points.
   const batchModels = available.filter((candidate) => candidate.capabilities.batch);
@@ -283,9 +287,9 @@ export function GenerateScreen({
   const chosenQuality = auto ? route?.quality : choices?.quality;
   if (!model || !choices || !routing || !chosenQuality) {
     return (
-      <div className="generate">
-        <h1>Create an image</h1>
-        <p className="form-error" role="alert">
+      <div data-slot="generate-screen" className="flex flex-col gap-4">
+        <h1 className="text-xl font-semibold">Create an image</h1>
+        <p className="text-sm text-destructive" role="alert">
           No image models are available right now. Please try again later.
         </p>
       </div>
@@ -313,7 +317,7 @@ export function GenerateScreen({
     );
 
   /** What a quality costs per image, or why it can't be picked. With Auto, the model routing would pick. */
-  function qualityOption(option: Quality): { disabled: boolean; hint: string } {
+  function qualityOption(option: Quality): QualityOption {
     if (!model || !routing) return { disabled: true, hint: '' };
     if (auto) {
       const picked = routeModel({
@@ -338,12 +342,8 @@ export function GenerateScreen({
   }
   const affordable = cost <= points.left;
   // A batch job takes hours and holds no slot, so the form stays open for the next request.
-  const jobActive =
-    job !== undefined &&
-    !job.batch &&
-    !poll.timedOut &&
-    !poll.lost &&
-    (poll.job === undefined || ['queued', 'running'].includes(poll.job.status));
+  const latest = turns.at(-1);
+  const jobActive = latest !== undefined && !latest.batch && !endedJobs.has(latest.jobId);
   const busy = submitting || jobActive;
 
   function chooseModel(next: PublicModel) {
@@ -384,6 +384,19 @@ export function GenerateScreen({
     void run();
   }
 
+  /** Enter sends, Shift+Enter starts a new line; Enter while composing text with an IME is left alone. */
+  function onPromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
+  function pickExample(example: string) {
+    setPrompt(example);
+    setFormError(undefined);
+    promptBox.current?.focus();
+  }
+
   /** Generates; `fromPanel` means "Regenerate with this prompt", which always uses the panel's text. */
   async function run(fromPanel = false) {
     if (!model || !choices || busy) return;
@@ -420,6 +433,7 @@ export function GenerateScreen({
         }
       }
       const enhancedPrompt = finalPrompt && finalPrompt !== text ? finalPrompt : undefined;
+      const avoidText = model.capabilities.negativePrompt ? avoid.trim() : '';
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -427,7 +441,7 @@ export function GenerateScreen({
           type: 'generate',
           prompt: text,
           ...(enhancedPrompt ? { enhancedPrompt } : {}),
-          ...(model.capabilities.negativePrompt && avoid.trim() ? { avoid: avoid.trim() } : {}),
+          ...(avoidText ? { avoid: avoidText } : {}),
           style: styleId,
           modelId: auto ? AUTO_MODEL_ID : model.id,
           aspect: choices.aspect,
@@ -450,13 +464,29 @@ export function GenerateScreen({
         return;
       }
       const reserved = body.pointsReserved ?? cost;
-      setJob({
-        id: body.jobId,
-        pointsReserved: reserved,
+      const modelId = body.modelId ?? model.id;
+      const styleName = styles.find((style) => style.id === styleId)?.name ?? styleId;
+      const turn: GenerateTurn = {
+        jobId: body.jobId,
         prompt: text,
-        modelId: body.modelId ?? model.id,
+        options: [
+          styleId === 'none' ? 'No style' : styleName,
+          choices.aspect,
+          QUALITY_LABELS[chosenQuality ?? choices.quality],
+          `${count} ${count === 1 ? 'image' : 'images'}`,
+          auto ? 'Auto model' : model.displayName,
+          ...(transparentOffered && transparent ? ['Transparent background'] : []),
+          ...(avoidText ? [`Avoid: ${avoidText}`] : []),
+          ...(enhancedPrompt ? ['Enhanced prompt'] : []),
+          ...(batch ? ['Delivered later'] : []),
+        ],
+        pointsReserved: reserved,
+        modelId,
+        modelName: models.find((candidate) => candidate.id === modelId)?.displayName ?? modelId,
+        count,
         batch,
-      });
+      };
+      setTurns((current) => [...current, turn]);
       setPoints((current) => ({ ...current, left: Math.max(0, current.left - reserved) }));
     } catch {
       setFormError('Something went wrong. Check your connection and try again.');
@@ -465,304 +495,260 @@ export function GenerateScreen({
     }
   }
 
-  return (
-    <div className="generate">
-      <div className="generate-heading">
-        <h1>Create an image</h1>
-        <p className="points-display" aria-live="polite">
-          {points.left} of {points.limit} points left today
-        </p>
-        <Link href={EDIT_PATH}>Upload an image to edit</Link>
-      </div>
+  const sendLabel = submitting
+    ? 'Starting…'
+    : jobActive
+      ? 'Generating…'
+      : batch
+        ? 'Schedule'
+        : 'Generate';
 
-      <form className="generate-form" onSubmit={submit} noValidate>
-        <div className="field">
-          <label htmlFor="prompt">Describe your image</label>
-          <textarea
-            id="prompt"
-            rows={4}
-            maxLength={MAX_PROMPT_LENGTH}
-            value={prompt}
-            aria-describedby="prompt-count"
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-          <span id="prompt-count" className="field-hint">
-            {prompt.length} / {MAX_PROMPT_LENGTH}
-          </span>
+  return (
+    <TooltipProvider>
+      {/* Tall enough to keep the composer at the bottom of the window below the page header. */}
+      <div data-slot="generate-screen" className="flex min-h-[calc(100svh-7.5rem)] flex-col gap-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h1 className="text-xl font-semibold">Create an image</h1>
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {points.left} of {points.limit} points left today
+          </p>
         </div>
 
-        {model.capabilities.negativePrompt && (
-          <div className="field">
-            <label htmlFor="avoid">Avoid (optional)</label>
-            <input
-              id="avoid"
-              type="text"
-              maxLength={MAX_AVOID_LENGTH}
-              value={avoid}
-              placeholder="Things to leave out, for example text or blur"
-              onChange={(event) => setAvoid(event.target.value)}
-            />
-          </div>
+        {turns.length === 0 ? (
+          <section
+            aria-labelledby="generate-greeting"
+            className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center"
+          >
+            <h2 id="generate-greeting" className="text-2xl font-semibold tracking-tight">
+              What would you like to create?
+            </h2>
+            <p className="text-muted-foreground">
+              Describe an image below, or start from an example.
+            </p>
+            <ul aria-label="Example prompts" className="grid w-full max-w-2xl gap-2 sm:grid-cols-2">
+              {EXAMPLE_PROMPTS.map((example) => (
+                <li key={example} className="flex">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full justify-start px-4 py-3 text-left whitespace-normal"
+                    onClick={() => pickExample(example)}
+                  >
+                    {example}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : (
+          <ol aria-label="Your requests" className="flex flex-1 flex-col gap-8">
+            {turns.map((turn) => (
+              <GenerateTurnView
+                key={turn.jobId}
+                turn={turn}
+                pollIntervalMs={pollIntervalMs}
+                pollTimeoutMs={pollTimeoutMs}
+                batchPollIntervalMs={batchPollIntervalMs}
+                onFinish={onJobFinish}
+                onEnd={onJobEnd}
+              />
+            ))}
+          </ol>
         )}
 
-        <label className="checkbox enhance-toggle">
-          <input
-            type="checkbox"
-            checked={enhanceOn}
-            onChange={(event) => toggleEnhance(event.target.checked)}
-          />
-          Enhance prompt
-          <span className="field-hint">
-            Adds detail about the subject, composition and lighting. You can edit the result.
-          </span>
-        </label>
-
-        <fieldset className="style-picker">
-          <legend>Style</legend>
-          {styles.map((style) => {
-            const sample = style.id === 'none' ? undefined : SAMPLE_BY_STYLE.get(style.id);
-            return (
-              <label key={style.id} className="option-card">
-                <input
-                  type="radio"
-                  name="style"
-                  value={style.id}
-                  checked={styleId === style.id}
-                  onChange={() => chooseStyle(style.id)}
-                />
-                {sample ? (
-                  <Image
-                    src={sample.src}
-                    alt=""
-                    width={THUMBNAIL_SIZE}
-                    height={THUMBNAIL_SIZE}
-                    className="style-thumbnail"
-                    unoptimized
-                  />
-                ) : (
-                  <span className="style-thumbnail style-thumbnail-none" aria-hidden="true">
-                    Aa
-                  </span>
-                )}
-                <span>{style.name}</span>
-              </label>
-            );
-          })}
-        </fieldset>
-
-        <fieldset className="aspect-picker">
-          <legend>Aspect ratio</legend>
-          {aspects.map((aspect) => (
-            <label key={aspect} className="option-card">
-              <input
-                type="radio"
-                name="aspect"
-                value={aspect}
-                checked={choices.aspect === aspect}
-                onChange={() => setChoices({ ...choices, aspect })}
-              />
-              <span
-                className="aspect-icon"
-                style={{ aspectRatio: aspectRatioStyle(aspect) }}
-                aria-hidden="true"
-              />
-              <span>{aspect}</span>
+        {/* Below the thread rather than in the pinned composer, so it never covers the thread. */}
+        {enhanceOn && enhanced && (
+          <section
+            aria-label="Enhanced prompt"
+            className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-3"
+          >
+            <label htmlFor="enhanced-prompt" className="text-sm font-medium">
+              Enhanced prompt
             </label>
-          ))}
-        </fieldset>
+            <Textarea
+              id="enhanced-prompt"
+              rows={3}
+              maxLength={MAX_PROMPT_LENGTH}
+              value={enhanced.text}
+              className="max-h-40 bg-background"
+              onChange={(event) => setEnhanced({ ...enhanced, text: event.target.value })}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={!affordable || busy || !enhanced.text.trim()}
+                onClick={() => void run(true)}
+              >
+                Regenerate with this prompt
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={useMyWords}>
+                Use my words
+              </Button>
+            </div>
+          </section>
+        )}
 
-        <fieldset className="quality-picker">
-          <legend>Quality</legend>
+        <form
+          onSubmit={submit}
+          noValidate
+          className="sticky bottom-0 z-10 -mx-1 flex flex-col gap-2 bg-background px-1 pt-2 pb-4"
+        >
           {premiumPausedUntil && (
-            <p className="form-notice" role="status">
+            <p className="text-sm text-muted-foreground" role="status">
               {premiumPausedText(premiumPausedUntil)}
             </p>
           )}
-          {QUALITIES.map((quality) => {
-            const option = qualityOption(quality);
-            return (
-              <label key={quality} className="option-card">
-                <input
-                  type="radio"
-                  name="quality"
-                  value={quality}
-                  checked={choices.quality === quality}
-                  disabled={option.disabled}
-                  onChange={() => setChoices({ ...choices, quality })}
-                />
-                <span>{QUALITY_LABELS[quality]}</span>
-                <span className="field-hint">{option.hint}</span>
-              </label>
-            );
-          })}
-        </fieldset>
-
-        <div className="generate-row">
-          <div className="field">
-            <label htmlFor="count">Number of images</label>
-            <select
-              id="count"
-              value={count}
-              onChange={(event) => setCount(Number(event.target.value))}
-            >
-              {COUNTS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </div>
-          {transparentOffered && (
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={transparent}
-                onChange={(event) => setTransparent(event.target.checked)}
-              />
-              Transparent background
-            </label>
-          )}
-        </div>
-
-        {!auto && model.capabilities.seed && seed !== undefined && (
-          <p className="form-notice seed-notice">
-            Uses seed {seed} from the original image, so the result comes out close to it.{' '}
-            <button type="button" className="link-button" onClick={() => setSeed(undefined)}>
-              Use a random seed
-            </button>
-          </p>
-        )}
-
-        <details className="advanced">
-          <summary>Advanced</summary>
-          <fieldset className="model-picker">
-            <legend>Model</legend>
-            <label className="model-option">
-              <input
-                type="radio"
-                name="model"
-                value={AUTO_MODEL_ID}
-                checked={auto}
-                onChange={() => setAuto(true)}
-              />
-              <span className="model-name">Auto (recommended)</span>
-              <span className="field-hint">
-                Picks a model for your style, quality, prompt and points left
-              </span>
-            </label>
-            {available.map((candidate) => (
-              <label key={candidate.id} className="model-option">
-                <input
-                  type="radio"
-                  name="model"
-                  value={candidate.id}
-                  checked={!auto && candidate.id === model.id}
-                  onChange={() => chooseModel(candidate)}
-                />
-                <span className="model-name">{candidate.displayName}</span>
-                <span className="field-hint">{candidate.strengths.join(', ')}</span>
-                <span className="field-hint">{modelCostSummary(candidate)}</span>
-              </label>
-            ))}
-          </fieldset>
-        </details>
-
-        {batchOffered && (
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="deliver-later"
-              checked={later}
-              onCheckedChange={(checked) => setLater(checked === true)}
-              aria-describedby="deliver-later-hint"
-              className="mt-1"
-            />
-            <div className="grid gap-1">
-              <label htmlFor="deliver-later" className="font-medium">
-                Save points: deliver later
-              </label>
-              <span id="deliver-later-hint" className="text-sm text-muted-foreground">
-                Half the points. Your images arrive in your gallery within 24 hours, often much
-                sooner. The points stay reserved until then, and come back if the images don&apos;t.
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div className="generate-submit">
-          <p id="cost" className="cost-display">
-            Uses {cost} of your {points.left} points today
-            {batch ? ` (half of ${fullCost}, delivered later)` : ''}
-          </p>
-          {auto && (
-            <p className="field-hint auto-pick" aria-live="polite">
-              Auto picks {model.displayName}
-              {reasonText ? `: ${reasonText}` : ''}.
+          {notice && (
+            <p className="text-sm text-muted-foreground" role="status">
+              {notice}
             </p>
           )}
+          <div className="flex flex-col gap-2 rounded-2xl border bg-card p-3 shadow-sm focus-within:border-ring">
+            <label htmlFor="prompt" className="sr-only">
+              Describe your image
+            </label>
+            <Textarea
+              ref={promptBox}
+              id="prompt"
+              rows={2}
+              maxLength={MAX_PROMPT_LENGTH}
+              value={prompt}
+              placeholder="Describe the image you want to create"
+              aria-describedby="prompt-count"
+              className="max-h-48 min-h-12 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={onPromptKeyDown}
+            />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Toggle
+                    variant="outline"
+                    size="sm"
+                    aria-label="Enhance prompt"
+                    pressed={enhanceOn}
+                    onPressedChange={toggleEnhance}
+                  >
+                    <SparklesIcon aria-hidden="true" />
+                    <span className="hidden sm:inline">Enhance</span>
+                  </Toggle>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Adds detail about the subject, composition and lighting. You can edit the result.
+                </TooltipContent>
+              </Tooltip>
+              <StylePicker styles={styles} value={styleId} onChange={chooseStyle} />
+              <AspectPicker
+                aspects={aspects}
+                value={choices.aspect}
+                onChange={(aspect) => setChoices({ ...choices, aspect })}
+              />
+              <QualityPicker
+                value={choices.quality}
+                option={qualityOption}
+                onChange={(quality) => setChoices({ ...choices, quality })}
+              />
+              <CountPicker value={count} onChange={setCount} />
+              {transparentOffered && (
+                <Toggle
+                  variant="outline"
+                  size="sm"
+                  aria-label="Transparent background"
+                  pressed={transparent}
+                  onPressedChange={setTransparent}
+                >
+                  <SquareDashedIcon aria-hidden="true" />
+                  <span className="hidden sm:inline">Transparent</span>
+                </Toggle>
+              )}
+              {model.capabilities.negativePrompt && (
+                <AvoidPicker value={avoid} onChange={setAvoid} />
+              )}
+              {batchOffered && (
+                <Toggle
+                  variant="outline"
+                  size="sm"
+                  aria-label="Save points: deliver later"
+                  aria-describedby="deliver-later-hint"
+                  pressed={later}
+                  onPressedChange={setLater}
+                >
+                  <ClockIcon aria-hidden="true" />
+                  <span className="hidden sm:inline">Save points</span>
+                </Toggle>
+              )}
+              <ModelPicker
+                models={available}
+                auto={auto}
+                modelId={model.id}
+                onAuto={() => setAuto(true)}
+                onModel={chooseModel}
+              />
+            </div>
+
+            {batchOffered && (
+              // Read out with the toggle; shown once it is on.
+              <p
+                id="deliver-later-hint"
+                className={later ? 'text-xs text-muted-foreground' : 'sr-only'}
+              >
+                Half the points. Your images arrive in your gallery within 24 hours, often much
+                sooner. The points stay reserved until then, and come back if the images don&apos;t.
+              </p>
+            )}
+            {!auto && model.capabilities.seed && seed !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                Uses seed {seed} from the original image, so the result comes out close to it.{' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-auto p-0"
+                  onClick={() => setSeed(undefined)}
+                >
+                  Use a random seed
+                </Button>
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs text-muted-foreground">
+                <p id="cost" className="text-sm font-medium text-foreground">
+                  Uses {cost} of your {points.left} points today
+                  {batch ? ` (half of ${fullCost}, delivered later)` : ''}
+                </p>
+                {auto && (
+                  <p aria-live="polite">
+                    Auto picks {model.displayName}
+                    {reasonText ? `: ${reasonText}` : ''}.
+                  </p>
+                )}
+                <p id="prompt-count">
+                  {prompt.length} / {MAX_PROMPT_LENGTH}
+                </p>
+              </div>
+              <Button type="submit" disabled={!affordable || busy} aria-describedby="cost">
+                {sendLabel}
+                <ArrowUpIcon aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+
           {!affordable && (
-            <p className="form-error">
+            <p className="text-sm text-destructive">
               You don&apos;t have enough points left today. Pick a lower quality or fewer images, or
               come back after 00:00 UTC.
             </p>
           )}
           {formError && (
-            <p className="form-error" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {formError}
             </p>
           )}
-          <button
-            type="submit"
-            className="button button-primary"
-            disabled={!affordable || busy}
-            aria-describedby="cost"
-          >
-            {submitting ? 'Starting…' : jobActive ? 'Generating…' : batch ? 'Schedule' : 'Generate'}
-          </button>
-        </div>
-      </form>
-
-      {notice && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {enhanceOn && enhanced && (
-        <section className="enhanced-panel" aria-label="Enhanced prompt">
-          <label htmlFor="enhanced-prompt">Enhanced prompt</label>
-          <textarea
-            id="enhanced-prompt"
-            rows={4}
-            maxLength={MAX_PROMPT_LENGTH}
-            value={enhanced.text}
-            onChange={(event) => setEnhanced({ ...enhanced, text: event.target.value })}
-          />
-          <div className="enhanced-actions">
-            <button
-              type="button"
-              className="button button-primary"
-              disabled={!affordable || busy || !enhanced.text.trim()}
-              onClick={() => void run(true)}
-            >
-              Regenerate with this prompt
-            </button>
-            <button type="button" className="button" onClick={useMyWords}>
-              Use my words
-            </button>
-          </div>
-        </section>
-      )}
-      {job && (
-        <JobProgress
-          key={job.id}
-          poll={poll}
-          pointsReserved={job.pointsReserved}
-          prompt={job.prompt}
-          batch={job.batch}
-          modelName={
-            models.find((candidate) => candidate.id === job.modelId)?.displayName ?? job.modelId
-          }
-        />
-      )}
-    </div>
+        </form>
+      </div>
+    </TooltipProvider>
   );
 }
