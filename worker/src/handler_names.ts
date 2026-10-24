@@ -5,6 +5,8 @@ export const WORKER_HANDLERS = [
   'model_health',
   'purge',
   'success_metrics',
+  'batch_submit',
+  'batch_poll',
 ] as const;
 
 export type WorkerHandler = (typeof WORKER_HANDLERS)[number];

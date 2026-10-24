@@ -181,6 +181,38 @@ describe('Gallery', () => {
     ]);
   });
 
+  it('shows batch jobs as Scheduled, and checks them at the slower batch pace', async () => {
+    const scheduled: ActiveJobBody = {
+      ...RUNNING,
+      jobId: '01JQ0000000000000000000009',
+      status: 'scheduled',
+      text: 'A castle at dawn',
+      count: 1,
+      delivery: 'batch',
+    };
+    const fetchMock = stubFetch({
+      '/api/images': [
+        page({ images: [tile(1)], jobs: [scheduled] }),
+        page({ images: [tile(2), tile(1)], jobs: [] }),
+      ],
+      [`/api/jobs/${scheduled.jobId}`]: [
+        json({ jobId: scheduled.jobId, status: 'submitted' }),
+        json({ jobId: scheduled.jobId, status: 'succeeded' }),
+      ],
+    });
+    render(<Gallery modelNames={MODEL_NAMES} pollIntervalMs={5} batchPollIntervalMs={200} />);
+    const grid = await screen.findByRole('list', { name: 'Your images' });
+    const first = within(grid).getAllByRole('listitem')[0]!;
+    expect(within(first).getByRole('status').textContent).toBe('Scheduled · 1 image');
+    expect(first.textContent).toContain('A castle at dawn');
+
+    // At the 5 ms pace a running job would have been checked many times by now.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/jobs/'))).toHaveLength(0);
+    await screen.findByRole('img', { name: 'Image 2' }, { timeout: 2_000 });
+    expect(screen.queryByText('A castle at dawn')).toBeNull();
+  });
+
   it('fetches fresh URLs when a thumbnail fails to load after they may have expired', async () => {
     const now = vi.spyOn(Date, 'now');
     now.mockReturnValue(1_000_000);

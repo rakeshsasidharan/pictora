@@ -19,6 +19,7 @@ import {
   STATS_TTL_DAYS,
   activeJobsGsiPk,
   blockSk,
+  isBatchJob,
   imageSk,
   jobPk,
   modlogPk,
@@ -59,6 +60,20 @@ const GSI1 = 'GSI1';
 
 /** Attempts at writing a usage item's rank before leaving it to the next settle. */
 const MAX_RANK_ATTEMPTS = 3;
+
+/** Where a finishing transaction holds the concurrency slot release, or a batch job's profile check. */
+const SLOT_ITEM_INDEX = 2;
+
+/**
+ * A batch job's account was deleted (or is being deleted) before the job finished, so nothing may be written
+ * under the user any more (tech design 5.4). The caller drops the job with `dropJob`.
+ */
+export class AccountGoneError extends Error {
+  constructor(readonly jobId: string) {
+    super(`The account of batch job ${jobId} is gone`);
+    this.name = 'AccountGoneError';
+  }
+}
 
 export async function loadJob(
   { client, tableName }: TableContext,
@@ -123,7 +138,7 @@ export interface StoredImage {
 }
 
 export interface CompleteInput {
-  /** The running job, as `claimJob` returned it. */
+  /** The running job, as `claimJob` returned it, or a submitted batch job as the poller read it. */
   job: JobItem;
   request: GenerateJobRequest;
   images: StoredImage[];
@@ -139,7 +154,8 @@ export interface CompleteInput {
  * Records a succeeded job in one transaction (tech design 5.1): the `IMG#` and `VER#…#1` items, the job as
  * `succeeded` with its images and charge, the settled points on the day they were reserved against, one
  * concurrency slot freed, and the month's platform spend and the day's model stats. Returns false, writing
- * nothing, when the job is no longer the running job this worker claimed (the sweeper failed it).
+ * nothing, when the job is no longer in the status it was read in (the sweeper failed it). A batch job holds
+ * no slot; its account is checked instead, and `AccountGoneError` is thrown when it is gone.
  */
 export async function completeJob(ctx: TableContext, input: CompleteInput): Promise<boolean> {
   const { job, request, images, settlement, providerCostCents, now } = input;
@@ -209,11 +225,11 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
         UpdateExpression:
           'SET #status = :succeeded, images = :images, pointsCharged = :charged,' +
           ' providerCostCents = :cost, finishedAt = :now REMOVE GSI1PK, GSI1SK',
-        ConditionExpression: '#status = :running AND GSI1SK = :since',
+        ConditionExpression: '#status = :from AND GSI1SK = :since',
         ExpressionAttributeNames: { '#status': 'status' },
         ExpressionAttributeValues: {
           ':succeeded': 'succeeded',
-          ':running': 'running',
+          ':from': job.status,
           ':since': job.GSI1SK,
           ':images': jobImages,
           ':charged': settlement.chargedPoints,
@@ -551,7 +567,10 @@ type TransactItem = NonNullable<
   ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
 >[number];
 
-/** Runs a finishing transaction whose first item is the job's guarded update. */
+/**
+ * Runs a finishing transaction whose first item is the job's guarded update, and whose third is the slot release
+ * or, for a batch job, the account check.
+ */
 async function finishTransaction(
   ctx: TableContext,
   job: JobItem,
@@ -560,11 +579,12 @@ async function finishTransaction(
   try {
     await ctx.client.send(new TransactWriteCommand({ TransactItems: items }));
   } catch (error) {
-    if (
-      error instanceof TransactionCanceledException &&
-      error.CancellationReasons?.[0]?.Code === 'ConditionalCheckFailed'
-    ) {
-      return false;
+    if (error instanceof TransactionCanceledException) {
+      const codes = (error.CancellationReasons ?? []).map((reason) => reason.Code);
+      if (codes[0] === 'ConditionalCheckFailed') return false;
+      if (codes[SLOT_ITEM_INDEX] === 'ConditionalCheckFailed' && isBatchJob(job)) {
+        throw new AccountGoneError(job.jobId);
+      }
     }
     throw error;
   }
@@ -584,7 +604,22 @@ function usageUpdate(tableName: string, job: JobItem, delta: number): TransactIt
   };
 }
 
+/**
+ * Frees the job's concurrency slot (LIM-3). A batch job never took one; instead the transaction checks its
+ * account still exists and isn't being deleted, so a batch finishing after a purge writes nothing back.
+ */
 function slotRelease(tableName: string, job: JobItem): TransactItem {
+  if (isBatchJob(job)) {
+    return {
+      ConditionCheck: {
+        TableName: tableName,
+        Key: { PK: userPk(job.userId), SK: PROFILE_SK },
+        ConditionExpression: 'attribute_exists(PK) AND #status <> :deleting',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: { ':deleting': 'deleting' },
+      },
+    };
+  }
   return {
     Update: {
       TableName: tableName,
@@ -697,4 +732,106 @@ export async function findStuckJobs(
     exclusiveStartKey = page.LastEvaluatedKey;
   } while (exclusiveStartKey);
   return jobs;
+}
+
+/**
+ * Puts a scheduled batch job in a provider batch (tech design 5.4): `scheduled → submitted`, with `submittedAt`,
+ * one more attempt, and the job on the submitted index. Undefined when the job was no longer scheduled. The
+ * claim comes before the provider call, so a job is never sent in two batches.
+ */
+export async function claimBatchJob(
+  { client, tableName }: TableContext,
+  job: JobItem,
+  now: Date,
+): Promise<JobItem | undefined> {
+  try {
+    const result = await client.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: jobPk(job.jobId), SK: JOB_SK },
+        UpdateExpression:
+          'SET #status = :submitted, submittedAt = :now, GSI1PK = :index, GSI1SK = :now ADD attempts :one',
+        ConditionExpression: '#status = :scheduled AND GSI1SK = :since',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':submitted': 'submitted',
+          ':scheduled': 'scheduled',
+          ':since': job.GSI1SK,
+          ':now': now.toISOString(),
+          ':index': activeJobsGsiPk('submitted'),
+          ':one': 1,
+        },
+        ReturnValues: 'ALL_NEW',
+      }),
+    );
+    return result.Attributes as JobItem;
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return undefined;
+    throw error;
+  }
+}
+
+/** Records the provider's batch ID on a submitted job. False when the job has moved on since. */
+export async function setBatchId(
+  { client, tableName }: TableContext,
+  job: JobItem,
+  batchId: string,
+): Promise<boolean> {
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: jobPk(job.jobId), SK: JOB_SK },
+        UpdateExpression: 'SET batchId = :batchId',
+        ConditionExpression: '#status = :submitted AND GSI1SK = :since',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':batchId': batchId,
+          ':submitted': 'submitted',
+          ':since': job.GSI1SK,
+        },
+      }),
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return false;
+    throw error;
+  }
+}
+
+/**
+ * Fails a batch job whose account is gone, touching nothing but the job item (tech design 5.4): there is no
+ * one left to refund. False when the job has left the status it was read in.
+ */
+export async function dropJob(
+  { client, tableName }: TableContext,
+  job: JobItem,
+  error: JobError,
+  now: Date,
+): Promise<boolean> {
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { PK: jobPk(job.jobId), SK: JOB_SK },
+        UpdateExpression:
+          'SET #status = :failed, #error = :error, finishedAt = :now, pointsCharged = :zero' +
+          ' REMOVE GSI1PK, GSI1SK',
+        ConditionExpression: '#status = :from AND GSI1SK = :since',
+        ExpressionAttributeNames: { '#status': 'status', '#error': 'error' },
+        ExpressionAttributeValues: {
+          ':failed': 'failed',
+          ':error': error,
+          ':now': now.toISOString(),
+          ':zero': 0,
+          ':from': job.status,
+          ':since': job.GSI1SK,
+        },
+      }),
+    );
+    return true;
+  } catch (caught) {
+    if (caught instanceof ConditionalCheckFailedException) return false;
+    throw caught;
+  }
 }

@@ -326,12 +326,12 @@ describe('Jobs stack: sweeper', () => {
       Object.values(dev.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([30, 30, 30, 30, 30]);
+    ).toEqual([30, 30, 30, 30, 30, 30, 30]);
     expect(
       Object.values(prod.findResources('AWS::Logs::LogGroup')).map(
         (group) => group.Properties.RetentionInDays,
       ),
-    ).toEqual([90, 90, 90, 90, 90]);
+    ).toEqual([90, 90, 90, 90, 90, 90, 90]);
   });
 
   it('can use the table and its indexes, and nothing else', () => {
@@ -342,6 +342,63 @@ describe('Jobs stack: sweeper', () => {
     expect(actions).not.toContain('dynamodb:DeleteTable');
     const resources = JSON.stringify(statements.map((s) => s.Resource));
     expect(resources).toContain('/index/*');
+  });
+});
+
+describe('Jobs stack: batch submitter and poller', () => {
+  it.each([
+    ['batch_submit.handler', 'BatchSubmitFunctionServiceRole'],
+    ['batch_poll.handler', 'BatchPollFunctionServiceRole'],
+  ])('runs %s from the worker image every 15 minutes with the worker settings', (handler) => {
+    const props = imageFunction(dev, handler);
+    expect(props.Architectures).toEqual(['arm64']);
+    expect(props.MemorySize).toBe(1536);
+    expect(props.Timeout).toBe(600);
+    expect(JSON.stringify(props.Code.ImageUri)).toContain(`/pictora-worker@${TEST_IMAGE_DIGEST}`);
+    expect(props.Environment.Variables).toMatchObject({
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: expect.anything(),
+      IMAGES_BUCKET: expect.anything(),
+      OPENAI_SECRET_ID: 'pictora/dev/openai',
+      GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      SPEND_CAP_CENTS: expect.any(String),
+      GEMINI_BACKEND: 'api',
+    });
+    const functionId = logicalId(dev, 'AWS::Lambda::Function', {
+      ImageConfig: { Command: [handler] },
+    });
+    dev.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'rate(15 minutes)',
+      State: 'ENABLED',
+      Targets: [
+        Match.objectLike({
+          Arn: { 'Fn::GetAtt': [functionId, 'Arn'] },
+          RetryPolicy: { MaximumRetryAttempts: 0 },
+        }),
+      ],
+    });
+  });
+
+  it('lets both read the provider secrets, and only the poller write images', () => {
+    for (const role of ['BatchSubmitFunctionServiceRole', 'BatchPollFunctionServiceRole']) {
+      const actions = policyStatements(dev, role).flatMap((s) => [s.Action].flat() as string[]);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          'dynamodb:Query',
+          'dynamodb:UpdateItem',
+          'secretsmanager:GetSecretValue',
+        ]),
+      );
+    }
+    const submitActions = policyStatements(dev, 'BatchSubmitFunctionServiceRole').flatMap(
+      (s) => [s.Action].flat() as string[],
+    );
+    expect(submitActions.some((action) => action.startsWith('s3:'))).toBe(false);
+    const poll = policyStatements(dev, 'BatchPollFunctionServiceRole');
+    const s3 = poll.filter((s) => JSON.stringify(s.Action).includes('s3:'));
+    expect(s3).toHaveLength(1);
+    expect(s3[0]?.Action).toEqual(['s3:DeleteObject', 's3:PutObject']);
+    expect(JSON.stringify(s3[0]?.Resource)).toContain('/users/*');
   });
 });
 

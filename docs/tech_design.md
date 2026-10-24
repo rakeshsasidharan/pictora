@@ -97,6 +97,7 @@ flowchart LR
 - Scheduled functions, triggered by EventBridge:
   - `sweeper` (every 5 min): marks jobs stuck in `running` for over 5 min, or in `queued` for over 10 min, as `failed`, refunds points, and frees the concurrency slot. It finds them through the active-jobs index (section 4), and each refund is conditional on the job still being in the status it was found in.
   - `model_health` (daily, 06:00 UTC): checks every enabled registry model against its provider's models list: OpenAI's models list, the Gemini models list (same `@google/genai` backend as the adapter), and Bedrock `ListFoundationModels` for Stability AI (`bedrock:ListFoundationModels`). A model that is missing, marked legacy by Bedrock, or retiring within 60 days (the registry's `eolDate` or Bedrock's end of life) is logged by name and counted in `ModelHealthProblems`; the model health alarm emails the admin, which covers the model-retirement risk in the PRD. A provider whose list can't be read is logged and skipped, never flagged.
+- `batch_submit` and `batch_poll` (each every 15 min): the batch submitter and poller for batch mode (section 5.4), 1536 MB, 600 s timeout.
 - `success_metrics` (daily, 00:30 UTC): computes the success metrics summaries (section 11.1) for the 8 days before today. A failed run is retried once; a rerun gives the same summaries.
 - Account purge (AUTH-3): `purge` in the same image, fed by the `purge` queue (batch size 1, dead-letter queue after 3 receives). `DELETE /api/me` sends it `{ sub, username }`. It deletes every item under `USER#<sub>` (the profile last), every object under `users/<sub>/` and `uploads/<sub>/`, then the Cognito user; each step skips what is already gone, so a retry is safe. While the profile still has `activeJobs`, it puts the message back with a 60 s delay, up to 10 times, so a finishing job doesn't write images back after the purge.
 
@@ -121,7 +122,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Image | `USER#<sub>` | `IMG#<imageId>` | title (the start of the prompt, or `Uploaded image`), latestVersion, versionCount, versionsClaimed (the last version number an edit claimed, section 5.3), style, modelId, source (`upload` for an uploaded image), createdAt, thumbKey (the latest version's) | — |
 | Image version | `USER#<sub>` | `VER#<imageId>#<n>` | s3Key, thumbKey, width, height, source (`upload` for an uploaded version 1), parentVersion, prompt, enhancedPrompt, avoid, sentPrompt (the prompt with style text, as sent to the provider), style, editInstruction, referenceCount, modelId, quality, aspect, seed, transparentBackground (what a rerun needs, GAL-3), jobId, costPoints, createdAt, downloadedAt (first download, section 11.1) | — |
 | Block record | `USER#<sub>` | `BLOCK#<ulid>` | stage (`prompt` \| `image` \| `provider`), category, jobId (or uploadId for a blocked upload), createdAt | 24 h |
-| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts. While `queued` or `running`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt or startedAt>` (the active-jobs index), removed when the job finishes | 30 days |
+| Job | `JOB#<jobId>` | `META` | userId, type (`generate` \| `edit`), status, request (zod-validated JSON), modelId, provider, pointsReserved, usageDate (the `USAGE#` day the points came from, so a refund after midnight finds them), pointsCharged, providerCostCents, error (`{ code, message }`, the message in plain language, GEN-10), images (`[{ imageId, version, s3Key }]` once succeeded), createdAt, startedAt, finishedAt, attempts; for a batch job (section 5.4) submittedAt and batchId (the provider's batch). While `queued`, `running`, `scheduled` or `submitted`: `GSI1PK=JOBS#<status>`, `GSI1SK=<createdAt, startedAt or submittedAt>` (the active-jobs index), removed when the job finishes | 30 days |
 | Model registry | `MODEL#<modelId>` | `CONFIG` | registry entry (section 6.1), `GSI1PK=REGISTRY`, `GSI1SK=<modelId>` | — |
 | Platform spend | `PLATFORM` | `SPEND#<yyyy-mm>` | spentCents (provider cost of every job that reached the provider, including failed ones), capCents (the configured cap, recorded by the worker) | — |
 | Sign-up flag | `SIGNUP#<email in lower case>` | `ABUSE` | abuseFlag, createdAt; written by the pre-sign-up trigger, moved onto the profile when the app creates it | 30 days |
@@ -140,7 +141,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Pattern | Operation |
 | --- | --- |
 | Gallery, newest first (GAL-1) | Query `PK=USER#<sub>`, `SK begins_with IMG#`, descending, 24 to a page; the cursor is the last image's ID, sent back as `ExclusiveStartKey` |
-| Gallery placeholders for running jobs (GEN-8) | Query GSI1 `GSI1PK=JOBS#queued` and `GSI1PK=JOBS#running`, filtered on `userId`; the index holds only unfinished jobs, so it stays small |
+| Gallery placeholders for running jobs (GEN-8) | Query GSI1 `GSI1PK=JOBS#queued`, `JOBS#running`, `JOBS#scheduled` and `JOBS#submitted`, filtered on `userId`; the index holds only unfinished jobs, so it stays small |
 | Image detail + versions (GAL-2) | Query `PK=USER#<sub>`, `SK begins_with VER#<imageId>#` |
 | Rerun settings (GAL-3) | GetItem `VER#<imageId>#1` |
 | Delete an image (GAL-3) | Delete the S3 prefix `users/<sub>/<imageId>/`, then `IMG#<imageId>` and every `VER#<imageId>#` item in batches, then sweep the prefix again |
@@ -149,6 +150,7 @@ There is one table, `pictora-<env>`, on demand, with point-in-time recovery on i
 | Whole model registry (seed, loader) | Query GSI1 `GSI1PK=REGISTRY` |
 | Top users by spend today (ADM-3) | Query GSI1 `GSI1PK=USAGE#<date>`, descending. The worker writes `GSI1SK` (10 digits) after each settle or refund |
 | Stuck jobs (sweeper) | Query GSI1 `GSI1PK=JOBS#running`, `GSI1SK < now − 5 min`, and `GSI1PK=JOBS#queued`, `GSI1SK < now − 10 min` |
+| Batch jobs (submitter, poller; section 5.4) | Query GSI1 `GSI1PK=JOBS#scheduled` and `GSI1PK=JOBS#submitted`, oldest first |
 | Blocks in the last 24 h | Query `SK begins_with BLOCK#` (TTL plus a filter on createdAt) |
 | Admin stats for a range (ADM-3) | Query `PK=STATS#<date>` for each day (at most 92), GetItem `PLATFORM/SPEND#<month>` |
 | Moderation review queue (ADM-4) | Query `PK=MODLOG#<date>`, descending, filtered to blocks and reports |
@@ -223,6 +225,13 @@ stateDiagram-v2
     running --> blocked: moderation or provider refusal (refund)
     queued --> failed: enqueue error or sweeper (refund)
     running --> failed: sweeper, stuck over 5 min (refund)
+    [*] --> scheduled: batch delivery (section 5.4)
+    scheduled --> submitted: batch submitter
+    scheduled --> blocked: moderation (refund)
+    scheduled --> failed: 24 h window or model off (refund)
+    submitted --> succeeded: batch poller, images stored
+    submitted --> failed: batch failed or expired (refund)
+    submitted --> blocked: provider refusal (refund)
     succeeded --> [*]
     failed --> [*]
     blocked --> [*]
@@ -241,6 +250,20 @@ stateDiagram-v2
 - **Worker:** loads the parent PNG and the references from S3 (a reference upload is decoded, turned upright and converted to PNG as an upload would be), moderates the instruction and each image, and calls `adapter.edit`. A parent or reference that has gone (deleted or expired) fails the job with `source_missing` and a full refund, before any provider call.
 - The result is stored as the image's next version, with `parentVersion` and `editInstruction`. Earlier versions are never overwritten (EDIT-3). The number comes from a counter on the `IMG#` item (`versionsClaimed`, starting from `latestVersion`), claimed after the provider answers, so concurrent edits never write the same `v<n>.png`; a claimed number whose job then fails is left as a gap. The transaction that records the version adds 1 to `versionCount` and sets `latestVersion` and the image's `thumbKey`, unless a higher-numbered edit finished first. An image deleted while its edit ran fails the job with a refund.
 - **Uploads (EDIT-2):** the `/edit` page checks the file's type and size, then asks `POST /api/uploads` for a presigned POST. Its conditions are the exact key, `content-length-range` 1 byte to 10 MB, the content type the browser asked for (JPEG, PNG or WebP), and a 5-minute expiry. The browser uploads straight to `uploads/<sub>/<ulid>`, then calls `POST /api/uploads/:id/complete`. The app checks the object exists and is at most 10 MB, decodes it with `sharp`, and moderates a 1024 px copy. A flagged upload is deleted and recorded as a block (`BLOCK#` with `uploadId`, and a `MODLOG#` entry), which counts towards the cooldown. An allowed one is turned upright, stripped of its metadata, scaled down to fit 4096 px, and stored as a PNG with a thumbnail: version 1 of a new image whose ID is the upload ID (`source: 'upload'`), so completing twice is safe. The upload object is then deleted. Uploads cost no points. Uploads that are never completed expire after 1 day (lifecycle rule).
+
+### 5.4 Batch mode (P1)
+
+A slower, half-price way to generate (PRD scope, P1 Batch mode), through the OpenAI and Gemini batch APIs, which charge 50% of list price and finish within 24 hours.
+
+- **Request:** a generate request may carry `delivery: 'batch'` (default `standard`); edits are always standard. The model must have `capabilities.batch` in the registry (`BATCH_PROVIDERS`: OpenAI, Gemini, and Mock on dev; the registry check refuses it for Bedrock, which has no image batch API). Auto routing then picks among batch models, counting the halved price against the points left. The job reserves half the points, rounded up (`batchPoints`), on the day it was made, and keeps them reserved, counting against that day's allowance, until it finishes. It counts towards the rate limit (LIM-3) but takes no concurrency slot, since it can wait for hours; the reservation only checks the profile (active, no cooldown). It starts `scheduled` on `JOBS#scheduled` and is never sent to a queue.
+- **Submitter** (`batch_submit`, every 15 min): queries `JOBS#scheduled`, oldest first, and groups the jobs by model, at most 200 per batch. Each job's final prompt is moderated first, as the worker would before a paid call: a flagged job is blocked and refunded, and a moderation outage leaves the job for the next run. Each job is then claimed `scheduled → submitted` (conditional, with `submittedAt` and `JOBS#submitted`) before the provider call, so no job is ever sent twice. The adapter's `submitBatch` sends the batch and returns its ID, which is stored on each job as `batchId`; if the call fails, the claimed jobs are refunded. A job still scheduled 24 hours after it was made, or whose model is switched off or takes no batches, is refunded.
+  - **OpenAI:** a JSONL file of `/v1/images/generations` requests, one line per job (`custom_id` = job ID, `n` = count), uploaded with purpose `batch`, then a batch with a `24h` completion window.
+  - **Gemini:** an inline batch (`batches.create`) with one request per image, keyed `<jobId>#<n>` in the request metadata, since each call makes one image. Only the Gemini API backend takes inline batches, so Vertex AI refuses batch jobs.
+  - **Mock:** accepts any batch and finishes it on the first poll, so dev can run batch jobs without spend.
+- **Poller** (`batch_poll`, every 15 min): queries `JOBS#submitted`, groups the jobs by `batchId`, and reads each batch once (`pollBatch`, retried once on a transient error). While a batch runs nothing changes. Once it is done (completed, partly succeeded, expired or cancelled), each job's images are stored and recorded exactly as the worker does (`storeImage`, `completeJob`), and the points are settled with `settleJobPoints`: only the images that came back are charged, at the batch price. A job with no images is refunded: blocked for a provider safety refusal, `batch_expired` when the batch ran out of time or has no result for it, failed otherwise. A failed batch refunds all its jobs. A batch still running 25 hours after its jobs were made (the window plus an hour's grace) refunds them, and so does a submitted job that never got a `batchId` within an hour (the submitter died between the provider call and recording it).
+- **Idempotency:** every write is conditional on the job's status and `GSI1SK`, and finished jobs leave the index, so polling a batch again records nothing twice.
+- **Deleted accounts:** a batch job's finishing transaction checks the profile instead of freeing a slot. When the account is gone or being deleted, the job item alone is marked failed, nothing is written under the user, and images already stored for it are deleted again.
+- **UI:** the generate screen offers "Save points: deliver later" with an explanation and the halved cost ("Uses 3 of your 20 points today (half of 6, delivered later)"). After scheduling, the job shows as Scheduled; the form stays open, and the job is checked once a minute while the page is open. "Notify me when they're ready" asks for the browser's notification permission and shows a notification when the job succeeds, while the page stays open (there is no push). The gallery shows batch jobs as Scheduled placeholders, checked once a minute while nothing else is running.
 
 ## 6. Model registry and provider adapters
 
@@ -267,6 +290,7 @@ export interface ModelConfig {
     seed: boolean;
     referenceImages: number;       // max references accepted
     aspects: Aspect[];
+    batch?: boolean;               // takes batch jobs (section 5.4); false when absent
   };
   qualities: Partial<Record<Quality, { providerParams: Record<string, unknown>; costPoints: number }>>;
   defaultFor: string[];            // style preset ids
@@ -314,7 +338,16 @@ export interface ImageProvider {
   generate(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
   edit(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
 }
+
+// Batch mode (section 5.4): the OpenAI, Gemini and Mock adapters also implement this.
+export interface BatchImageProvider {
+  submitBatch(model: ModelConfig, items: BatchItem[], signal: AbortSignal): Promise<string>; // batch ID
+  pollBatch(model: ModelConfig, batchId: string, items: BatchItem[], signal: AbortSignal): Promise<BatchPoll>;
+}
+// BatchItem = { key: jobId, request }; BatchPoll = pending | done (results by job ID, expired) | failed
 ```
+
+The batch Lambdas get batch adapters from `createBatchProviderFactory`: errors come out typed, reading a batch is retried once, and submitting never is, since a retry after a lost answer could start a second batch.
 
 Adapters throw typed errors (`ProviderSafetyError`, `ProviderRateLimitError`, `ProviderTimeoutError`, `ProviderError`), which the worker maps to job states. The worker gets adapters from `createProviderFactory`, which picks one by `ModelConfig.provider` and wraps it, so every call gets the one retry and anything an adapter or SDK throws comes out as one of the four typed errors. Every adapter returns PNG: if a provider sends another format, `sharp` converts it losslessly to PNG and leaves provenance metadata in place.
 
@@ -355,7 +388,7 @@ All routes are Next.js route handlers under `/api`. They need a valid session un
 | POST | `/api/me/onboarding` | Accept terms, confirm age 13+ (AUTH-4) | `{ ageConfirmed: true, termsAccepted: true, tosVersion }`; 409 `terms_changed` for an older version. Needed before the first job: until then `POST /api/jobs` and `POST /api/enhance` answer 403 `onboarding_required` |
 | DELETE | `/api/me` | Delete the account (AUTH-3) | Sets the profile to `deleting`, queues the purge, disables the Cognito user and signs it out everywhere, clears the cookies; 202. If the purge can't be queued, the profile is restored and the answer is 503 `deletion_failed` |
 | POST | `/api/enhance` | Rewrite a prompt | `{ prompt, style, modelId }` → `{ enhancedPrompt, fallback? }`. Moderated on input (422 `blocked`) and output (fallback to the user's words); rate-limited with jobs (429); 503 `enhance_failed` when the enhancer is unavailable |
-| POST | `/api/jobs` | Create a generate or edit job | 202 with `jobId`, `pointsReserved` and the `modelId` used; a generate request may send `modelId: 'auto'` (section 6.4); 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
+| POST | `/api/jobs` | Create a generate or edit job | 202 with `jobId`, `status` (`queued`, or `scheduled` for a batch job), `pointsReserved` and the `modelId` used; a generate request may send `modelId: 'auto'` (section 6.4) and `delivery: 'batch'` (section 5.4, half the points, 400 `unsupported_option` for a model without batches); 402 when out of points, 429 when rate-limited, 403 when blocked or cooled down, or `premium_paused` for a non-draft quality once the platform cap is reached |
 | GET | `/api/jobs/:id` | Job status and results | Owner only (404 otherwise); once succeeded, each image has a presigned `url` to show it and a presigned `downloadUrl` that saves the original PNG (`Content-Disposition: attachment`) |
 | POST | `/api/uploads` | Presigned POST for an upload (EDIT-2) | `{ contentType, size }` → `{ uploadId, key, url, fields, expiresAt }`; 10 MB, JPEG/PNG/WebP; counted in the job rate window. `key` can be sent as an edit's reference image without completing the upload |
 | POST | `/api/uploads/:id/complete` | Check, moderate and store an upload as a new image | 201 `{ image }`, 200 when already completed; 404 for a missing or another user's upload, 413 over 10 MB, 400 `not_an_image`, 422 `blocked`, 503 `moderation_failed` |

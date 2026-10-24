@@ -14,6 +14,9 @@ export type Aspect = (typeof ASPECTS)[number];
 export const PROVIDERS = ['openai', 'gemini', 'bedrock', 'mock'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
+/** Providers whose adapters take batch jobs (tech design 5.4). Bedrock has no image batch API. */
+export const BATCH_PROVIDERS: readonly Provider[] = ['openai', 'gemini', 'mock'];
+
 export const ENVIRONMENTS = ['dev', 'prod'] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
@@ -52,6 +55,8 @@ export interface ModelConfig {
     /** Most reference images accepted. */
     referenceImages: number;
     aspects: Aspect[];
+    /** Takes batch jobs through the provider's batch API (P1); false when absent. */
+    batch?: boolean;
   };
   qualities: Partial<Record<Quality, QualityConfig>>;
   /** Style presets this model is the default for. */
@@ -83,6 +88,7 @@ export const modelConfigSchema = z.strictObject({
     seed: z.boolean(),
     referenceImages: z.int().min(0).max(MAX_REFERENCE_IMAGES),
     aspects: z.array(z.enum(ASPECTS)).min(1),
+    batch: z.boolean().optional(),
   }),
   qualities: z.partialRecord(z.enum(QUALITIES), qualityConfigSchema),
   defaultFor: z.array(z.enum(STYLE_IDS)),
@@ -207,6 +213,12 @@ function checkModel(model: ModelConfig): string[] {
   }
   if (model.provider === 'mock' && model.environments.includes('prod')) {
     errors.push(`${label}: mock models are dev only`);
+  }
+  if (model.capabilities.batch && !BATCH_PROVIDERS.includes(model.provider)) {
+    errors.push(`${label}: ${model.provider} has no batch API`);
+  }
+  if (model.capabilities.batch && !model.capabilities.generate) {
+    errors.push(`${label}: batch jobs generate images, so it must support generate`);
   }
   for (const quality of qualities) {
     for (const aspect of model.capabilities.aspects) {

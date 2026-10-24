@@ -8,6 +8,7 @@ import {
   DEFAULT_ADAPTERS,
   GeminiProvider,
   OpenAiProvider,
+  createBatchProviderFactory,
   createModerator,
   createProviderFactory,
   geminiConfigFromEnv,
@@ -15,6 +16,7 @@ import {
   secretString,
 } from '@pictora/providers';
 import { ulid } from 'ulid';
+import type { BatchDeps } from './batch.js';
 import type { TableContext } from './job_store.js';
 import { moderateImageRequests } from './moderation.js';
 import type { PipelineDeps } from './pipeline.js';
@@ -51,19 +53,25 @@ export function spendCapCents(env: NodeJS.ProcessEnv = process.env): number {
   return value;
 }
 
-/**
- * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
- * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
- * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
- * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`). The month's
- * platform spend is published to `Pictora/<PICTORA_ENV>` with the cap from `SPEND_CAP_CENTS`.
- */
-export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
-  const table = tableContext(env);
-  const bucket = required('IMAGES_BUCKET', env);
-  const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
+/** The provider adapters with their secrets: OpenAI and Gemini read theirs from Secrets Manager. */
+function adapters(env: NodeJS.ProcessEnv, openAiKey: () => Promise<string>) {
   const geminiSecretId = required('GEMINI_SECRET_ID', env);
   const geminiConfig = geminiConfigFromEnv(env);
+  return {
+    ...DEFAULT_ADAPTERS,
+    openai: () => new OpenAiProvider({ apiKey: openAiKey }),
+    gemini: () =>
+      new GeminiProvider({ config: geminiConfig, credential: secretString(geminiSecretId) }),
+  };
+}
+
+/** Everything the pipeline and the batch Lambdas share: the table, bucket, registry, moderation and metrics. */
+function sharedDeps(
+  env: NodeJS.ProcessEnv,
+  bucket: string,
+  openAiKey: () => Promise<string>,
+): Omit<PipelineDeps, 'provider' | 'providerTimeoutMs'> {
+  const table = tableContext(env);
   const registry = createRegistryLoader({
     source: dynamoRegistrySource(table.client, table.tableName),
     environment: workerEnvironment(env),
@@ -73,14 +81,6 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
     s3: new S3Client({}),
     bucket,
     models: () => registry.models(),
-    provider: createProviderFactory({
-      adapters: {
-        ...DEFAULT_ADAPTERS,
-        openai: () => new OpenAiProvider({ apiKey: openAiKey }),
-        gemini: () =>
-          new GeminiProvider({ config: geminiConfig, credential: secretString(geminiSecretId) }),
-      },
-    }),
     moderate: moderateImageRequests(createModerator({ apiKey: openAiKey })),
     metrics: powertoolsMetrics(env),
     spend: {
@@ -89,5 +89,36 @@ export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps
     },
     now: () => new Date(),
     newImageId: () => ulid(),
+  };
+}
+
+/**
+ * The generate pipeline's dependencies in a deployed worker: DynamoDB, the images bucket (`IMAGES_BUCKET`), the
+ * registry cached for 60 s, the provider adapters, and moderation. The OpenAI adapter and moderation share the
+ * key from the secret named in `OPENAI_SECRET_ID`, cached for 5 minutes. The Gemini adapter reads the secret
+ * named in `GEMINI_SECRET_ID` and its backend from `GEMINI_BACKEND` (`geminiConfigFromEnv`). The month's
+ * platform spend is published to `Pictora/<PICTORA_ENV>` with the cap from `SPEND_CAP_CENTS`.
+ */
+export function pipelineDeps(env: NodeJS.ProcessEnv = process.env): PipelineDeps {
+  const bucket = required('IMAGES_BUCKET', env);
+  const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
+  const providers = adapters(env, openAiKey);
+  return {
+    ...sharedDeps(env, bucket, openAiKey),
+    provider: createProviderFactory({ adapters: providers }),
+  };
+}
+
+/**
+ * The batch submitter's and poller's dependencies (tech design 5.4): the pipeline's, with the OpenAI, Gemini and
+ * mock adapters' batch calls in place of single calls.
+ */
+export function batchDeps(env: NodeJS.ProcessEnv = process.env): BatchDeps {
+  const bucket = required('IMAGES_BUCKET', env);
+  const openAiKey = secretApiKey(required('OPENAI_SECRET_ID', env));
+  const providers = adapters(env, openAiKey);
+  return {
+    ...sharedDeps(env, bucket, openAiKey),
+    batchProvider: createBatchProviderFactory(providers),
   };
 }

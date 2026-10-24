@@ -15,7 +15,18 @@ import {
 } from './errors.js';
 import { centreCrop, isPng, normalisePng } from './image.js';
 import { PROVIDER_TIMEOUT_MS } from './retry.js';
-import type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
+import {
+  BATCH_PRICE_FACTOR,
+  type BatchImageProvider,
+  type BatchImageRequest,
+  type BatchItem,
+  type BatchItemResult,
+  type BatchPoll,
+  type GeneratedImage,
+  type ImageProvider,
+  type ImageRequest,
+  type ImageResult,
+} from './types.js';
 
 /** US dollars per million tokens, by `providerModelId`. Check against OpenAI's pricing page on a price change. */
 export interface OpenAiTokenPrices {
@@ -33,6 +44,12 @@ export const OPENAI_TOKEN_PRICES: Readonly<Record<string, OpenAiTokenPrices>> = 
 
 /** Edits take the parent image plus up to 3 references (EDIT-5). */
 export const OPENAI_MAX_REFERENCE_IMAGES = 3;
+
+/** The Images API endpoint batch jobs go to (tech design 5.4). */
+export const OPENAI_BATCH_ENDPOINT = '/v1/images/generations';
+
+/** OpenAI batch states while the batch still runs. */
+const OPENAI_BATCH_PENDING = new Set(['validating', 'in_progress', 'finalizing', 'cancelling']);
 
 /** Error codes OpenAI uses when its safety system rejects a prompt or image. */
 const SAFETY_CODES = new Set(['moderation_blocked', 'content_policy_violation']);
@@ -52,7 +69,7 @@ export interface OpenAiProviderOptions {
  * generated at the nearest size and centre-cropped (GEN-3). The SDK's own retries are off: the factory wrapper
  * retries once.
  */
-export class OpenAiProvider implements ImageProvider {
+export class OpenAiProvider implements ImageProvider, BatchImageProvider {
   private readonly prices: Readonly<Record<string, OpenAiTokenPrices>>;
   private client?: { key: string; sdk: OpenAI };
 
@@ -101,7 +118,7 @@ export class OpenAiProvider implements ImageProvider {
   }
 
   /** The fields generate and edit share. */
-  private baseParams(model: ModelConfig, req: ImageRequest) {
+  private baseParams(model: ModelConfig, req: BatchImageRequest) {
     if (
       !Number.isInteger(req.count) ||
       req.count < MIN_IMAGE_COUNT ||
@@ -133,18 +150,7 @@ export class OpenAiProvider implements ImageProvider {
       throw toOpenAiError(error);
     }
 
-    const encoded = (data.data ?? [])
-      .map((item) => item.b64_json)
-      .filter((value): value is string => typeof value === 'string' && value !== '');
-    if (encoded.length === 0) throw new ProviderError(`Model ${model.id} returned no image`);
-
-    const { crop } = mapAspect(model, req.aspect, req.quality);
-    const images: GeneratedImage[] = await Promise.all(
-      encoded.map(async (value) => {
-        const bytes = new Uint8Array(Buffer.from(value, 'base64'));
-        return crop ? centreCrop(bytes, req.aspect) : normalisePng(bytes);
-      }),
-    );
+    const images = await decodeImages(model, req, data);
     return {
       images,
       providerRequestId: requestId ?? undefined,
@@ -155,6 +161,132 @@ export class OpenAiProvider implements ImageProvider {
         images.length,
         this.prices,
       ),
+    };
+  }
+
+  /**
+   * Sends the jobs as one OpenAI batch (tech design 5.4): a JSONL file of `/v1/images/generations` requests, one
+   * line per job with the job ID as `custom_id` and its count as `n`, uploaded with purpose `batch`, then a batch
+   * with a 24-hour completion window. Returns the batch ID.
+   */
+  async submitBatch(
+    model: ModelConfig,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<string> {
+    if (!model.capabilities.generate || !model.capabilities.batch) {
+      throw new ProviderError(`Model ${model.id} does not take batch jobs`);
+    }
+    if (items.length === 0) throw new ProviderError('A batch needs at least one job');
+    const lines = items.map((item) =>
+      JSON.stringify({
+        custom_id: item.key,
+        method: 'POST',
+        url: OPENAI_BATCH_ENDPOINT,
+        body: this.baseParams(model, item.request),
+      }),
+    );
+    const sdk = await this.sdk();
+    try {
+      const file = await sdk.files.create(
+        {
+          file: await toFile(Buffer.from(`${lines.join('\n')}\n`), 'pictora-batch.jsonl', {
+            type: 'application/jsonl',
+          }),
+          purpose: 'batch',
+        },
+        { signal },
+      );
+      const batch = await sdk.batches.create(
+        {
+          input_file_id: file.id,
+          endpoint: OPENAI_BATCH_ENDPOINT,
+          completion_window: '24h',
+          metadata: { source: 'pictora', model: model.id },
+        },
+        { signal },
+      );
+      return batch.id;
+    } catch (error) {
+      throw toOpenAiError(error);
+    }
+  }
+
+  /**
+   * Reads an OpenAI batch. While it validates, runs or finalises it is pending. Once it completed, expired or
+   * was cancelled, its output and error files are read: each line's `custom_id` is a job ID, and a 200 line
+   * holds that job's images. A failed batch (for example, a file that didn't validate) has no results.
+   */
+  async pollBatch(
+    model: ModelConfig,
+    batchId: string,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<BatchPoll> {
+    const sdk = await this.sdk();
+    try {
+      const batch = await sdk.batches.retrieve(batchId, { signal });
+      if (OPENAI_BATCH_PENDING.has(batch.status)) return { state: 'pending' };
+      if (batch.status === 'failed') {
+        const reason = batch.errors?.data?.map((error) => error.message).join('; ');
+        return {
+          state: 'failed',
+          error: new ProviderError(`OpenAI batch ${batchId} failed${reason ? `: ${reason}` : ''}`),
+        };
+      }
+      const requests = new Map(items.map((item) => [item.key, item.request]));
+      const results = new Map<string, BatchItemResult>();
+      for (const fileId of [batch.output_file_id, batch.error_file_id]) {
+        if (!fileId) continue;
+        const text = await (await sdk.files.content(fileId, { signal })).text();
+        for (const line of text.split('\n')) {
+          if (line.trim() === '') continue;
+          const parsed = JSON.parse(line) as OpenAiBatchLine;
+          const request = requests.get(parsed.custom_id);
+          if (!request || results.has(parsed.custom_id)) continue;
+          results.set(parsed.custom_id, await this.batchResult(model, request, parsed));
+        }
+      }
+      return { state: 'done', expired: batch.status !== 'completed', results };
+    } catch (error) {
+      throw toOpenAiError(error);
+    }
+  }
+
+  /** One output line as a job's result: its images at batch price, or the error that stopped it. */
+  private async batchResult(
+    model: ModelConfig,
+    request: BatchImageRequest,
+    line: OpenAiBatchLine,
+  ): Promise<BatchItemResult> {
+    const status = line.response?.status_code;
+    const body = line.response?.body;
+    if (status === 200 && body && !('error' in body && body.error)) {
+      try {
+        const data = body as ImagesResponse;
+        const images = await decodeImages(model, request, data);
+        const cost = openAiCostCents(
+          model,
+          request.quality,
+          data.usage,
+          images.length,
+          this.prices,
+        );
+        return { images, providerCostCents: batchCents(cost) };
+      } catch (error) {
+        return { images: [], providerCostCents: 0, error: toOpenAiError(error) };
+      }
+    }
+    const failure = (body && 'error' in body ? body.error : undefined) ?? line.error;
+    const message = failure?.message ?? `OpenAI batch request failed with status ${status}`;
+    const code = failure?.code ?? undefined;
+    const safety = (code && SAFETY_CODES.has(code)) || SAFETY_PATTERN.test(message);
+    return {
+      images: [],
+      providerCostCents: 0,
+      error: safety
+        ? new ProviderSafetyError(message, { status })
+        : new ProviderError(message, { status }),
     };
   }
 
@@ -181,8 +313,42 @@ export class OpenAiProvider implements ImageProvider {
   }
 }
 
+/** One line of a batch's output or error file. */
+interface OpenAiBatchLine {
+  custom_id: string;
+  response?: {
+    status_code: number;
+    body?: ImagesResponse | { error?: { message?: string; code?: string | null } };
+  } | null;
+  error?: { message?: string; code?: string | null } | null;
+}
+
+/** Decodes a response's base64 PNGs, centre-cropping aspects with no native size (GEN-3). */
+async function decodeImages(
+  model: ModelConfig,
+  req: BatchImageRequest,
+  data: ImagesResponse,
+): Promise<GeneratedImage[]> {
+  const encoded = (data.data ?? [])
+    .map((item) => item.b64_json)
+    .filter((value): value is string => typeof value === 'string' && value !== '');
+  if (encoded.length === 0) throw new ProviderError(`Model ${model.id} returned no image`);
+  const { crop } = mapAspect(model, req.aspect, req.quality);
+  return Promise.all(
+    encoded.map(async (value) => {
+      const bytes = new Uint8Array(Buffer.from(value, 'base64'));
+      return crop ? centreCrop(bytes, req.aspect) : normalisePng(bytes);
+    }),
+  );
+}
+
+/** A cost at batch price, in hundredths of a cent like `openAiCostCents`. */
+function batchCents(cents: number): number {
+  return Math.round(cents * BATCH_PRICE_FACTOR * 100) / 100;
+}
+
 /** The request fields for a generate or edit: model, prompt, PNG output, quality, size, count and background. */
-export function openAiRequestParams(model: ModelConfig, req: ImageRequest) {
+export function openAiRequestParams(model: ModelConfig, req: BatchImageRequest) {
   const quality = model.qualities[req.quality]?.providerParams.quality;
   if (typeof quality !== 'string') {
     throw new ProviderError(`Model ${model.id} quality ${req.quality} has no OpenAI quality`);

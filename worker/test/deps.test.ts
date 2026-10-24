@@ -1,6 +1,6 @@
 import { findModel, loadSeedRegistry } from '@pictora/core';
 import { describe, expect, it } from 'vitest';
-import { pipelineDeps, tableContext, workerEnvironment } from '../src/deps.js';
+import { batchDeps, pipelineDeps, tableContext, workerEnvironment } from '../src/deps.js';
 
 function seedModel(id: string) {
   const model = findModel(loadSeedRegistry(), id);
@@ -67,5 +67,24 @@ describe('worker deps', () => {
       'GEMINI_BACKEND must be one of api, vertex: vertexai',
     );
     expect(deps.newImageId()).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+
+  it('builds the batch Lambdas their batch adapters, with the same settings', () => {
+    const env = {
+      PICTORA_ENV: 'dev',
+      TABLE_NAME: 'pictora-dev',
+      IMAGES_BUCKET: 'images',
+      OPENAI_SECRET_ID: 'pictora/dev/openai',
+      GEMINI_SECRET_ID: 'pictora/dev/gemini',
+      SPEND_CAP_CENTS: '2000',
+    };
+    expect(() => batchDeps({ TABLE_NAME: 'pictora-dev' })).toThrow('IMAGES_BUCKET is not set');
+    const deps = batchDeps(env);
+    expect(deps).toMatchObject({ tableName: 'pictora-dev', bucket: 'images' });
+    expect(deps).not.toHaveProperty('provider');
+    const openai = deps.batchProvider(seedModel('gpt-image-2'));
+    expect(openai.submitBatch).toBeTypeOf('function');
+    expect(deps.batchProvider(seedModel('gemini-3.1-flash-image'))).not.toBe(openai);
+    expect(() => deps.batchProvider(seedModel('stable-image-core'))).toThrow(/No batch adapter/);
   });
 });

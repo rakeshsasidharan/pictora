@@ -11,6 +11,15 @@ const job = {
   userId: 'user',
   type: 'generate',
   status: 'queued',
+  request: {
+    type: 'generate',
+    prompt: 'A fox',
+    style: 'none',
+    modelId: 'mock',
+    aspect: '1:1',
+    quality: 'draft',
+    count: 2,
+  },
   modelId: 'mock',
   provider: 'mock',
   pointsReserved: 2,
@@ -86,6 +95,36 @@ describe('reserveJob', () => {
       item.Update?.Key.SK.startsWith('RATE#'),
     );
     expect(rate?.Update?.ExpressionAttributeValues[':max']).toBe(50);
+  });
+
+  it("checks a batch job's profile without taking a concurrency slot", async () => {
+    const { client, send } = clientFailing();
+    const batchJob = {
+      ...job,
+      status: 'scheduled',
+      request: { ...job.request, delivery: 'batch' },
+    } as JobItem;
+    await reserveJob(client, 'table', { ...input, job: batchJob });
+    const [command] = send.mock.calls[0] as unknown as [
+      {
+        input: {
+          TransactItems: {
+            Update?: { Key: { SK: string }; UpdateExpression: string };
+            ConditionCheck?: { Key: { SK: string }; ConditionExpression: string };
+          }[];
+        };
+      },
+    ];
+    const profile = command.input.TransactItems[2];
+    expect(profile?.Update).toBeUndefined();
+    expect(profile?.ConditionCheck?.Key.SK).toBe('PROFILE');
+    expect(profile?.ConditionCheck?.ConditionExpression).not.toContain('activeJobs');
+    expect(profile?.ConditionCheck?.ConditionExpression).toContain('cooldownUntil');
+
+    const { client: standardClient, send: standardSend } = clientFailing();
+    await reserveJob(standardClient, 'table', input);
+    const [standard] = standardSend.mock.calls[0] as unknown as [typeof command];
+    expect(standard.input.TransactItems[2]?.Update?.UpdateExpression).toBe('ADD activeJobs :one');
   });
 
   it('rethrows other errors', async () => {

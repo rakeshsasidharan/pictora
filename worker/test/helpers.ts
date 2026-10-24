@@ -6,6 +6,7 @@ import {
   PROFILE_SK,
   SECONDS_PER_DAY,
   activeJobsGsiPk,
+  isBatchJob,
   jobPk,
   loadSeedRegistry,
   ttlAfter,
@@ -74,11 +75,15 @@ export interface SeedOptions {
   status?: JobItem['status'];
   startedAt?: string;
   provider?: string;
+  /** Batch jobs: when the job was put in a provider batch, and the batch's ID. */
+  submittedAt?: string;
+  batchId?: string;
 }
 
 /**
- * Writes what the job API leaves behind after a reservation: the profile with one active job, the day's usage
- * including this job's points, and the queued job on the active-jobs index.
+ * Writes what the job API leaves behind after a reservation: the profile with one active job (none for a batch
+ * job, which takes no slot), the day's usage including this job's points, and the queued job on the active-jobs
+ * index. A `scheduled` or `submitted` batch job is indexed under its own status.
  */
 export async function seedJob(
   client: DynamoDBDocumentClient,
@@ -105,20 +110,35 @@ export async function seedJob(
     pointsReserved,
     usageDate,
     createdAt,
-    attempts: status === 'queued' ? 0 : 1,
-    ...(status === 'queued' || status === 'running'
+    attempts: status === 'queued' || status === 'scheduled' ? 0 : 1,
+    ...(status === 'queued' ||
+    status === 'running' ||
+    status === 'scheduled' ||
+    status === 'submitted'
       ? {
           GSI1PK: activeJobsGsiPk(status),
-          GSI1SK: status === 'running' ? (options.startedAt ?? createdAt) : createdAt,
+          GSI1SK:
+            status === 'running'
+              ? (options.startedAt ?? createdAt)
+              : status === 'submitted'
+                ? (options.submittedAt ?? createdAt)
+                : createdAt,
         }
       : {}),
     ...(options.startedAt ? { startedAt: options.startedAt } : {}),
+    ...(options.submittedAt ? { submittedAt: options.submittedAt } : {}),
+    ...(options.batchId ? { batchId: options.batchId } : {}),
     ttl: ttlAfter(new Date(createdAt), JOB_TTL_DAYS * SECONDS_PER_DAY),
   };
   await client.send(
     new PutCommand({
       TableName: tableName,
-      Item: { PK: userPk(sub), SK: PROFILE_SK, status: 'active', activeJobs: 1 },
+      Item: {
+        PK: userPk(sub),
+        SK: PROFILE_SK,
+        status: 'active',
+        activeJobs: isBatchJob({ request }) ? 0 : 1,
+      },
     }),
   );
   await client.send(

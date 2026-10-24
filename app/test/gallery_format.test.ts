@@ -95,6 +95,14 @@ describe('placeholderText', () => {
     expect(placeholderText({ ...job, type: 'edit', status: 'running' })).toBe('Editing');
     expect(placeholderText({ ...job, type: 'edit' })).toBe('Queued');
   });
+
+  it('calls a batch job Scheduled until its provider batch is done', () => {
+    for (const status of ['scheduled', 'submitted'] as const) {
+      expect(placeholderText({ ...job, status, count: 2, delivery: 'batch' })).toBe(
+        'Scheduled · 2 images',
+      );
+    }
+  });
 });
 
 describe('urlsMayHaveExpired', () => {

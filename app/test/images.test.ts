@@ -216,7 +216,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('gallery API against DynamoDB Local', () => 
     request: Record<string, unknown>,
     createdAt: string,
   ) {
-    const active = status === 'queued' || status === 'running';
+    const active = ['queued', 'running', 'scheduled', 'submitted'].includes(status);
     await put({
       PK: jobPk(jobId),
       SK: 'META',
@@ -279,6 +279,45 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('gallery API against DynamoDB Local', () => 
 
   it('answers an empty first page for a new user', async () => {
     expect((await listImages(deps, newSession())).body).toEqual({ images: [], jobs: [] });
+  });
+
+  it('lists scheduled and submitted batch jobs, marked as batch deliveries', async () => {
+    const owner = newSession();
+    await putJob(
+      owner.sub,
+      '01JQ0000000000000000000011',
+      'scheduled',
+      { type: 'generate', prompt: 'Later, please', count: 2, delivery: 'batch' },
+      '2026-10-15T12:00:02.000Z',
+    );
+    await putJob(
+      owner.sub,
+      '01JQ0000000000000000000012',
+      'submitted',
+      { type: 'generate', prompt: 'In a batch', count: 1, delivery: 'batch' },
+      '2026-10-15T12:00:01.000Z',
+    );
+    const page = (await listImages(deps, owner)).body as unknown as GalleryPageBody;
+    expect(page.jobs).toEqual([
+      {
+        jobId: '01JQ0000000000000000000011',
+        type: 'generate',
+        status: 'scheduled',
+        createdAt: '2026-10-15T12:00:02.000Z',
+        text: 'Later, please',
+        count: 2,
+        delivery: 'batch',
+      },
+      {
+        jobId: '01JQ0000000000000000000012',
+        type: 'generate',
+        status: 'submitted',
+        createdAt: '2026-10-15T12:00:01.000Z',
+        text: 'In a batch',
+        count: 1,
+        delivery: 'batch',
+      },
+    ]);
   });
 
   it("lists the caller's queued and running jobs, newest first, and no one else's", async () => {

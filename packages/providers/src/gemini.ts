@@ -1,4 +1,11 @@
-import { GoogleGenAI, type GenerateContentResponse, type GoogleGenAIOptions } from '@google/genai';
+import {
+  GoogleGenAI,
+  type BatchJob,
+  type GenerateContentResponse,
+  type GoogleGenAIOptions,
+  type InlinedRequest,
+  type InlinedResponse,
+} from '@google/genai';
 import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT, mapAspect, type ModelConfig } from '@pictora/core';
 import {
   ProviderError,
@@ -8,7 +15,18 @@ import {
 } from './errors.js';
 import { isPng, normalisePng } from './image.js';
 import { PROVIDER_TIMEOUT_MS } from './retry.js';
-import type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
+import {
+  BATCH_PRICE_FACTOR,
+  type BatchImageProvider,
+  type BatchImageRequest,
+  type BatchItem,
+  type BatchItemResult,
+  type BatchPoll,
+  type GeneratedImage,
+  type ImageProvider,
+  type ImageRequest,
+  type ImageResult,
+} from './types.js';
 
 /** Where Gemini runs: the Gemini API with an API key, or Vertex AI with a service account (tech design 6.2). */
 export const GEMINI_BACKENDS = ['api', 'vertex'] as const;
@@ -19,6 +37,29 @@ export const GEMINI_DEFAULT_VERTEX_LOCATION = 'global';
 
 /** Edits take the parent image plus up to 3 references (EDIT-5). */
 export const GEMINI_MAX_REFERENCE_IMAGES = 3;
+
+/** The Gemini API's base URL, where batch result files are downloaded from. */
+export const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
+
+/** Gemini batch states while the batch still runs. */
+const GEMINI_BATCH_PENDING = new Set([
+  'JOB_STATE_UNSPECIFIED',
+  'JOB_STATE_QUEUED',
+  'JOB_STATE_PENDING',
+  'JOB_STATE_RUNNING',
+  'JOB_STATE_CANCELLING',
+  'JOB_STATE_PAUSED',
+  'JOB_STATE_UPDATING',
+]);
+
+/** Gemini batch states that finished with results, and which of them ran out of time or were cancelled. */
+const GEMINI_BATCH_DONE = new Set([
+  'JOB_STATE_SUCCEEDED',
+  'JOB_STATE_PARTIALLY_SUCCEEDED',
+  'JOB_STATE_EXPIRED',
+  'JOB_STATE_CANCELLED',
+]);
+const GEMINI_BATCH_CUT_SHORT = new Set(['JOB_STATE_EXPIRED', 'JOB_STATE_CANCELLED']);
 
 /** Finish and block reasons Gemini uses when its safety filters stop a request or an image. */
 const SAFETY_REASONS = new Set([
@@ -119,7 +160,7 @@ export function geminiClientOptions(
  * charged. Edits are stateless: the parent image, any references and the instruction go in one call, with no
  * chat history.
  */
-export class GeminiProvider implements ImageProvider {
+export class GeminiProvider implements ImageProvider, BatchImageProvider {
   private client?: { credential: string; sdk: GoogleGenAI };
 
   constructor(private readonly options: GeminiProviderOptions) {}
@@ -212,6 +253,110 @@ export class GeminiProvider implements ImageProvider {
     return { image: await normalisePng(bytes), requestId: response.responseId };
   }
 
+  /**
+   * Sends the jobs as one Gemini batch with inline requests (tech design 5.4). Each call makes one image, so a
+   * job of `count` images is `count` requests, keyed `<jobId>#<n>`. Only the Gemini API takes inline batches,
+   * so Vertex AI refuses them. Returns the batch's name.
+   */
+  async submitBatch(
+    model: ModelConfig,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<string> {
+    if (!model.capabilities.generate || !model.capabilities.batch) {
+      throw new ProviderError(`Model ${model.id} does not take batch jobs`);
+    }
+    if (this.options.config.backend !== 'api') {
+      throw new ProviderError('Gemini batch jobs need the Gemini API backend, not Vertex AI');
+    }
+    if (items.length === 0) throw new ProviderError('A batch needs at least one job');
+    const requests: InlinedRequest[] = batchKeys(items).map(({ key, request }) => {
+      const { contents, config } = geminiRequest(model, request);
+      return { contents, config, metadata: { key } };
+    });
+    const sdk = await this.sdk();
+    let batch: BatchJob;
+    try {
+      batch = await sdk.batches.create({
+        model: model.providerModelId,
+        src: requests,
+        config: { displayName: `pictora-${model.id}`, abortSignal: signal },
+      });
+    } catch (error) {
+      throw toGeminiError(error);
+    }
+    if (!batch.name) throw new ProviderError('Gemini returned a batch without a name');
+    return batch.name;
+  }
+
+  /**
+   * Reads a Gemini batch. Once it succeeded, partly succeeded, expired or was cancelled, each response is matched
+   * to its job by the `<jobId>#<n>` key (or by its place, as Gemini keeps the request order), and a job keeps
+   * the images that came back. Results too large to return inline come as a JSONL file, which is downloaded.
+   */
+  async pollBatch(
+    model: ModelConfig,
+    batchId: string,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<BatchPoll> {
+    const sdk = await this.sdk();
+    let batch: BatchJob;
+    try {
+      batch = await sdk.batches.get({ name: batchId, config: { abortSignal: signal } });
+    } catch (error) {
+      throw toGeminiError(error);
+    }
+    const state = batch.state ?? 'JOB_STATE_UNSPECIFIED';
+    if (GEMINI_BATCH_PENDING.has(state)) return { state: 'pending' };
+    if (!GEMINI_BATCH_DONE.has(state)) {
+      return {
+        state: 'failed',
+        error: new ProviderError(
+          `Gemini batch ${batchId} ${state}${batch.error?.message ? `: ${batch.error.message}` : ''}`,
+        ),
+      };
+    }
+    const responses =
+      batch.dest?.inlinedResponses ??
+      (batch.dest?.fileName ? await this.downloadResponses(batch.dest.fileName, signal) : []);
+    return {
+      state: 'done',
+      expired: GEMINI_BATCH_CUT_SHORT.has(state),
+      results: await geminiBatchResults(model, items, responses),
+    };
+  }
+
+  /** Downloads a batch's JSONL result file; each line is `{ key, response }` or `{ key, error }`. */
+  private async downloadResponses(
+    fileName: string,
+    signal: AbortSignal,
+  ): Promise<InlinedResponse[]> {
+    const credential = (await this.options.credential()).trim();
+    const base = this.options.baseUrl ?? GEMINI_API_BASE_URL;
+    const response = await fetch(`${base}/download/v1beta/${fileName}:download?alt=media`, {
+      headers: { 'x-goog-api-key': credential },
+      signal,
+    });
+    if (!response.ok) {
+      throw toProviderError(
+        Object.assign(new Error(`Gemini batch results download failed: HTTP ${response.status}`), {
+          status: response.status,
+        }),
+      );
+    }
+    return (await response.text())
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => {
+        const parsed = JSON.parse(line) as InlinedResponse & { key?: string };
+        return {
+          ...parsed,
+          metadata: parsed.metadata ?? (parsed.key ? { key: parsed.key } : undefined),
+        };
+      });
+  }
+
   /** One SDK client per credential, rebuilt when the cached secret changes. */
   private async sdk(): Promise<GoogleGenAI> {
     let credential: string;
@@ -251,7 +396,7 @@ export interface GeminiRequest {
  */
 export function geminiRequest(
   model: ModelConfig,
-  req: ImageRequest,
+  req: BatchImageRequest,
   images: readonly Uint8Array[] = [],
 ): GeminiRequest {
   const quality = model.qualities[req.quality];
@@ -307,6 +452,72 @@ function imageFromResponse(model: ModelConfig, response: GenerateContentResponse
     );
   }
   return new Uint8Array(Buffer.from(data, 'base64'));
+}
+
+/** The batch requests for the items: one per image, keyed `<jobId>#<n>`, in job order. */
+function batchKeys(
+  items: readonly BatchItem[],
+): { key: string; jobKey: string; request: BatchImageRequest }[] {
+  return items.flatMap((item) =>
+    Array.from({ length: item.request.count }, (_, index) => ({
+      key: `${item.key}#${index}`,
+      jobKey: item.key,
+      request: item.request,
+    })),
+  );
+}
+
+/**
+ * Groups a finished batch's responses by job (tech design 5.4). A job keeps every image that came back, at batch
+ * price; one with none carries the error that stopped it, a safety refusal before any other.
+ */
+export async function geminiBatchResults(
+  model: ModelConfig,
+  items: readonly BatchItem[],
+  responses: readonly InlinedResponse[],
+): Promise<Map<string, BatchItemResult>> {
+  const keys = batchKeys(items);
+  const byKey = new Map(keys.map((entry) => [entry.key, entry]));
+  const grouped = new Map<string, { images: GeneratedImage[]; errors: ProviderError[] }>();
+  for (const [index, response] of responses.entries()) {
+    const entry = byKey.get(response.metadata?.key ?? '') ?? keys[index];
+    if (!entry) continue;
+    const group = grouped.get(entry.jobKey) ?? { images: [], errors: [] };
+    grouped.set(entry.jobKey, group);
+    if (group.images.length >= entry.request.count) continue;
+    try {
+      if (response.error) {
+        throw toGeminiError(
+          Object.assign(new Error(response.error.message ?? 'Gemini batch request failed'), {
+            status: response.error.code,
+          }),
+        );
+      }
+      if (!response.response) throw new ProviderError(`Model ${model.id} returned no response`);
+      group.images.push(await normalisePng(imageFromResponse(model, response.response)));
+    } catch (error) {
+      group.errors.push(toGeminiError(error));
+    }
+  }
+  const costPoints = (quality: BatchImageRequest['quality']) =>
+    model.qualities[quality]?.costPoints ?? 0;
+  const results = new Map<string, BatchItemResult>();
+  for (const item of items) {
+    const group = grouped.get(item.key);
+    if (!group) continue;
+    const cents = costPoints(item.request.quality) * group.images.length * BATCH_PRICE_FACTOR;
+    results.set(item.key, {
+      images: group.images,
+      providerCostCents: cents,
+      ...(group.images.length === 0
+        ? {
+            error:
+              group.errors.find((error) => error instanceof ProviderSafetyError) ?? group.errors[0],
+          }
+        : {}),
+    });
+  }
+  return results;
 }
 
 /** Maps a `@google/genai` error to a typed provider error. */

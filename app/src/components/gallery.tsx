@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { placeholderText, urlsMayHaveExpired } from '../lib/gallery_format';
-import { POLL_INTERVAL_MS, altTextFor } from '../lib/generate_options';
+import { BATCH_POLL_INTERVAL_MS, POLL_INTERVAL_MS, altTextFor } from '../lib/generate_options';
 import type { ActiveJobBody, GalleryImageBody, GalleryPageBody } from '../lib/images';
 import type { JobStatusBody } from '../lib/jobs';
 import { GENERATE_PATH, galleryImagePath } from '../lib/site';
@@ -26,6 +26,8 @@ export interface GalleryProps {
   modelNames: Readonly<Record<string, string>>;
   /** How often running jobs are checked; tests shorten it. */
   pollIntervalMs?: number;
+  /** How often scheduled batch jobs are checked when nothing else is running; tests shorten it. */
+  batchPollIntervalMs?: number;
 }
 
 /** A tile, with when its presigned thumbnail URL was made. */
@@ -55,10 +57,14 @@ function merge(current: Tile[], fresh: GalleryImageBody[]): Tile[] {
 
 /**
  * The private gallery (GAL-1, GAL-4, GEN-8): the user's images newest first, 24 at a time with more loaded on
- * scroll, and jobs still queued or running as placeholders at the top until they finish. A tile opens the detail
+ * scroll, and jobs still queued, running or scheduled as placeholders at the top until they finish. A tile opens the detail
  * view, as a modal on wide screens and as its own page on narrow ones.
  */
-export function Gallery({ modelNames, pollIntervalMs = POLL_INTERVAL_MS }: GalleryProps) {
+export function Gallery({
+  modelNames,
+  pollIntervalMs = POLL_INTERVAL_MS,
+  batchPollIntervalMs = BATCH_POLL_INTERVAL_MS,
+}: GalleryProps) {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [jobs, setJobs] = useState<ActiveJobBody[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
@@ -124,41 +130,48 @@ export function Gallery({ modelNames, pollIntervalMs = POLL_INTERVAL_MS }: Galle
   }, [nextCursor, moreError, loadMore]);
 
   // Running jobs: checked until each finishes, then the first page is fetched again to show the new images.
+  // Scheduled batch jobs take hours, so while they are all that's left they are checked once a minute.
+  const onlyBatchJobs = jobs.every(
+    (job) => job.status === 'scheduled' || job.status === 'submitted',
+  );
   useEffect(() => {
     if (jobs.length === 0) return;
     let cancelled = false;
-    const timer = setTimeout(async () => {
-      const finished = await Promise.all(
-        jobs.map(async (job) => {
+    const timer = setTimeout(
+      async () => {
+        const finished = await Promise.all(
+          jobs.map(async (job) => {
+            try {
+              const response = await fetch(`/api/jobs/${encodeURIComponent(job.jobId)}`, {
+                cache: 'no-store',
+              });
+              if (response.status === 404) return true;
+              if (!response.ok) return false;
+              const body = (await response.json()) as JobStatusBody;
+              return TERMINAL_JOB_STATUSES.includes(body.status);
+            } catch {
+              return false;
+            }
+          }),
+        );
+        if (cancelled) return;
+        if (finished.some(Boolean)) {
           try {
-            const response = await fetch(`/api/jobs/${encodeURIComponent(job.jobId)}`, {
-              cache: 'no-store',
-            });
-            if (response.status === 404) return true;
-            if (!response.ok) return false;
-            const body = (await response.json()) as JobStatusBody;
-            return TERMINAL_JOB_STATUSES.includes(body.status);
+            const page = await fetchPage();
+            if (!cancelled) showFirst(page);
           } catch {
-            return false;
+            // Tried again on the next check.
           }
-        }),
-      );
-      if (cancelled) return;
-      if (finished.some(Boolean)) {
-        try {
-          const page = await fetchPage();
-          if (!cancelled) showFirst(page);
-        } catch {
-          // Tried again on the next check.
         }
-      }
-      if (!cancelled) setJobCheck((count) => count + 1);
-    }, pollIntervalMs);
+        if (!cancelled) setJobCheck((count) => count + 1);
+      },
+      onlyBatchJobs ? batchPollIntervalMs : pollIntervalMs,
+    );
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [jobs, jobCheck, pollIntervalMs, showFirst]);
+  }, [jobs, jobCheck, pollIntervalMs, batchPollIntervalMs, onlyBatchJobs, showFirst]);
 
   /** A thumbnail failed to load, most likely because its URL expired: fetch its page again (GAL-4). */
   async function refreshTile(index: number) {

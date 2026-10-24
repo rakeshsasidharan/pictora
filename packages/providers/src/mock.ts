@@ -9,12 +9,25 @@ import {
 import sharp from 'sharp';
 import { ProviderError, ProviderSafetyError, ProviderTimeoutError } from './errors.js';
 import { sleep } from './retry.js';
-import type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
+import {
+  BATCH_PRICE_FACTOR,
+  type BatchImageProvider,
+  type BatchItem,
+  type BatchItemResult,
+  type BatchPoll,
+  type GeneratedImage,
+  type ImageProvider,
+  type ImageRequest,
+  type ImageResult,
+} from './types.js';
 
 /** Prompt keywords that make the mock fail on purpose, for tests. */
 export const MOCK_FAIL_KEYWORD = '__fail__';
 export const MOCK_BLOCK_KEYWORD = '__block__';
 export const MOCK_TIMEOUT_KEYWORD = '__timeout__';
+
+/** Batch IDs the mock hands out start with this. */
+export const MOCK_BATCH_PREFIX = 'mock-batch-';
 
 /** Default delay before the mock answers; `MOCK_PROVIDER_DELAY_MS` overrides it. */
 export const MOCK_DEFAULT_DELAY_MS = 1_000;
@@ -32,7 +45,7 @@ export interface MockProviderOptions {
  * `__fail__`, `__block__` or `__timeout__` raise the matching typed error. Its cost is the model's list
  * price, so points behave as they would with a real provider.
  */
-export class MockProvider implements ImageProvider {
+export class MockProvider implements ImageProvider, BatchImageProvider {
   readonly delayMs: number;
 
   constructor(options: MockProviderOptions = {}) {
@@ -50,10 +63,56 @@ export class MockProvider implements ImageProvider {
     return this.run(model, req, 'edit');
   }
 
+  /**
+   * Accepts any batch straight away (tech design 5.4). The ID is a hash of the job IDs, since the mock keeps no
+   * state: the poller sends the jobs back when it reads the batch.
+   */
+  submitBatch(model: ModelConfig, items: readonly BatchItem[]): Promise<string> {
+    if (!model.capabilities.generate || !model.capabilities.batch) {
+      return Promise.reject(new ProviderError(`Model ${model.id} does not take batch jobs`));
+    }
+    if (items.length === 0)
+      return Promise.reject(new ProviderError('A batch needs at least one job'));
+    const hash = createHash('sha256')
+      .update(items.map((item) => item.key).join(','))
+      .digest('hex')
+      .slice(0, 16);
+    return Promise.resolve(`${MOCK_BATCH_PREFIX}${hash}`);
+  }
+
+  /**
+   * A mock batch is done the first time it is read: each job gets its placeholder images at batch price, or
+   * the typed error its prompt asks for (`__block__`, `__fail__`, `__timeout__`).
+   */
+  async pollBatch(
+    model: ModelConfig,
+    batchId: string,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<BatchPoll> {
+    if (!batchId.startsWith(MOCK_BATCH_PREFIX)) {
+      return { state: 'failed', error: new ProviderError(`Unknown mock batch ${batchId}`) };
+    }
+    const results = new Map<string, BatchItemResult>();
+    for (const item of items) {
+      try {
+        const result = await this.run(model, { ...item.request, signal }, 'generate', 0);
+        results.set(item.key, {
+          images: result.images,
+          providerCostCents: result.providerCostCents * BATCH_PRICE_FACTOR,
+        });
+      } catch (error) {
+        results.set(item.key, { images: [], providerCostCents: 0, error: error as Error });
+      }
+    }
+    return { state: 'done', expired: false, results };
+  }
+
   private async run(
     model: ModelConfig,
     req: ImageRequest,
     mode: 'generate' | 'edit',
+    delayMs = this.delayMs,
   ): Promise<ImageResult> {
     if (!model.capabilities[mode]) {
       throw new ProviderError(`Model ${model.id} does not support ${mode}`);
@@ -71,7 +130,7 @@ export class MockProvider implements ImageProvider {
     if (!quality) throw new ProviderError(`Model ${model.id} has no ${req.quality} quality`);
     const size = mapAspect(model, req.aspect, req.quality).output;
 
-    await sleep(this.delayMs, req.signal);
+    await sleep(delayMs, req.signal);
     if (req.prompt.includes(MOCK_BLOCK_KEYWORD)) {
       throw new ProviderSafetyError(`Mock safety refusal (${MOCK_BLOCK_KEYWORD})`);
     }

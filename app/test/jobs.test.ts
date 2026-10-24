@@ -157,6 +157,22 @@ describe('createJob: request checks', () => {
     expect(
       unsupportedOption(model('mock'), generate({ seed: 7, transparentBackground: true })),
     ).toBe(undefined);
+    expect(
+      unsupportedOption(
+        model('stable-image-core'),
+        generate({ modelId: 'stable-image-core', delivery: 'batch' }),
+      ),
+    ).toMatch(/can't deliver later/);
+    expect(unsupportedOption(model('mock'), generate({ delivery: 'batch' }))).toBe(undefined);
+  });
+
+  it('refuses batch delivery for a model without batches', async () => {
+    const result = await createJob(
+      offlineDeps(),
+      session,
+      generate({ modelId: 'stable-image-core', delivery: 'batch' }),
+    );
+    expect(result).toMatchObject({ status: 400, body: { code: 'unsupported_option' } });
   });
 });
 
@@ -384,6 +400,98 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('job API against DynamoDB Local', () => {
       request: generate({ quality: 'high', count: 2 }),
       GSI1PK: 'JOBS#queued',
       GSI1SK: '2026-10-15T12:00:00.000Z',
+    });
+  });
+
+  describe('batch delivery (tech design 5.4)', () => {
+    const batch = (overrides: Partial<GenerateJobRequest> = {}) =>
+      generate({ delivery: 'batch', ...overrides });
+
+    it('schedules the job at half the points, rounded up, without queueing it or taking a slot', async () => {
+      const session = await onboardedSession();
+      // High is 3 points an image: 9 for three, 5 as a batch.
+      const result = await createJob(deps(), session, batch({ quality: 'high', count: 3 }));
+      const { jobId } = result.body as { jobId: string };
+      expect(result).toEqual({
+        status: 202,
+        body: { jobId, status: 'scheduled', pointsReserved: 5, modelId: 'mock' },
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(await usedToday(session.sub)).toBe(5);
+      expect((await profileOf(session.sub))?.activeJobs).toBe(0);
+      expect(await getItem(jobPk(jobId), JOB_SK)).toMatchObject({
+        status: 'scheduled',
+        pointsReserved: 5,
+        request: batch({ quality: 'high', count: 3 }),
+        GSI1PK: 'JOBS#scheduled',
+        GSI1SK: '2026-10-15T12:00:00.000Z',
+      });
+    });
+
+    it('lets batch jobs through while 2 standard jobs run, within the rate limit and points', async () => {
+      const session = await onboardedSession();
+      expect((await createJob(deps(), session, generate())).status).toBe(202);
+      expect((await createJob(deps(), session, generate())).status).toBe(202);
+      expect((await createJob(deps(), session, generate())).status).toBe(429);
+      expect((await createJob(deps(), session, batch())).status).toBe(202);
+      expect((await createJob(deps(), session, batch())).status).toBe(202);
+      const tooBig = await createJob(
+        deps({ defaultDailyPoints: 6 }),
+        session,
+        batch({ quality: 'high', count: 4 }),
+      );
+      expect(tooBig).toMatchObject({ status: 402, body: { code: 'out_of_points' } });
+    });
+
+    it('refuses a batch job from a suspended account or during a cooldown', async () => {
+      const session = await onboardedSession();
+      await setProfile(session.sub, { cooldownUntil: '2026-10-15T13:00:00.000Z' });
+      expect((await createJob(deps(), session, batch())).status).toBe(403);
+      await setProfile(session.sub, {
+        cooldownUntil: '2026-10-15T11:00:00.000Z',
+        status: 'suspended',
+      });
+      expect((await createJob(deps(), session, batch())).status).toBe(403);
+      expect(await usedToday(session.sub)).toBeUndefined();
+    });
+
+    it('routes Auto among the models that take batches, at half the points', async () => {
+      const session = await onboardedSession();
+      const result = await createJob(
+        deps({ hasQueue: (provider) => provider !== 'mock' }),
+        session,
+        generate({
+          modelId: 'auto',
+          quality: 'standard',
+          style: 'photorealistic',
+          delivery: 'batch',
+        }),
+      );
+      // Gemini 3 Pro Image at standard is 14 points; 7 as a batch.
+      expect(result.body).toMatchObject({
+        status: 'scheduled',
+        modelId: 'gemini-3-pro-image',
+        pointsReserved: 7,
+      });
+      const bedrockOnly = devModels.map((candidate) =>
+        candidate.provider === 'bedrock' ? candidate : { ...candidate, enabled: false },
+      );
+      const none = await createJob(
+        deps({ models: async () => bedrockOnly }),
+        session,
+        generate({ modelId: 'auto', quality: 'standard', delivery: 'batch' }),
+      );
+      expect(none).toMatchObject({ status: 400, body: { code: 'unsupported_option' } });
+    });
+
+    it('reports a scheduled job', async () => {
+      const session = await onboardedSession();
+      const created = await createJob(deps(), session, batch());
+      const status = await getJobStatus(deps(), session, created.body.jobId as string);
+      expect(status).toMatchObject({
+        status: 200,
+        body: { status: 'scheduled', pointsReserved: 1 },
+      });
     });
   });
 

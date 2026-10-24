@@ -11,6 +11,7 @@ import {
   RATE_TTL_SECONDS,
   SECONDS_PER_DAY,
   USAGE_TTL_DAYS,
+  isBatchJob,
   jobPk,
   rateSk,
   ttlAfter,
@@ -41,7 +42,8 @@ export interface ReserveInput {
 /**
  * Reserves points and a concurrency slot and records the job, in one `TransactWriteItems` call (tech design
  * 4.1): the minute's rate counter (below `rateLimit`), the day's usage (staying within the limit), the profile
- * (active, no cooldown, fewer than 2 running jobs) and the queued job. Either all of it happens or none.
+ * (active, no cooldown, fewer than 2 running jobs) and the queued job. Either all of it happens or none. A batch
+ * job (tech design 5.4) takes no slot, so its profile is only checked.
  */
 export async function reserveJob(
   client: DynamoDBDocumentClient,
@@ -81,24 +83,38 @@ export async function reserveJob(
           },
         },
       },
-      {
-        Update: {
-          TableName: tableName,
-          Key: { PK: pk, SK: PROFILE_SK },
-          UpdateExpression: 'ADD activeJobs :one',
-          ConditionExpression:
-            'attribute_exists(PK) AND #status = :active' +
-            ' AND (attribute_not_exists(activeJobs) OR activeJobs < :maxActive)' +
-            ' AND (attribute_not_exists(cooldownUntil) OR cooldownUntil <= :now)',
-          ExpressionAttributeNames: { '#status': 'status' },
-          ExpressionAttributeValues: {
-            ':one': 1,
-            ':active': 'active',
-            ':maxActive': MAX_ACTIVE_JOBS,
-            ':now': now.toISOString(),
+      isBatchJob(job)
+        ? {
+            // A batch job takes no concurrency slot (tech design 5.4), but the account must still be able to
+            // start jobs.
+            ConditionCheck: {
+              TableName: tableName,
+              Key: { PK: pk, SK: PROFILE_SK },
+              ConditionExpression:
+                'attribute_exists(PK) AND #status = :active' +
+                ' AND (attribute_not_exists(cooldownUntil) OR cooldownUntil <= :now)',
+              ExpressionAttributeNames: { '#status': 'status' },
+              ExpressionAttributeValues: { ':active': 'active', ':now': now.toISOString() },
+            },
+          }
+        : {
+            Update: {
+              TableName: tableName,
+              Key: { PK: pk, SK: PROFILE_SK },
+              UpdateExpression: 'ADD activeJobs :one',
+              ConditionExpression:
+                'attribute_exists(PK) AND #status = :active' +
+                ' AND (attribute_not_exists(activeJobs) OR activeJobs < :maxActive)' +
+                ' AND (attribute_not_exists(cooldownUntil) OR cooldownUntil <= :now)',
+              ExpressionAttributeNames: { '#status': 'status' },
+              ExpressionAttributeValues: {
+                ':one': 1,
+                ':active': 'active',
+                ':maxActive': MAX_ACTIVE_JOBS,
+                ':now': now.toISOString(),
+              },
+            },
           },
-        },
-      },
       {
         Put: {
           TableName: tableName,

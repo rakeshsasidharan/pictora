@@ -1,7 +1,18 @@
 import type { CreateJobRequest } from './schemas.js';
 
-/** Job states (tech design 5.2). */
-export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'blocked'] as const;
+/**
+ * Job states (tech design 5.2). Batch jobs (tech design 5.4) wait as `scheduled` for the batch submitter, then as
+ * `submitted` while the provider batch runs, instead of `queued` and `running`.
+ */
+export const JOB_STATUSES = [
+  'queued',
+  'running',
+  'scheduled',
+  'submitted',
+  'succeeded',
+  'failed',
+  'blocked',
+] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 /** States a job never leaves. */
@@ -20,6 +31,23 @@ export const RATE_TTL_SECONDS = 120;
 export const JOB_TTL_DAYS = 30;
 export const STATS_TTL_DAYS = 400;
 
+/** How a generate job is delivered: straight away, or through a provider batch at half the points (P1). */
+export const DELIVERIES = ['standard', 'batch'] as const;
+export type Delivery = (typeof DELIVERIES)[number];
+
+/** Statuses of a batch job before it finishes (tech design 5.4). */
+export const BATCH_JOB_STATUSES = ['scheduled', 'submitted'] as const;
+export type BatchJobStatus = (typeof BATCH_JOB_STATUSES)[number];
+
+/** The provider batch window: a batch job still unfinished this long after it was created is refunded. */
+export const BATCH_WINDOW_MS = 24 * 60 * 60_000;
+
+/** How often the batch submitter and poller run (tech design 5.4). */
+export const BATCH_INTERVAL_MINUTES = 15;
+
+/** Most jobs sent in one provider batch; more wait for the next run. */
+export const MAX_BATCH_JOBS = 200;
+
 /** The sweeper fails jobs stuck this long, with a refund (tech design 3.2). */
 export const STUCK_RUNNING_MS = 5 * 60_000;
 export const STUCK_QUEUED_MS = 10 * 60_000;
@@ -32,6 +60,7 @@ export const JOB_ERROR_CODES = [
   'enqueue_failed',
   'stuck',
   'source_missing',
+  'batch_expired',
 ] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
@@ -46,6 +75,8 @@ export const JOB_ERROR_MESSAGES: Readonly<Record<JobErrorCode, string>> = {
   stuck: "Your job didn't finish in time. Your points have been refunded. Please try again.",
   source_missing:
     'The image you were editing, or one of its reference images, is no longer available. Your points have been refunded.',
+  batch_expired:
+    "Your scheduled images weren't ready within 24 hours. Your points have been refunded. Please try again.",
 };
 
 export interface JobError {
@@ -86,15 +117,30 @@ export interface JobItem {
   images?: JobImage[];
   startedAt?: string;
   finishedAt?: string;
-  /** `JOBS#<status>` while the job is queued or running, so the sweeper can find stuck jobs; removed after. */
+  /** Batch jobs: when the submitter put the job in a provider batch. */
+  submittedAt?: string;
+  /** Batch jobs: the provider's ID of the batch the job is in, set once the provider accepted it. */
+  batchId?: string;
+  /**
+   * `JOBS#<status>` while the job is queued, running, scheduled or submitted, so the sweeper and the batch
+   * Lambdas can find it; removed after.
+   */
   GSI1PK?: string;
-  /** When the job entered its current active status: `createdAt` while queued, `startedAt` while running. */
+  /**
+   * When the job entered its current active status: `createdAt` while queued or scheduled, `startedAt` while
+   * running, `submittedAt` while submitted.
+   */
   GSI1SK?: string;
   ttl: number;
 }
 
-/** Statuses a job is swept from when it stays in them too long. */
-export type ActiveJobStatus = 'queued' | 'running';
+/** Statuses a job is in before it finishes; each has its own `JOBS#<status>` index partition. */
+export type ActiveJobStatus = 'queued' | 'running' | BatchJobStatus;
+
+/** True for a job delivered through a provider batch (tech design 5.4). */
+export function isBatchJob(job: Pick<JobItem, 'request'>): boolean {
+  return job.request.type === 'generate' && job.request.delivery === 'batch';
+}
 
 /** Keys of the single table (tech design 4). */
 export const PROFILE_SK = 'PROFILE';
@@ -116,7 +162,7 @@ export function jobPk(jobId: string): string {
   return `JOB#${jobId}`;
 }
 
-/** The GSI1 partition holding every job in an active status (tech design 4, sweeper access pattern). */
+/** The GSI1 partition holding every job in an active status (tech design 4: the sweeper and batch Lambdas). */
 export function activeJobsGsiPk(status: ActiveJobStatus): string {
   return `JOBS#${status}`;
 }

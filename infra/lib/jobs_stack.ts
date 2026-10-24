@@ -72,6 +72,16 @@ export const PURGE_HANDLER = 'purge.handler';
 export const PURGE_MEMORY_MB = 512;
 export const PURGE_TIMEOUT_SECONDS = 300;
 
+/**
+ * The batch submitter and poller (tech design 5.4): same image, their own handlers, every 15 minutes. They store
+ * images like the worker, so they get its memory; a run stops well before the next one starts.
+ */
+export const BATCH_SUBMIT_HANDLER = 'batch_submit.handler';
+export const BATCH_POLL_HANDLER = 'batch_poll.handler';
+export const BATCH_MEMORY_MB = WORKER_MEMORY_MB;
+export const BATCH_TIMEOUT_SECONDS = 600;
+export const BATCH_INTERVAL_MINUTES = 15;
+
 /** 6 × the worker timeout, as AWS recommends for an SQS event source. */
 export const QUEUE_VISIBILITY_TIMEOUT_SECONDS = 6 * WORKER_TIMEOUT_SECONDS;
 /** Receives before a message moves to the dead-letter queue. */
@@ -112,6 +122,10 @@ export class JobsStack extends Stack {
   /** Takes `{ sub, username }` from `DELETE /api/me` and deletes the account's data and Cognito user. */
   readonly purgeQueue: Queue;
   readonly purgeFunction: DockerImageFunction;
+  /** Sends scheduled batch jobs to the provider batch APIs (tech design 5.4). */
+  readonly batchSubmitFunction: DockerImageFunction;
+  /** Reads provider batches and records or refunds their jobs (tech design 5.4). */
+  readonly batchPollFunction: DockerImageFunction;
   readonly providerSecrets: Readonly<Record<SecretProvider, ISecret>>;
 
   constructor(scope: Construct, id: string, props: JobsStackProps) {
@@ -365,6 +379,60 @@ export class JobsStack extends Stack {
     this.purgeQueue.grantSendMessages(this.purgeFunction);
     this.purgeFunction.addEventSource(
       new SqsEventSource(this.purgeQueue, { batchSize: 1, reportBatchItemFailures: true }),
+    );
+
+    const batchFunction = (id: string, handler: string, description: string) => {
+      const fn = new DockerImageFunction(this, `${id}Function`, {
+        code: DockerImageCode.fromEcr(repository, {
+          tagOrDigest: config.workerImageDigest,
+          cmd: [handler],
+        }),
+        architecture: Architecture.ARM_64,
+        memorySize: BATCH_MEMORY_MB,
+        timeout: Duration.seconds(BATCH_TIMEOUT_SECONDS),
+        logGroup: new LogGroup(this, `${id}LogGroup`, {
+          retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
+          removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+        }),
+        environment: {
+          PICTORA_ENV: config.envName,
+          GIT_SHA: config.gitSha,
+          TABLE_NAME: props.table.tableName,
+          IMAGES_BUCKET: props.imagesBucket.bucketName,
+          OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
+          GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+          SPEND_CAP_CENTS: String(config.spendCapUsd * 100),
+          ...geminiEnvironment(config),
+        },
+      });
+      props.table.grantReadWriteData(fn);
+      // Moderation and the OpenAI batch API share the OpenAI key; Gemini batches use the Gemini secret.
+      this.providerSecrets.openai.grantRead(fn);
+      this.providerSecrets.gemini.grantRead(fn);
+      new Rule(this, `${id}Schedule`, {
+        description,
+        schedule: Schedule.rate(Duration.minutes(BATCH_INTERVAL_MINUTES)),
+        targets: [new LambdaFunction(fn, { retryAttempts: 0 })],
+      });
+      return fn;
+    };
+    this.batchSubmitFunction = batchFunction(
+      'BatchSubmit',
+      BATCH_SUBMIT_HANDLER,
+      'Sends scheduled Pictora batch jobs to the provider batch APIs',
+    );
+    this.batchPollFunction = batchFunction(
+      'BatchPoll',
+      BATCH_POLL_HANDLER,
+      'Records or refunds the jobs of finished Pictora provider batches',
+    );
+    // The poller stores each batch job's images and thumbnails under `users/`, and deletes them again when the
+    // account was deleted meanwhile; exact actions, as for the worker (tech design 12).
+    this.batchPollFunction.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['s3:PutObject', 's3:DeleteObject'],
+        resources: [props.imagesBucket.arnForObjects('users/*')],
+      }),
     );
 
     for (const provider of QUEUE_PROVIDERS) {

@@ -9,6 +9,8 @@ describe('worker handlers', () => {
       'model_health',
       'purge',
       'success_metrics',
+      'batch_submit',
+      'batch_poll',
     ]);
   });
 });

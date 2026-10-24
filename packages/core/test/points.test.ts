@@ -4,6 +4,8 @@ import {
   CENTS_PER_POINT,
   DEFAULT_DAILY_POINTS,
   QUALITIES,
+  batchPoints,
+  deliveryPoints,
   estimatePoints,
   loadSeedRegistry,
   pointsForCents,
@@ -169,5 +171,20 @@ describe('refundPoints', () => {
 
   it('rejects invalid reservations', () => {
     expect(() => refundPoints(-3)).toThrow(RangeError);
+  });
+});
+
+describe('batch points', () => {
+  it('halves the points, rounded up', () => {
+    expect([1, 2, 3, 6, 7, 22, 88].map(batchPoints)).toEqual([1, 1, 2, 3, 4, 11, 44]);
+    expect(batchPoints(0)).toBe(0);
+    expect(() => batchPoints(-1)).toThrow(RangeError);
+    expect(() => batchPoints(1.5)).toThrow(RangeError);
+  });
+
+  it('charges the full estimate for standard delivery and half for a batch', () => {
+    expect(deliveryPoints(7)).toBe(7);
+    expect(deliveryPoints(7, 'standard')).toBe(7);
+    expect(deliveryPoints(7, 'batch')).toBe(4);
   });
 });

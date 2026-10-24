@@ -39,3 +39,51 @@ export interface ImageProvider {
   generate(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
   edit(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
 }
+
+/** What a provider batch request carries for one job: a generate request without its abort signal. */
+export type BatchImageRequest = Omit<ImageRequest, 'signal' | 'inputImage' | 'referenceImages'>;
+
+/** One job in a provider batch (tech design 5.4): its key, the job ID, and its request. */
+export interface BatchItem {
+  key: string;
+  request: BatchImageRequest;
+}
+
+/** What a finished batch returned for one job: its images and their cost, or why it made none. */
+export interface BatchItemResult {
+  images: GeneratedImage[];
+  /** Batch price: half of list price, from usage data where the provider reports it. */
+  providerCostCents: number;
+  /** Set when the job made no images; a `ProviderSafetyError` blocks it. */
+  error?: Error;
+}
+
+/**
+ * A provider batch's state. `pending` while it runs. `done` once it finished, expired or was cancelled, with the
+ * result of every job it has one for (`expired` when the provider's window ran out first). `failed` when the
+ * whole batch failed and no job has a result.
+ */
+export type BatchPoll =
+  | { state: 'pending' }
+  | { state: 'done'; expired: boolean; results: Map<string, BatchItemResult> }
+  | { state: 'failed'; error: Error };
+
+/** An adapter that takes batch jobs through the provider's batch API (P1, tech design 5.4). */
+export interface BatchImageProvider {
+  /** Sends the items as one provider batch and returns the provider's batch ID. */
+  submitBatch(
+    model: ModelConfig,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<string>;
+  /** Reads a batch's state; `items` are the jobs it was sent, for the mock and for results without keys. */
+  pollBatch(
+    model: ModelConfig,
+    batchId: string,
+    items: readonly BatchItem[],
+    signal: AbortSignal,
+  ): Promise<BatchPoll>;
+}
+
+/** The batch price is half of list price on every provider with a batch API. */
+export const BATCH_PRICE_FACTOR = 0.5;

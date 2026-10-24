@@ -1,3 +1,4 @@
+import type { Delivery } from './jobs.js';
 import type { Aspect, ModelConfig, Quality } from './registry.js';
 import { mapAspect } from './size_mapping.js';
 
@@ -43,6 +44,17 @@ export function estimatePoints(
   mapAspect(model, aspect, quality);
   const costPoints = model.qualities[quality]?.costPoints ?? 0;
   return costPoints * count;
+}
+
+/** What a request costs delivered as a batch (P1): half the points, rounded up. */
+export function batchPoints(points: number): number {
+  assertPoints(points);
+  return Math.ceil(points / 2);
+}
+
+/** The points a request reserves for its delivery: the full estimate, or half of it for a batch. */
+export function deliveryPoints(points: number, delivery: Delivery = 'standard'): number {
+  return delivery === 'batch' ? batchPoints(points) : points;
 }
 
 /**

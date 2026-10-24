@@ -5,6 +5,7 @@ import {
   activeJobsGsiPk,
   imageKey,
   imageSk,
+  isBatchJob,
   jobError,
   jobPk,
   rateSk,
@@ -81,5 +82,39 @@ describe('job errors', () => {
       expect(jobError(code)).toEqual({ code, message: JOB_ERROR_MESSAGES[code] });
       expect(JOB_ERROR_MESSAGES[code]).toMatch(/refunded/);
     }
+  });
+});
+
+describe('isBatchJob', () => {
+  const generate = {
+    type: 'generate',
+    prompt: 'A fox',
+    style: 'none',
+    modelId: 'mock',
+    aspect: '1:1',
+    quality: 'draft',
+    count: 1,
+  } as const;
+
+  it('is true for a generate job delivered as a batch only', () => {
+    expect(isBatchJob({ request: { ...generate, delivery: 'batch' } })).toBe(true);
+    expect(isBatchJob({ request: { ...generate, delivery: 'standard' } })).toBe(false);
+    expect(isBatchJob({ request: generate })).toBe(false);
+    expect(
+      isBatchJob({
+        request: {
+          type: 'edit',
+          imageId: '01JAAAAAAAAAAAAAAAAAAAAAAA',
+          parentVersion: 1,
+          instruction: 'Add snow',
+          modelId: 'mock',
+          quality: 'draft',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('has a plain-language message for an expired batch', () => {
+    expect(jobError('batch_expired').message).toMatch(/within 24 hours.*refunded/);
   });
 });
