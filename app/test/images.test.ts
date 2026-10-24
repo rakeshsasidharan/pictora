@@ -262,6 +262,21 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('gallery API against DynamoDB Local', () => 
     expect(second).not.toHaveProperty('jobs');
   });
 
+  it('answers pages of the asked-for size, newest first', async () => {
+    const owner = newSession();
+    for (let n = 1; n <= 12; n++) await putImage(owner.sub, imageIdOf(n));
+
+    const first = (await listImages(deps, owner, undefined, 10)).body as unknown as GalleryPageBody;
+    expect(first.images.map((image) => image.imageId)).toEqual(
+      [12, 11, 10, 9, 8, 7, 6, 5, 4, 3].map(imageIdOf),
+    );
+    expect(first.nextCursor).toBe(imageIdOf(3));
+
+    const second = (await listImages(deps, owner, first.nextCursor, 10))
+      .body as unknown as GalleryPageBody;
+    expect(second.images.map((image) => image.imageId)).toEqual([2, 1].map(imageIdOf));
+  });
+
   it('answers an empty first page for a new user', async () => {
     expect((await listImages(deps, newSession())).body).toEqual({ images: [], jobs: [] });
   });

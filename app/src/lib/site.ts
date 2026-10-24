@@ -43,3 +43,6 @@ export function rerunPath(imageId: string): string {
 export function downloadPath(imageId: string, version: number): string {
   return `/api/images/${encodeURIComponent(imageId)}/versions/${version}/download`;
 }
+
+/** The cookie in which the sidebar keeps whether it is expanded (`true`) or collapsed (`false`) on desktop. */
+export const SIDEBAR_STATE_COOKIE = 'sidebar_state';

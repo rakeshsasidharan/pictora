@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import HomePage from '../src/app/page';
+import HomePage from '../src/app/(site)/page';
 import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 import { SESSION_HEADERS } from '../src/lib/session';
 

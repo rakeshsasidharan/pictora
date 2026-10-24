@@ -26,7 +26,7 @@ vi.mock('../src/lib/onboarding', () => ({
   },
 }));
 
-const { default: EditPage } = await import('../src/app/edit/page');
+const { default: EditPage } = await import('../src/app/(app)/edit/page');
 
 describe('edit page', () => {
   beforeEach(() => {

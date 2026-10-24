@@ -11,7 +11,7 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
 /** The account page's content: profile details, today's points and account deletion. */
 export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
   return (
-    <main className="account">
+    <div className="account">
       <h1>Account</h1>
       <dl className="account-details">
         <dt>Email</dt>
@@ -26,6 +26,6 @@ export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
         </dd>
       </dl>
       <DeleteAccount />
-    </main>
+    </div>
   );
 }

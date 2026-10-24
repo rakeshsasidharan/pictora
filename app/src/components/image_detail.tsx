@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { versionAltText, versionDescription } from '../lib/edit_options';
 import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
+import { notifyImagesChanged } from '../lib/images_changed';
 import { downloadPath, editImagePath, rerunPath } from '../lib/site';
 import { ReportImage } from './report_image';
 
@@ -137,6 +138,7 @@ export function ImageDetail({
         setDeleteError(body.error ?? "We couldn't delete your image. Please try again.");
         return;
       }
+      notifyImagesChanged();
       onDeleted(imageId);
     } catch {
       setDeleteError('Something went wrong. Check your connection and try again.');

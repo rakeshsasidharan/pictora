@@ -11,6 +11,7 @@ import {
   type UploadedImage,
   type UploadTicket,
 } from '../src/lib/upload_client';
+import { IMAGES_CHANGED_EVENT } from '../src/lib/images_changed';
 import { TOO_LARGE_MESSAGE, WRONG_TYPE_MESSAGE } from '../src/lib/upload_files';
 
 const TICKET: UploadTicket = {
@@ -129,11 +130,15 @@ describe('UploadImage', () => {
     );
   });
 
-  it('opens the edit panel for the new image', async () => {
+  it('opens the edit panel for the new image, which the sidebar history then lists', async () => {
+    const imagesChanged = vi.fn();
+    window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
     render(<UploadImage client={fakeClient()} />);
     pick(file('photo.png', 'image/png'));
     const link = await screen.findByRole('link', { name: 'Edit this image' });
     expect(link.getAttribute('href')).toBe(`/edit/${IMAGE.imageId}`);
+    expect(imagesChanged).toHaveBeenCalledOnce();
+    window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
   });
 
   it('shows why a blocked upload was refused', async () => {

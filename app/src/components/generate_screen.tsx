@@ -39,6 +39,7 @@ import {
   type ModelChoices,
 } from '../lib/generate_options';
 import type { RerunSettings } from '../lib/images';
+import { notifyImagesChanged } from '../lib/images_changed';
 import type { MeBody } from '../lib/jobs';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
 import { SAMPLE_IMAGES } from '../lib/sample_images';
@@ -250,7 +251,10 @@ export function GenerateScreen({
   const poll = useJobStatus(job?.id, {
     intervalMs: job?.batch ? batchPollIntervalMs : pollIntervalMs,
     timeoutMs: job?.batch ? BATCH_POLL_TIMEOUT_MS : pollTimeoutMs,
-    onFinish: () => void refreshPoints(),
+    onFinish: () => {
+      void refreshPoints();
+      notifyImagesChanged();
+    },
   });
 
   // Auto picks among the models that take batch jobs when the user saves points.
@@ -279,12 +283,12 @@ export function GenerateScreen({
   const chosenQuality = auto ? route?.quality : choices?.quality;
   if (!model || !choices || !routing || !chosenQuality) {
     return (
-      <main className="generate">
+      <div className="generate">
         <h1>Create an image</h1>
         <p className="form-error" role="alert">
           No image models are available right now. Please try again later.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -462,7 +466,7 @@ export function GenerateScreen({
   }
 
   return (
-    <main className="generate">
+    <div className="generate">
       <div className="generate-heading">
         <h1>Create an image</h1>
         <p className="points-display" aria-live="polite">
@@ -759,6 +763,6 @@ export function GenerateScreen({
           }
         />
       )}
-    </main>
+    </div>
   );
 }

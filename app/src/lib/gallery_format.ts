@@ -93,3 +93,28 @@ export function placeholderText(job: ActiveJobBody): string {
     job.type === 'edit' ? '' : ` · ${job.count} ${job.count === 1 ? 'image' : 'images'}`;
   return `${state}${images}`;
 }
+
+const RELATIVE_FORMAT = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+/** The units a relative time is given in, largest first, with their length in seconds. */
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 365 * 24 * 60 * 60],
+  ['month', 30 * 24 * 60 * 60],
+  ['week', 7 * 24 * 60 * 60],
+  ['day', 24 * 60 * 60],
+  ['hour', 60 * 60],
+  ['minute', 60],
+];
+
+/** How long ago `iso` was, for the sidebar history: `just now`, `5 minutes ago`, `yesterday`. */
+export function relativeTimeText(iso: string, now = Date.now()): string {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return '';
+  const seconds = Math.round((time - now) / 1000);
+  for (const [unit, length] of RELATIVE_UNITS) {
+    if (Math.abs(seconds) >= length) {
+      return RELATIVE_FORMAT.format(Math.round(seconds / length), unit);
+    }
+  }
+  return 'just now';
+}

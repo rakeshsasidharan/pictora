@@ -15,7 +15,8 @@ test.describe('onboarding', () => {
   test('the account page shows the user and the delete confirmation', async ({ page }) => {
     const { email } = requireCredentials(e2eConfig());
     await page.goto('/');
-    await page.getByRole('banner').getByRole('link', { name: email }).click();
+    await page.getByRole('button', { name: email }).click();
+    await page.getByRole('menuitem', { name: 'Account' }).click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.getByText('Email and password')).toBeVisible();
