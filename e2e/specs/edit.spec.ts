@@ -44,10 +44,12 @@ test.describe('edit', () => {
     await applyEdit(page, 'add stars', 3);
     const night = page.getByRole('button', { name: 'Version 2' });
     const stars = page.getByRole('button', { name: 'Version 3' });
-    await expect(night).toContainText('make it night');
+    // The button names the version and its parent; the instruction sits in its own box on the card (#125).
     await expect(night).toContainText('Edited from version 1');
-    await expect(stars).toContainText('add stars');
     await expect(stars).toContainText('Edited from version 2');
+    await expect(page.getByLabel('Prompt of version 2')).toHaveText('make it night');
+    await expect(page.getByLabel('Prompt of version 3')).toHaveText('add stars');
+    await expect(page.getByRole('button', { name: 'Copy the prompt of version 2' })).toBeVisible();
 
     // Version 1 is still there and downloads as the original PNG.
     await page.getByRole('button', { name: 'Version 1' }).click();
@@ -64,6 +66,26 @@ test.describe('edit', () => {
       'Edited from version 1',
     );
     await expect(versions.getByRole('listitem')).toHaveCount(4);
+
+    // The image's own page shows the versions as a row of thumbnails under the picture (#125).
+    const imageId = /\/edit\/([0-9A-Z]{26})/.exec(page.url())?.[1];
+    expect(imageId).toBeDefined();
+    await page.goto(`/gallery/${imageId}`);
+    const picker = page.getByRole('group', { name: 'Version picker' });
+    await expect(picker.getByRole('list', { name: 'Versions' }).getByRole('listitem')).toHaveCount(
+      4,
+    );
+    await expect(picker.getByRole('button', { name: 'Version 4' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(picker.getByRole('button', { name: 'Next version' })).toBeDisabled();
+    await picker.getByRole('button', { name: 'Previous version' }).click();
+    await expect(picker.getByRole('button', { name: 'Version 3' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByRole('heading', { name: 'Version 3' })).toBeVisible();
   });
 
   test("another user's image, or one that doesn't exist, is not found", async ({ page }) => {

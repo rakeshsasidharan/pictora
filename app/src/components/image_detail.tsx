@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { versionAltText, versionDescription } from '../lib/edit_options';
+import { versionAltText } from '../lib/edit_options';
 import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
 import { notifyImagesChanged } from '../lib/images_changed';
 import { downloadPath, editImagePath, rerunPath } from '../lib/site';
 import { ReportImage } from './report_image';
+import { VersionCarousel } from './version_carousel';
 
 export interface ImageDetailProps {
   imageId: string;
@@ -28,7 +29,8 @@ type Load =
 
 /**
  * The detail view of a gallery image (GAL-2, GAL-3): the selected version with its prompt, enhanced prompt, edit
- * instruction, model, style, size, seed and date; the version history; and the actions to download the
+ * instruction, model, style, size, seed and date; the version history, as a row of thumbnails under the
+ * picture (#125); and the actions to download the
  * original PNG, rerun, edit, report and delete (after a confirmation). Presigned URLs that expired are fetched
  * again when an image fails to load (GAL-4).
  */
@@ -166,6 +168,16 @@ export function ImageDetail({
             height={current.height}
             onError={refreshUrls}
           />
+          {versionCount > 1 && (
+            <div className="mt-3">
+              <VersionCarousel
+                versions={versions}
+                selected={current.version}
+                onSelect={setSelected}
+                onImageError={refreshUrls}
+              />
+            </div>
+          )}
           <div className="result-actions">
             <a
               className="button button-primary"
@@ -240,38 +252,6 @@ export function ImageDetail({
               </div>
             ))}
           </dl>
-
-          {versionCount > 1 && (
-            <>
-              <SubHeading>Versions</SubHeading>
-              <ol className="version-list" aria-label="Versions">
-                {versions.map((version) => (
-                  <li key={version.version}>
-                    <button
-                      type="button"
-                      className="version-item"
-                      aria-pressed={version.version === current.version}
-                      aria-label={`Version ${version.version}`}
-                      onClick={() => setSelected(version.version)}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-                      <img
-                        src={version.thumbUrl}
-                        alt=""
-                        width={56}
-                        height={56}
-                        onError={refreshUrls}
-                      />
-                      <span className="version-text">
-                        <span className="version-number">Version {version.version}</span>
-                        <span>{versionDescription(version)}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            </>
-          )}
         </div>
       </div>
     </article>

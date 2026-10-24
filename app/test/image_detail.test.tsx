@@ -118,6 +118,27 @@ describe('ImageDetail', () => {
     });
   });
 
+  it('shows the versions as a row under the picture, not in the details column (#125)', () => {
+    render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([ORIGINAL, NIGHT])}
+        modelNames={MODEL_NAMES}
+        onDeleted={vi.fn()}
+      />,
+    );
+    const picture = screen.getByRole('img', { name: 'Make it night' });
+    const picker = screen.getByRole('group', { name: 'Version picker' });
+    // The picker shares the viewer with the picture, and comes after it.
+    expect(picture.parentElement?.contains(picker)).toBe(true);
+    expect(picture.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const details = document.querySelector('.detail-fields')!;
+    expect(details.parentElement?.querySelector('[aria-label="Versions"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous version' }));
+    expect(screen.getByRole('img', { name: 'A lighthouse at dusk' })).toBeTruthy();
+  });
+
   it('offers download, rerun, edit and report for the selected version', () => {
     render(
       <ImageDetail
