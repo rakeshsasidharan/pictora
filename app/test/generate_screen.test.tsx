@@ -279,6 +279,13 @@ describe('GenerateScreen', () => {
       expect(container.querySelector('img[src^="/_next/image"]')).toBeNull();
     });
 
+    it('has no link to upload an image: the sidebar links to Edit', () => {
+      renderScreen();
+      expect(screen.queryByText('Upload an image to edit')).toBeNull();
+      expect(screen.queryByRole('link', { name: /upload/i })).toBeNull();
+      expect(document.querySelector('a[href="/edit"]')).toBeNull();
+    });
+
     it('limits the prompt to 2,000 characters and counts them', () => {
       renderScreen();
       expect(prompt().getAttribute('maxlength')).toBe(String(MAX_PROMPT_LENGTH));
