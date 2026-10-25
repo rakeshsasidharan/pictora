@@ -41,6 +41,12 @@ describe('Auth stack: user pool', () => {
     prod.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: 'pictora-rpillai-prod' });
   });
 
+  it('uses managed login version 2, so the sign-in pages take the Pictora branding style', () => {
+    for (const template of [dev, prod]) {
+      template.hasResourceProperties('AWS::Cognito::UserPoolDomain', { ManagedLoginVersion: 2 });
+    }
+  });
+
   it('has the admins group', () => {
     dev.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'admins' });
   });
