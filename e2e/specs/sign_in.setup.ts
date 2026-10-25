@@ -17,8 +17,13 @@ setup('sign in as the test user', async ({ page }) => {
   await page.waitForURL(
     (url) => url.origin === config.baseUrl && !url.pathname.startsWith('/auth/'),
   );
-  // Onboarding shows the email in the site header, every other signed-in page in the sidebar's user menu.
-  await expect(page.getByText(credentials.email).first()).toBeVisible();
+  // Onboarding links the email in the site header; every other signed-in page has it as the sidebar's user
+  // menu, a button that shows only an icon while the sidebar is collapsed, as it is in a new session.
+  await expect(
+    page
+      .getByRole('link', { name: credentials.email })
+      .or(page.getByRole('button', { name: credentials.email })),
+  ).toBeVisible();
 
   // A new test user, or one after the terms changed, lands on onboarding first (AUTH-4) and goes through it.
   if (new URL(page.url()).pathname === '/onboarding') {

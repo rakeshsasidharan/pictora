@@ -60,7 +60,7 @@ export interface AppShellProps {
   email: string;
   /** Shows the Admin link, for the `admins` group. */
   admin: boolean;
-  /** Whether the sidebar starts expanded on desktop: the state the user last left it in. */
+  /** Whether the sidebar starts expanded on desktop: the state the user last left it in, collapsed at first. */
   defaultOpen: boolean;
   /** Shown under each page, inside the inset. */
   footer?: ReactNode;
@@ -70,8 +70,8 @@ export interface AppShellProps {
 /**
  * The frame of every signed-in page: a sidebar with the Pictora icon and name, a New image button, links to each
  * page, the user's recent images, today's points and, last, the user menu; and a page header with the theme
- * switcher at its right edge. On desktop the sidebar collapses to icons (the trigger, or Ctrl/Cmd+B); on mobile
- * it opens as a sheet.
+ * switcher at its right edge. On desktop the sidebar is shadcn's floating variant, an inset rounded panel, and
+ * collapses to icons (the trigger, or Ctrl/Cmd+B); on mobile it opens as a sheet.
  */
 export function AppShell({ email, admin, defaultOpen, footer, children }: AppShellProps) {
   const pathname = usePathname();
@@ -138,7 +138,7 @@ function AppSidebar({
   const closeOnMobile = () => isMobile && setOpenMobile(false);
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar variant="floating" collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

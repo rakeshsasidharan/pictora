@@ -9,7 +9,8 @@ import { SIDEBAR_STATE_COOKIE } from '../../lib/site';
 
 /**
  * The signed-in pages (generate, edit, gallery, image detail, account and admin) inside the sidebar shell. The
- * sidebar opens as the user last left it, which shadcn's provider keeps in a cookie.
+ * sidebar starts collapsed to icons, and opens as the user last left it after that, which shadcn's provider keeps
+ * in a cookie.
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = sessionFromHeaders(await headers());
@@ -20,7 +21,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <AppShell
       email={session.email}
       admin={isAdmin(session)}
-      defaultOpen={sidebarState !== 'false'}
+      defaultOpen={sidebarState === 'true'}
       footer={<SiteFooter />}
     >
       {children}
