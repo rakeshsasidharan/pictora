@@ -8,7 +8,6 @@ import {
   SparklesIcon,
   type LucideIcon,
 } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
@@ -29,9 +28,9 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
 import { ADMIN_PATH } from '../lib/admin_access';
-import { APP_ICON_PATH, EDIT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
+import { EDIT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
+import { PictoraIcon } from './pictora_icon';
 import { SidebarAccount } from './sidebar_account';
 import { SidebarHistory } from './sidebar_history';
 import { ThemeSwitcher } from './theme_switcher';
@@ -199,19 +198,5 @@ function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  );
-}
-
-/** The Pictora app icon (#117), decorative: the name beside it labels the link. */
-function PictoraIcon({ className }: { className: string }) {
-  return (
-    <Image
-      src={APP_ICON_PATH}
-      alt=""
-      width={32}
-      height={32}
-      className={cn('shrink-0 rounded-md', className)}
-      unoptimized
-    />
   );
 }

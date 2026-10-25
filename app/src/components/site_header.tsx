@@ -3,6 +3,7 @@ import { ADMIN_PATH, isAdmin } from '../lib/admin_access';
 import { LOGIN_PATH, LOGOUT_PATH } from '../lib/cognito_oauth';
 import type { Session } from '../lib/session';
 import { ACCOUNT_PATH, GALLERY_PATH, GENERATE_PATH } from '../lib/site';
+import { PictoraIcon } from './pictora_icon';
 import { ThemeSwitcher } from './theme_switcher';
 
 /**
@@ -14,7 +15,11 @@ import { ThemeSwitcher } from './theme_switcher';
 export function SiteHeader({ session }: { session?: Session }) {
   return (
     <header className="site-header">
-      <Link href="/" className="site-name">
+      <Link
+        href="/"
+        className="flex items-center gap-2 text-base font-semibold text-foreground no-underline"
+      >
+        <PictoraIcon className="size-8" />
         Pictora
       </Link>
       <div className="flex items-center gap-3">
