@@ -35,7 +35,7 @@ test.describe('gallery', () => {
     await dialog.getByRole('link', { name: 'Rerun' }).click();
     await expect(page).toHaveURL(/\/generate\?rerun=/);
     await expect(page.getByRole('textbox', { name: 'Describe your image' })).toHaveValue(prompt);
-    await expect(page.getByRole('radio', { name: /^Draft/ })).toBeChecked();
+    await expect(page.getByRole('combobox', { name: 'Quality' })).toHaveText('Draft');
     await expect(page.getByText(/Uses seed \d+ from the original image/)).toBeVisible();
   });
 

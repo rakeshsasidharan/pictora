@@ -57,8 +57,11 @@ test.describe('generate', () => {
 
     const results = page.getByRole('list', { name: 'Results' });
     await expect(results.getByRole('listitem')).toHaveCount(2);
-    // Two draft mock images cost a point each.
-    await expect(points).toHaveText(new RegExp(`^${before - 2} of \\d+ points left today$`));
+    // Two draft mock images cost a point each. The other worker's jobs spend the same user's points, so the
+    // balance drops by at least the cost; the exact cost is the estimate checked before Generate.
+    await expect
+      .poll(async () => pointsLeft(await points.textContent()))
+      .toBeLessThanOrEqual(before - 2);
 
     const download = page.waitForEvent('download');
     await results.getByRole('link', { name: 'Download PNG' }).first().click();
