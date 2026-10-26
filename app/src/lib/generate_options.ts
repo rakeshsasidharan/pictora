@@ -117,10 +117,15 @@ export function pointsText(points: number): string {
   return `${points} ${points === 1 ? 'point' : 'points'}`;
 }
 
-/** The CSS `aspect-ratio` of an aspect, for its shape icon. */
-export function aspectRatioStyle(aspect: Aspect): string {
-  return aspect.replace(':', ' / ');
-}
+/** Tailwind classes that draw an aspect's shape icon: its ratio, with the longer side the same for every aspect. */
+export const ASPECT_SHAPES: Record<Aspect, string> = {
+  '1:1': 'w-4 aspect-square',
+  '4:5': 'h-4 aspect-[4/5]',
+  '3:2': 'w-4 aspect-[3/2]',
+  '2:3': 'h-4 aspect-[2/3]',
+  '16:9': 'w-4 aspect-video',
+  '9:16': 'h-4 aspect-[9/16]',
+};
 
 /** Most characters of the prompt used as an image's alt text. */
 export const MAX_ALT_TEXT_LENGTH = 150;

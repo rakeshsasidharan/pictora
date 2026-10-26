@@ -6,3 +6,11 @@ if (typeof window !== 'undefined' && typeof globalThis.ResizeObserver === 'undef
     disconnect() {}
   };
 }
+
+// jsdom has no scrolling or pointer capture; the generate thread scrolls new turns into view, and Radix's select
+// checks pointer capture when it opens.
+if (typeof window !== 'undefined') {
+  Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.releasePointerCapture ??= function releasePointerCapture() {};
+}
