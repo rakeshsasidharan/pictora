@@ -25,7 +25,7 @@ async function applyEdit(page: Page, instruction: string, expected: number): Pro
   await page.getByText('Draft', { exact: true }).click();
   await page.getByRole('textbox', { name: 'Describe your change' }).fill(instruction);
   await page.getByRole('button', { name: 'Apply edit' }).click();
-  const created = page.getByRole('button', { name: `Version ${expected}` });
+  const created = page.getByRole('button', { name: `Version ${expected}`, exact: true });
   await expect(created).toHaveAttribute('aria-pressed', 'true', { timeout: 60_000 });
 }
 
@@ -40,8 +40,8 @@ test.describe('edit', () => {
 
     await applyEdit(page, 'make it night', 2);
     await applyEdit(page, 'add stars', 3);
-    const night = page.getByRole('button', { name: 'Version 2' });
-    const stars = page.getByRole('button', { name: 'Version 3' });
+    const night = page.getByRole('button', { name: 'Version 2', exact: true });
+    const stars = page.getByRole('button', { name: 'Version 3', exact: true });
     // The button names the version and its parent; the instruction sits in its own box on the card (#125).
     await expect(night).toContainText('Edited from version 1');
     await expect(stars).toContainText('Edited from version 2');
@@ -50,7 +50,7 @@ test.describe('edit', () => {
     await expect(page.getByRole('button', { name: 'Copy the prompt of version 2' })).toBeVisible();
 
     // Version 1 is still there and downloads as the original PNG.
-    await page.getByRole('button', { name: 'Version 1' }).click();
+    await page.getByRole('button', { name: 'Version 1', exact: true }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('link', { name: 'Download PNG' }).click();
     const file = await download;
@@ -60,7 +60,7 @@ test.describe('edit', () => {
 
     // Editing version 1 after version 3 creates version 4 with parent 1.
     await applyEdit(page, 'add snow', 4);
-    await expect(page.getByRole('button', { name: 'Version 4' })).toContainText(
+    await expect(page.getByRole('button', { name: 'Version 4', exact: true })).toContainText(
       'Edited from version 1',
     );
     await expect(versions.getByRole('listitem')).toHaveCount(4);
@@ -73,13 +73,13 @@ test.describe('edit', () => {
     await expect(picker.getByRole('list', { name: 'Versions' }).getByRole('listitem')).toHaveCount(
       4,
     );
-    await expect(picker.getByRole('button', { name: 'Version 4' })).toHaveAttribute(
+    await expect(picker.getByRole('button', { name: 'Version 4', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
     await expect(picker.getByRole('button', { name: 'Next version' })).toBeDisabled();
     await picker.getByRole('button', { name: 'Previous version' }).click();
-    await expect(picker.getByRole('button', { name: 'Version 3' })).toHaveAttribute(
+    await expect(picker.getByRole('button', { name: 'Version 3', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
