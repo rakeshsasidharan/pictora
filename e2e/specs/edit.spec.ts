@@ -45,8 +45,10 @@ test.describe('edit', () => {
     // The button names the version and its parent; the instruction sits in its own box on the card (#125).
     await expect(night).toContainText('Edited from version 1');
     await expect(stars).toContainText('Edited from version 2');
-    await expect(page.getByLabel('Prompt of version 2')).toHaveText('make it night');
-    await expect(page.getByLabel('Prompt of version 3')).toHaveText('add stars');
+    await expect(page.getByLabel('Prompt of version 2', { exact: true })).toHaveText(
+      'make it night',
+    );
+    await expect(page.getByLabel('Prompt of version 3', { exact: true })).toHaveText('add stars');
     await expect(page.getByRole('button', { name: 'Copy the prompt of version 2' })).toBeVisible();
 
     // Version 1 is still there and downloads as the original PNG.
@@ -83,7 +85,7 @@ test.describe('edit', () => {
       'aria-pressed',
       'true',
     );
-    await expect(page.getByRole('heading', { name: 'Version 3' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Version 3', exact: true })).toBeVisible();
   });
 
   test("another user's image, or one that doesn't exist, is not found", async ({ page }) => {
