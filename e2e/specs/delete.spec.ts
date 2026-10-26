@@ -18,14 +18,17 @@ test.describe('delete', () => {
     const imageId = /\/edit\/([0-9A-Z]{26})/.exec((await edit.getAttribute('href')) ?? '')?.[1];
     expect(imageId).toBeDefined();
 
-    // Cancelling keeps the image.
+    // The confirmation opens over the detail modal. Cancelling keeps the image.
+    const confirm = page.getByRole('alertdialog', { name: 'Delete this image?' });
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog.getByRole('alertdialog')).toBeHidden();
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toBeHidden();
+    await expect(dialog).toBeVisible();
 
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect(dialog.getByRole('alertdialog')).toContainText("This can't be undone.");
-    await dialog.getByRole('button', { name: 'Delete image' }).click();
+    await expect(confirm).toContainText("This can't be undone.");
+    await confirm.getByRole('button', { name: 'Delete image' }).click();
+    await expect(confirm).toBeHidden();
     await expect(dialog).toBeHidden();
     await expect(tile).toHaveCount(0);
 

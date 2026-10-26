@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown_menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio_group';
@@ -169,6 +170,7 @@ const EXAMPLES: Record<string, { text: string; element: ReactNode }> = {
     ),
   },
   input: { text: '', element: <Input aria-label="Prompt" defaultValue="A fox" /> },
+  label: { text: 'Prompt', element: <Label htmlFor="prompt">Prompt</Label> },
   popover: {
     text: 'Advanced options',
     element: (

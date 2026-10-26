@@ -269,10 +269,32 @@ describe('Gallery', () => {
     expect(within(dialog).getByText('Mock (dev only)')).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete image' }));
+    // The confirmation opens over the modal.
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this image?' });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete image' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.queryByRole('img', { name: 'Image 2' })).toBeNull();
     expect(screen.getByRole('img', { name: 'Image 3' })).toBeTruthy();
+  });
+
+  it('closes the modal with its Close button and with Escape', async () => {
+    setWideScreen(true);
+    stubFetch({
+      '/api/images': [page({ images: [tile(2)], jobs: [] })],
+      [`/api/images/${idOf(2)}`]: [json({ error: 'nope' }, 500)],
+    });
+    render(<Gallery modelNames={MODEL_NAMES} />);
+    fireEvent.click(await screen.findByRole('img', { name: 'Image 2' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Image details' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(screen.getByRole('img', { name: 'Image 2' }));
+    fireEvent.keyDown(await screen.findByRole('dialog', { name: 'Image details' }), {
+      key: 'Escape',
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('follows the link to the detail page on narrow screens', async () => {

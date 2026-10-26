@@ -112,7 +112,8 @@ describe('UploadImage', () => {
     );
     progress(42);
     await screen.findByText('Uploading photo.jpg… 42%');
-    expect(screen.getByRole<HTMLProgressElement>('progressbar').value).toBe(42);
+    const bar = screen.getByRole('progressbar', { name: 'Uploading photo.jpg… 42%' });
+    expect(bar.getAttribute('aria-valuenow')).toBe('42');
 
     finishSend();
     await screen.findByText('Checking photo.jpg…');
@@ -168,17 +169,25 @@ describe('UploadImage', () => {
     expect(client.complete).not.toHaveBeenCalled();
   });
 
+  it('stops showing the drop target when the file is dragged away', () => {
+    render(<UploadImage client={fakeClient()} />);
+    const zone = screen.getByTestId('drop-zone');
+    fireEvent.dragOver(zone, { dataTransfer: { files: [] } });
+    fireEvent.dragLeave(zone);
+    expect(zone.hasAttribute('data-dragging')).toBe(false);
+  });
+
   it('uploads a dropped file', async () => {
     const client = fakeClient();
     render(<UploadImage client={client} />);
     const zone = screen.getByTestId('drop-zone');
     fireEvent.dragOver(zone, { dataTransfer: { files: [] } });
-    expect(zone.className).toContain('drop-zone-active');
+    expect(zone.getAttribute('data-dragging')).toBe('true');
     const dropped = file('dropped.webp', 'image/webp');
     fireEvent.drop(zone, { dataTransfer: { files: [dropped] } });
     await screen.findByAltText('Your uploaded image');
     expect(client.start).toHaveBeenCalledWith(dropped);
-    expect(zone.className).not.toContain('drop-zone-active');
+    expect(zone.hasAttribute('data-dragging')).toBe(false);
   });
 
   it('checks a dropped file the same way', () => {

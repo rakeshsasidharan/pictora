@@ -15,9 +15,13 @@ export default async function EditPage() {
   if (!session) redirect('/');
   await requireOnboarding(session);
   return (
-    <div className="edit-start">
-      <h1>Edit an image</h1>
-      <p>Upload a photo or image, then describe the change you want.</p>
+    <div data-slot="edit-start" className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold">Edit an image</h1>
+        <p className="text-muted-foreground">
+          Upload a photo or image, then describe the change you want.
+        </p>
+      </div>
       <UploadImage />
     </div>
   );

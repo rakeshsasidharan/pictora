@@ -696,8 +696,10 @@ describe('GenerateScreen', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'View image 2 full size' }));
       const dialog = screen.getByRole('dialog', { name: 'Full-size image' });
       fireEvent.click(within(dialog).getByRole('button', { name: 'Report' }));
-      fireEvent.click(within(dialog).getByRole('radio', { name: 'Hate or harassment' }));
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send report' }));
+      // The report dialog opens over the full-size view.
+      const report = screen.getByRole('dialog', { name: 'Report this image' });
+      fireEvent.click(within(report).getByRole('radio', { name: 'Hate or harassment' }));
+      fireEvent.click(within(report).getByRole('button', { name: 'Send report' }));
       await waitFor(() =>
         expect(fetchMock).toHaveBeenCalledWith('/api/reports', {
           method: 'POST',

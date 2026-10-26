@@ -157,17 +157,20 @@ export interface QualityOption {
 
 /** Draft, Standard and High, each with its points per image or the reason it is unavailable (GEN-6, LIM-2). */
 export function QualityPicker({
+  id,
   value,
   option,
   onChange,
 }: {
+  /** Set where a visible label names the select, as on the edit panel. */
+  id?: string;
   value: Quality;
   option: (quality: Quality) => QualityOption;
   onChange: (quality: Quality) => void;
 }) {
   return (
     <Select value={value} onValueChange={(next) => onChange(next as Quality)}>
-      <SelectTrigger size="sm" aria-label="Quality">
+      <SelectTrigger id={id} size="sm" aria-label={id ? undefined : 'Quality'}>
         <SelectValue>{QUALITY_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>

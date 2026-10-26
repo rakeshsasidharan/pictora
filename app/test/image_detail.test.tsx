@@ -62,7 +62,7 @@ function json(body: unknown, status = 200): Response {
 
 /** The detail's settings, as label → value. */
 function fields(): Record<string, string> {
-  const list = document.querySelector('.detail-fields')!;
+  const list = document.querySelector('[data-slot="detail-fields"]')!;
   return Object.fromEntries(
     [...list.querySelectorAll('div')].map((row) => [
       row.querySelector('dt')!.textContent,
@@ -132,7 +132,7 @@ describe('ImageDetail', () => {
     // The picker shares the viewer with the picture, and comes after it.
     expect(picture.parentElement?.contains(picker)).toBe(true);
     expect(picture.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const details = document.querySelector('.detail-fields')!;
+    const details = document.querySelector('[data-slot="detail-fields"]')!;
     expect(details.parentElement?.querySelector('[aria-label="Versions"]')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }));
@@ -207,12 +207,18 @@ describe('ImageDetail', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    const confirm = screen.getByRole('alertdialog');
-    expect(confirm.textContent).toContain(
-      "Delete this image and all 2 versions? This can't be undone.",
+    const confirm = screen.getByRole('alertdialog', {
+      name: 'Delete this image and all 2 versions?',
+    });
+    expect(confirm.getAttribute('aria-describedby')).toBeTruthy();
+    expect(document.getElementById(confirm.getAttribute('aria-describedby')!)?.textContent).toBe(
+      "This can't be undone.",
     );
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // Cancel takes the focus, so Enter doesn't delete by mistake.
+    const cancel = within(confirm).getByRole('button', { name: 'Cancel' });
+    expect(document.activeElement).toBe(cancel);
+    fireEvent.click(cancel);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(fetchMock).not.toHaveBeenCalled();
     expect(onDeleted).not.toHaveBeenCalled();
   });
@@ -232,10 +238,9 @@ describe('ImageDetail', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(screen.getByRole('alertdialog').textContent).toContain(
-      "Delete this image? This can't be undone.",
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Delete image' }));
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this image?' });
+    expect(confirm.textContent).toContain("This can't be undone.");
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete image' }));
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(IMAGE_ID));
     expect(fetchMock).toHaveBeenCalledWith(`/api/images/${IMAGE_ID}`, { method: 'DELETE' });
     // The sidebar history drops it.

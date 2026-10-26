@@ -17,8 +17,8 @@ export default async function GalleryPage() {
   await requireOnboarding(session);
 
   return (
-    <div className="gallery">
-      <h1>Your images</h1>
+    <div data-slot="gallery-page" className="flex flex-col gap-6">
+      <h1 className="text-xl font-semibold">Your images</h1>
       <Gallery modelNames={await modelNames()} />
     </div>
   );

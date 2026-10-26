@@ -1,16 +1,15 @@
 'use client';
 
 import { TERMINAL_JOB_STATUSES } from '@pictora/core';
+import { ImagesIcon, Loader2Icon } from 'lucide-react';
 import Link from 'next/link';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { placeholderText, urlsMayHaveExpired } from '../lib/gallery_format';
 import { BATCH_POLL_INTERVAL_MS, POLL_INTERVAL_MS, altTextFor } from '../lib/generate_options';
 import type { ActiveJobBody, GalleryImageBody, GalleryPageBody } from '../lib/images';
@@ -20,6 +19,12 @@ import { ImageDetail } from './image_detail';
 
 /** Screens at least this wide open the detail view as a modal; narrower ones go to its page. */
 export const DETAIL_MODAL_QUERY = '(min-width: 720px)';
+
+/** The grid the tiles, placeholders and loading skeletons share: two columns at 360 px, up to five. */
+const GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+
+/** How many skeleton tiles show while the first page loads. */
+const SKELETON_TILES = 8;
 
 export interface GalleryProps {
   /** Display names of every model in the registry, for the detail view. */
@@ -203,104 +208,113 @@ export function Gallery({
 
   if (status === 'loading') {
     return (
-      <p className="gallery-status" role="status">
-        Loading your images…
-      </p>
+      <div data-slot="gallery-loading" role="status" className={GRID_CLASS}>
+        <span className="sr-only">Loading your images…</span>
+        {Array.from({ length: SKELETON_TILES }, (_, index) => (
+          <Skeleton key={index} aria-hidden="true" className="aspect-square w-full rounded-xl" />
+        ))}
+      </div>
     );
   }
   if (status === 'error') {
     return (
-      <div className="form-error" role="alert">
-        <p>We couldn&apos;t load your gallery.</p>
-        <button type="button" className="button" onClick={() => setStatus('loading')}>
-          Try again
-        </button>
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+          <p>We couldn&apos;t load your gallery.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setStatus('loading')}>
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
   if (tiles.length === 0 && jobs.length === 0) {
     return (
-      <div className="gallery-empty">
-        <p>Your gallery is empty. Images you create or upload appear here.</p>
-        <Link className="button button-primary" href={GENERATE_PATH}>
-          Create your first image
-        </Link>
-      </div>
+      <Card data-slot="gallery-empty" className="items-center px-6 py-12 text-center">
+        <ImagesIcon className="size-10 text-muted-foreground" aria-hidden="true" />
+        <p className="max-w-sm text-muted-foreground">
+          Your gallery is empty. Images you create or upload appear here.
+        </p>
+        <Button asChild>
+          <Link href={GENERATE_PATH}>Create your first image</Link>
+        </Button>
+      </Card>
     );
   }
 
   return (
     <>
-      <ul className="gallery-grid" aria-label="Your images">
+      <ul className={GRID_CLASS} aria-label="Your images">
         {jobs.map((job) => (
-          <li key={job.jobId} className="gallery-placeholder">
-            <span className="gallery-placeholder-status" role="status">
-              {placeholderText(job)}
-            </span>
-            <span className="gallery-placeholder-text">{job.text}</span>
+          <li key={job.jobId}>
+            <Card className="aspect-square justify-center gap-2 border-dashed bg-muted/40 px-3 py-3 text-center">
+              <span
+                className="flex items-center justify-center gap-1.5 text-sm font-medium"
+                role="status"
+              >
+                <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+                {placeholderText(job)}
+              </span>
+              <span className="line-clamp-3 text-xs break-words text-muted-foreground">
+                {job.text}
+              </span>
+            </Card>
           </li>
         ))}
         {tiles.map((tile, index) => (
           <li key={tile.imageId}>
             <Link
               href={galleryImagePath(tile.imageId)}
-              className="gallery-tile"
+              className="group block rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               onClick={(event) => openTile(event, tile.imageId)}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-              <img
-                src={tile.thumbUrl}
-                alt={altTextFor(tile.title)}
-                loading="lazy"
-                onError={() => void refreshTile(index)}
-              />
-              {tile.versionCount > 1 && (
-                <span className="gallery-badge">{tile.versionCount} versions</span>
-              )}
+              <Card className="relative aspect-square gap-0 overflow-hidden py-0 transition-shadow group-hover:shadow-md">
+                {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
+                <img
+                  src={tile.thumbUrl}
+                  alt={altTextFor(tile.title)}
+                  loading="lazy"
+                  onError={() => void refreshTile(index)}
+                  className="size-full bg-muted object-cover transition-transform group-hover:scale-105"
+                />
+                {tile.versionCount > 1 && (
+                  <Badge variant="secondary" className="absolute right-2 bottom-2 shadow-sm">
+                    {tile.versionCount} versions
+                  </Badge>
+                )}
+              </Card>
             </Link>
           </li>
         ))}
       </ul>
-      <div ref={sentinel} className="gallery-more">
+      <div ref={sentinel} className="mt-6 flex flex-col items-center gap-2">
         {loadingMore && (
-          <p className="gallery-status" role="status">
+          <p className="text-sm text-muted-foreground" role="status">
             Loading more images…
           </p>
         )}
         {moreError && (
-          <p className="form-error" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             We couldn&apos;t load more images.
           </p>
         )}
         {nextCursor && !loadingMore && (
-          <button type="button" className="button" onClick={() => void loadMore()}>
+          <Button type="button" variant="outline" onClick={() => void loadMore()}>
             {moreError ? 'Try again' : 'Load more'}
-          </button>
+          </Button>
         )}
       </div>
       {open && (
-        <DetailModal onClose={() => setOpen(undefined)}>
-          <ImageDetail imageId={open} modelNames={modelNames} onDeleted={deleted} />
-        </DetailModal>
+        <Dialog open onOpenChange={(next) => !next && setOpen(undefined)}>
+          <DialogContent
+            aria-describedby={undefined}
+            className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-5xl"
+          >
+            <DialogTitle className="sr-only">Image details</DialogTitle>
+            <ImageDetail imageId={open} modelNames={modelNames} onDeleted={deleted} />
+          </DialogContent>
+        </Dialog>
       )}
     </>
-  );
-}
-
-function DetailModal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') onClose();
-  }
-
-  return (
-    <div className="detail-modal-backdrop" onKeyDown={onKeyDown}>
-      <div className="detail-modal" role="dialog" aria-modal="true" aria-label="Image details">
-        {/* Focused on open, so Escape works straight away. */}
-        <button type="button" className="detail-modal-close" onClick={onClose} autoFocus>
-          Close
-        </button>
-        {children}
-      </div>
-    </div>
   );
 }

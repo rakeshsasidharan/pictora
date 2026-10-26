@@ -1,8 +1,29 @@
 'use client';
 
-import { MAX_PROMPT_LENGTH, QUALITIES, imageKey, type Quality } from '@pictora/core';
+import { MAX_PROMPT_LENGTH, imageKey, type Quality } from '@pictora/core';
+import {
+  DownloadIcon,
+  ImagesIcon,
+  Loader2Icon,
+  UploadIcon,
+  WandSparklesIcon,
+  XIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useRef, useState, type FormEvent } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
   defaultEditModel,
   editModels,
@@ -12,7 +33,6 @@ import {
 } from '../lib/edit_options';
 import {
   DEFAULT_QUALITY,
-  QUALITY_LABELS,
   STATUS_LABELS,
   costPerImage,
   pointsText,
@@ -28,6 +48,7 @@ import { browserUploadClient, UploadError, type UploadClient } from '../lib/uplo
 import { UPLOAD_ACCEPT, uploadFileError } from '../lib/upload_files';
 import { useJobStatus } from '../lib/use_job_status';
 import { GalleryPicker } from './gallery_picker';
+import { QualityPicker } from './generate_controls';
 import type { PointsLeft } from './generate_screen';
 import { ReportImage } from './report_image';
 import { VersionCard } from './version_card';
@@ -49,6 +70,8 @@ export interface EditPanelProps {
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
 }
+
+const LINK_CLASS = 'font-medium text-foreground underline underline-offset-4';
 
 /** A reference image added to the next edit (EDIT-5). */
 interface Reference {
@@ -148,9 +171,9 @@ export function EditPanel({
   const current = versions.find((version) => version.version === selected) ?? versions.at(-1);
   if (!model || !current) {
     return (
-      <div className="edit-panel">
-        <h1>Edit image</h1>
-        <p className="form-error" role="alert">
+      <div data-slot="edit-panel" className="flex flex-col gap-4">
+        <h1 className="text-xl font-semibold">Edit image</h1>
+        <p className="text-sm text-destructive" role="alert">
           No image models can edit right now. Please try again later.
         </p>
       </div>
@@ -269,35 +292,47 @@ export function EditPanel({
   const refunded = job ? job.pointsReserved - (poll.job?.pointsCharged ?? 0) : 0;
 
   return (
-    <div className="edit-panel">
-      <div className="generate-heading">
-        <h1>Edit image</h1>
-        <p className="points-display" aria-live="polite">
-          {points.left} of {points.limit} points left today
-        </p>
-        <Link href={GENERATE_PATH}>Create a new image</Link>
+    <div data-slot="edit-panel" className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h1 className="text-xl font-semibold">Edit image</h1>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+          <p className="text-muted-foreground" aria-live="polite">
+            {points.left} of {points.limit} points left today
+          </p>
+          <Link href={GENERATE_PATH} className={LINK_CLASS}>
+            Create a new image
+          </Link>
+        </div>
       </div>
 
-      <div className="edit-layout">
-        <section className="edit-viewer" aria-labelledby="viewer-heading">
-          <h2 id="viewer-heading">Version {current.version}</h2>
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem]">
+        <section className="flex min-w-0 flex-col gap-3" aria-labelledby="viewer-heading">
+          <h2 id="viewer-heading" className="text-lg font-semibold">
+            Version {current.version}
+          </h2>
           {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
           <img
             src={current.url}
             alt={versionAltText(current)}
             width={current.width}
             height={current.height}
+            className="h-auto max-h-[70svh] w-full rounded-lg border bg-muted object-contain"
           />
-          <div className="result-actions">
-            <a className="button" href={downloadPath(imageId, current.version)} download>
-              Download PNG
-            </a>
+          <div role="group" aria-label="Image actions" className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <a href={downloadPath(imageId, current.version)} download>
+                <DownloadIcon aria-hidden="true" />
+                Download PNG
+              </a>
+            </Button>
             <ReportImage imageId={imageId} version={current.version} />
           </div>
         </section>
 
-        <section className="edit-history" aria-labelledby="versions-heading">
-          <h2 id="versions-heading">Versions</h2>
+        <section className="flex min-w-0 flex-col gap-3" aria-labelledby="versions-heading">
+          <h2 id="versions-heading" className="text-lg font-semibold">
+            Versions
+          </h2>
           {/* Capped near the viewer's height, so many versions scroll here instead of down the page. */}
           <ol
             data-slot="version-list"
@@ -318,7 +353,10 @@ export function EditPanel({
                 role="status"
                 className="flex flex-col rounded-lg border border-dashed border-primary p-2 text-sm"
               >
-                <span className="font-semibold">{STATUS_LABELS[status ?? 'queued']}…</span>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+                  {STATUS_LABELS[status ?? 'queued']}…
+                </span>
                 <span className="max-h-20 overflow-y-auto break-words whitespace-pre-wrap">
                   {job.instruction}
                 </span>
@@ -329,192 +367,209 @@ export function EditPanel({
             )}
           </ol>
           {poll.timedOut && (
-            <p className="job-note">
+            <p className="text-sm text-muted-foreground">
               This is taking longer than usual. Refresh the page later to see the new version.
             </p>
           )}
           {poll.lost && (
-            <p className="form-error" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               We can&apos;t follow this edit any more. Refresh the page to check on it.
             </p>
           )}
           {jobFailed && (
-            <div className="job-failure" role="alert">
-              <p>{poll.job?.error ?? 'Something went wrong while editing your image.'}</p>
-              {refunded > 0 && <p>{pointsText(refunded)} returned to your allowance.</p>}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>
+                <p>{poll.job?.error ?? 'Something went wrong while editing your image.'}</p>
+                {refunded > 0 && <p>{pointsText(refunded)} returned to your allowance.</p>}
+              </AlertDescription>
+            </Alert>
           )}
           {refreshError && (
-            <p className="form-error" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {refreshError}
             </p>
           )}
         </section>
       </div>
 
-      <form className="generate-form edit-form" onSubmit={(event) => void submit(event)} noValidate>
-        <div className="field">
-          <label htmlFor="instruction">Describe your change</label>
-          <textarea
-            id="instruction"
-            rows={3}
-            maxLength={MAX_PROMPT_LENGTH}
-            value={instruction}
-            placeholder="For example: make it night, add stars"
-            aria-describedby="instruction-hint"
-            onChange={(event) => setInstruction(event.target.value)}
-          />
-          <span id="instruction-hint" className="field-hint">
-            Edits version {current.version}. Earlier versions are always kept.
-          </span>
-        </div>
-
-        <div className="field">
-          <label htmlFor="edit-model">Model</label>
-          <select
-            id="edit-model"
-            value={model.id}
-            onChange={(event) => {
-              const next = available.find((candidate) => candidate.id === event.target.value);
-              if (next) chooseModel(next);
-            }}
-          >
-            {available.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.displayName}
-              </option>
-            ))}
-          </select>
-          <span className="field-hint">{model.strengths.join(', ')}</span>
-        </div>
-
-        <fieldset className="quality-picker">
-          <legend>Quality</legend>
-          {premiumPausedUntil && (
-            <p className="form-notice" role="status">
-              {premiumPausedText(premiumPausedUntil)}
-            </p>
-          )}
-          {QUALITIES.map((option) => {
-            const perImage = costPerImage(model, option);
-            const paused = qualityPaused(model, option);
-            return (
-              <label key={option} className="option-card">
-                <input
-                  type="radio"
-                  name="quality"
-                  value={option}
-                  checked={quality === option}
-                  disabled={perImage === undefined || paused}
-                  onChange={() => setQuality(option)}
-                />
-                <span>{QUALITY_LABELS[option]}</span>
-                <span className="field-hint">
-                  {perImage === undefined
-                    ? `Not offered by ${model.displayName}`
-                    : paused
-                      ? 'Paused this month'
-                      : pointsText(perImage)}
-                </span>
-              </label>
-            );
-          })}
-        </fieldset>
-
-        {allowedReferences > 0 && (
-          <fieldset className="reference-picker">
-            <legend>Reference images (optional)</legend>
-            <p className="field-hint">
-              Up to {allowedReferences} images for style or subject. Uploads are checked against our
-              content policy.
-            </p>
-            {sentReferences.length > 0 && (
-              <ul className="reference-list" aria-label="Reference images">
-                {sentReferences.map((reference, index) => (
-                  <li key={reference.key}>
-                    <span>{reference.name}</span>
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-label={`Remove ${reference.name}`}
-                      onClick={() => setReferences((list) => list.filter((_, at) => at !== index))}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="result-actions">
-              <button
-                type="button"
-                className="button"
-                disabled={busy || sentReferences.length >= allowedReferences}
-                onClick={() => referenceInput.current?.click()}
-              >
-                Upload reference
-              </button>
-              <button
-                type="button"
-                className="button"
-                disabled={sentReferences.length >= allowedReferences}
-                onClick={() => setPicking(true)}
-              >
-                Choose from gallery
-              </button>
-            </div>
-            <input
-              ref={referenceInput}
-              type="file"
-              accept={UPLOAD_ACCEPT}
-              className="visually-hidden"
-              aria-label="Choose a reference image to upload"
-              tabIndex={-1}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                // Cleared, so picking the same file again still uploads it.
-                event.target.value = '';
-                if (file) void addReference(file);
-              }}
+      <Card className="gap-0 py-0">
+        <form
+          className="flex flex-col gap-5 p-4"
+          onSubmit={(event) => void submit(event)}
+          noValidate
+        >
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="instruction">Describe your change</Label>
+            <Textarea
+              id="instruction"
+              rows={3}
+              maxLength={MAX_PROMPT_LENGTH}
+              value={instruction}
+              placeholder="For example: make it night, add stars"
+              aria-describedby="instruction-hint"
+              onChange={(event) => setInstruction(event.target.value)}
             />
-            {referenceStatus && (
-              <p className="upload-progress" role="status">
-                {referenceStatus}
-              </p>
-            )}
-            {referenceError && (
-              <p className="form-error" role="alert">
-                {referenceError}
-              </p>
-            )}
-          </fieldset>
-        )}
+            <p id="instruction-hint" className="text-xs text-muted-foreground">
+              Edits version {current.version}. Earlier versions are always kept.
+            </p>
+          </div>
 
-        <div className="generate-submit">
-          <p id="edit-cost" className="cost-display">
-            Uses {cost} of your {points.left} points today
-          </p>
-          {!affordable && (
-            <p className="form-error">
-              You don&apos;t have enough points left today. Pick a lower quality, or come back after
-              00:00 UTC.
-            </p>
+          <div className="flex flex-wrap gap-x-6 gap-y-4">
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor="edit-model">Model</Label>
+              <Select
+                value={model.id}
+                onValueChange={(value) => {
+                  const next = available.find((candidate) => candidate.id === value);
+                  if (next) chooseModel(next);
+                }}
+              >
+                <SelectTrigger id="edit-model" size="sm" className="w-64 max-w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((candidate) => (
+                    <SelectItem key={candidate.id} value={candidate.id}>
+                      {candidate.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{model.strengths.join(', ')}</p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-quality">Quality</Label>
+              <QualityPicker
+                id="edit-quality"
+                value={quality}
+                onChange={setQuality}
+                option={(option) => {
+                  const perImage = costPerImage(model, option);
+                  const paused = qualityPaused(model, option);
+                  return {
+                    disabled: perImage === undefined || paused,
+                    hint:
+                      perImage === undefined
+                        ? `Not offered by ${model.displayName}`
+                        : paused
+                          ? 'Paused this month'
+                          : pointsText(perImage),
+                  };
+                }}
+              />
+              {premiumPausedUntil && (
+                <p className="max-w-sm text-xs text-muted-foreground" role="status">
+                  {premiumPausedText(premiumPausedUntil)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {allowedReferences > 0 && (
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-2 text-sm font-medium">Reference images (optional)</legend>
+              <p className="text-xs text-muted-foreground">
+                Up to {allowedReferences} images for style or subject. Uploads are checked against
+                our content policy.
+              </p>
+              {sentReferences.length > 0 && (
+                <ul className="flex flex-wrap gap-2" aria-label="Reference images">
+                  {sentReferences.map((reference, index) => (
+                    <li key={reference.key}>
+                      <Badge variant="secondary" className="h-7 gap-1 pr-0.5 text-sm font-normal">
+                        <span className="max-w-48 truncate">{reference.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={`Remove ${reference.name}`}
+                          onClick={() =>
+                            setReferences((list) => list.filter((_, at) => at !== index))
+                          }
+                        >
+                          <XIcon aria-hidden="true" />
+                        </Button>
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || sentReferences.length >= allowedReferences}
+                  onClick={() => referenceInput.current?.click()}
+                >
+                  <UploadIcon aria-hidden="true" />
+                  Upload reference
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={sentReferences.length >= allowedReferences}
+                  onClick={() => setPicking(true)}
+                >
+                  <ImagesIcon aria-hidden="true" />
+                  Choose from gallery
+                </Button>
+              </div>
+              <input
+                ref={referenceInput}
+                type="file"
+                accept={UPLOAD_ACCEPT}
+                className="sr-only"
+                aria-label="Choose a reference image to upload"
+                tabIndex={-1}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // Cleared, so picking the same file again still uploads it.
+                  event.target.value = '';
+                  if (file) void addReference(file);
+                }}
+              />
+              {referenceStatus && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {referenceStatus}
+                </p>
+              )}
+              {referenceError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {referenceError}
+                </p>
+              )}
+            </fieldset>
           )}
-          {formError && (
-            <p className="form-error" role="alert">
-              {formError}
+
+          <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            <p id="edit-cost" className="text-sm text-muted-foreground sm:mr-auto">
+              Uses {cost} of your {points.left} points today
             </p>
-          )}
-          <button
-            type="submit"
-            className="button button-primary"
-            disabled={!affordable || busy}
-            aria-describedby="edit-cost"
-          >
-            {submitting ? 'Starting…' : jobActive ? 'Editing…' : 'Apply edit'}
-          </button>
-        </div>
-      </form>
+            {!affordable && (
+              <p className="text-sm text-destructive">
+                You don&apos;t have enough points left today. Pick a lower quality, or come back
+                after 00:00 UTC.
+              </p>
+            )}
+            {formError && (
+              <p className="text-sm text-destructive" role="alert">
+                {formError}
+              </p>
+            )}
+            <Button type="submit" disabled={!affordable || busy} aria-describedby="edit-cost">
+              {jobActive || submitting ? (
+                <Loader2Icon className="animate-spin" aria-hidden="true" />
+              ) : (
+                <WandSparklesIcon aria-hidden="true" />
+              )}
+              {submitting ? 'Starting…' : jobActive ? 'Editing…' : 'Apply edit'}
+            </Button>
+          </div>
+        </form>
+      </Card>
       {picking && <GalleryPicker onPick={pickReference} onClose={() => setPicking(false)} />}
     </div>
   );

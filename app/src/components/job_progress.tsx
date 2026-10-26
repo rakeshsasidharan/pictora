@@ -4,10 +4,10 @@ import { DownloadIcon, Loader2Icon, PencilIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { reportFirstImage } from '../lib/first_image';
@@ -42,6 +42,17 @@ function stepIndex(steps: readonly string[], status: string): number {
   return steps.indexOf(shown);
 }
 
+/** A step's badge: done steps are muted, the current one solid, a failed last step red, later ones outlined. */
+function stepVariant(
+  index: number,
+  current: number,
+  failedStep: boolean,
+): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (index < current) return 'secondary';
+  if (index > current) return 'outline';
+  return failedStep ? 'destructive' : 'default';
+}
+
 /**
  * A submitted job: its status as queued, generating and done (GEN-8), then the results with a full-size view,
  * PNG download (GEN-7) and a Report action, or the reason it failed and the refund (GEN-10).
@@ -74,18 +85,8 @@ export function JobProgress({
             const last = index === steps.length - 1;
             const label = last && failed ? STATUS_LABELS[status] : STATUS_LABELS[step];
             return (
-              <li
-                key={step}
-                aria-current={index === current ? 'step' : undefined}
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-xs font-medium',
-                  index < current && 'bg-primary/10 text-primary',
-                  index === current && 'bg-primary text-primary-foreground',
-                  index === current && last && failed && 'bg-destructive text-white',
-                  index > current && 'bg-muted text-muted-foreground',
-                )}
-              >
-                {label}
+              <li key={step} aria-current={index === current ? 'step' : undefined}>
+                <Badge variant={stepVariant(index, current, last && failed)}>{label}</Badge>
               </li>
             );
           })}

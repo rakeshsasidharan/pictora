@@ -1,7 +1,22 @@
 'use client';
 
+import { DownloadIcon, PencilIcon, RotateCcwIcon, Trash2Icon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert_dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { versionAltText } from '../lib/edit_options';
 import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
@@ -30,9 +45,9 @@ type Load =
 /**
  * The detail view of a gallery image (GAL-2, GAL-3): the selected version with its prompt, enhanced prompt, edit
  * instruction, model, style, size, seed and date; the version history, as a row of thumbnails under the
- * picture (#125); and the actions to download the
- * original PNG, rerun, edit, report and delete (after a confirmation). Presigned URLs that expired are fetched
- * again when an image fails to load (GAL-4).
+ * picture (#125); and a toolbar to download the original PNG, rerun, edit, report and delete (after a
+ * confirmation in an alert dialog). Presigned URLs that expired are fetched again when an image fails to load
+ * (GAL-4).
  */
 export function ImageDetail({
   imageId,
@@ -85,26 +100,31 @@ export function ImageDetail({
   const SubHeading = headingLevel === 1 ? 'h2' : 'h3';
   if (load.state === 'loading') {
     return (
-      <p className="gallery-status" role="status">
-        Loading image…
-      </p>
+      <div data-slot="image-detail-loading" role="status" className="flex flex-col gap-4">
+        <span className="sr-only">Loading image…</span>
+        <Skeleton aria-hidden="true" className="h-7 w-2/3" />
+        <Skeleton aria-hidden="true" className="aspect-square w-full max-w-xl rounded-lg" />
+      </div>
     );
   }
   if (load.state === 'error') {
     return (
-      <div className="form-error" role="alert">
-        <p>We couldn&apos;t load this image.</p>
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            setLoad({ state: 'loading' });
-            fetchAgain();
-          }}
-        >
-          Try again
-        </button>
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+          <p>We couldn&apos;t load this image.</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoad({ state: 'loading' });
+              fetchAgain();
+            }}
+          >
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
 
@@ -115,7 +135,7 @@ export function ImageDetail({
     versions.at(-1);
   if (!current) {
     return (
-      <p className="form-error" role="alert">
+      <p className="text-sm text-destructive" role="alert">
         This image has no versions to show.
       </p>
     );
@@ -141,6 +161,7 @@ export function ImageDetail({
         return;
       }
       notifyImagesChanged();
+      setConfirming(false);
       onDeleted(imageId);
     } catch {
       setDeleteError('Something went wrong. Check your connection and try again.');
@@ -154,12 +175,16 @@ export function ImageDetail({
   const versionCount = versions.length;
 
   return (
-    <article className="image-detail" aria-labelledby="image-detail-heading">
-      <Heading id="image-detail-heading" className="image-detail-title">
+    <article
+      data-slot="image-detail"
+      className="flex flex-col gap-4"
+      aria-labelledby="image-detail-heading"
+    >
+      <Heading id="image-detail-heading" className="pr-8 text-xl font-semibold break-words">
         {detail.image.title}
       </Heading>
-      <div className="image-detail-layout">
-        <div className="image-detail-viewer">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="flex min-w-0 flex-col gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
           <img
             src={current.url}
@@ -167,92 +192,97 @@ export function ImageDetail({
             width={current.width}
             height={current.height}
             onError={refreshUrls}
+            className="h-auto max-h-[70svh] w-full rounded-lg border bg-muted object-contain"
           />
           {versionCount > 1 && (
-            <div className="mt-3">
-              <VersionCarousel
-                versions={versions}
-                selected={current.version}
-                onSelect={setSelected}
-                onImageError={refreshUrls}
-              />
-            </div>
+            <VersionCarousel
+              versions={versions}
+              selected={current.version}
+              onSelect={setSelected}
+              onImageError={refreshUrls}
+            />
           )}
-          <div className="result-actions">
-            <a
-              className="button button-primary"
-              href={downloadPath(imageId, current.version)}
-              download
-            >
-              Download PNG
-            </a>
+          <div role="group" aria-label="Image actions" className="flex flex-wrap gap-2">
+            <Button asChild>
+              <a href={downloadPath(imageId, current.version)} download>
+                <DownloadIcon aria-hidden="true" />
+                Download PNG
+              </a>
+            </Button>
             {canRerun && (
-              <Link className="button" href={rerunPath(imageId)}>
-                Rerun
-              </Link>
+              <Button asChild variant="outline">
+                <Link href={rerunPath(imageId)}>
+                  <RotateCcwIcon aria-hidden="true" />
+                  Rerun
+                </Link>
+              </Button>
             )}
-            <Link className="button" href={editImagePath(imageId, current.version)}>
-              Edit
-            </Link>
-            <button
-              type="button"
-              className="button button-danger"
-              aria-expanded={confirming}
-              onClick={() => setConfirming(true)}
-            >
-              Delete
-            </button>
+            <Button asChild variant="outline">
+              <Link href={editImagePath(imageId, current.version)}>
+                <PencilIcon aria-hidden="true" />
+                Edit
+              </Link>
+            </Button>
             <ReportImage imageId={imageId} version={current.version} />
+            <AlertDialog
+              open={confirming}
+              onOpenChange={(open) => {
+                // Stays open while the delete runs, so its result is shown.
+                if (deleting) return;
+                setConfirming(open);
+                if (!open) setDeleteError(undefined);
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="destructive">
+                  <Trash2Icon aria-hidden="true" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Delete this image
+                    {versionCount > 1 ? ` and all ${versionCount} versions` : ''}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>This can&apos;t be undone.</AlertDialogDescription>
+                </AlertDialogHeader>
+                {deleteError && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {deleteError}
+                  </p>
+                )}
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={deleting}
+                    onClick={() => void remove()}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete image'}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
-          {confirming && (
-            <div className="delete-confirm" role="alertdialog" aria-labelledby="delete-heading">
-              <p id="delete-heading">
-                Delete this image
-                {versionCount > 1 ? ` and all ${versionCount} versions` : ''}? This can&apos;t be
-                undone.
-              </p>
-              {deleteError && (
-                <p className="form-error" role="alert">
-                  {deleteError}
-                </p>
-              )}
-              <div className="result-actions">
-                <button
-                  type="button"
-                  className="button button-danger"
-                  disabled={deleting}
-                  onClick={() => void remove()}
-                >
-                  {deleting ? 'Deleting…' : 'Delete image'}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={deleting}
-                  onClick={() => {
-                    setConfirming(false);
-                    setDeleteError(undefined);
-                  }}
-                  autoFocus
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="image-detail-info">
-          <SubHeading>Version {current.version}</SubHeading>
-          <dl className="detail-fields">
-            {fields.map((field) => (
-              <div key={field.label}>
-                <dt>{field.label}</dt>
-                <dd>{field.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
+        <Card className="h-fit gap-4 py-4">
+          <CardHeader className="px-4">
+            <SubHeading className="text-base font-semibold">Version {current.version}</SubHeading>
+          </CardHeader>
+          <CardContent className="px-4">
+            <dl data-slot="detail-fields" className="flex flex-col gap-3 text-sm">
+              {fields.map((field) => (
+                <div key={field.label} className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-medium text-muted-foreground">{field.label}</dt>
+                  <dd className="break-words whitespace-pre-wrap">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </CardContent>
+        </Card>
       </div>
     </article>
   );

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditPanel } from '../src/components/edit_panel';
 import type { ImageDetailBody, ImageVersionBody } from '../src/lib/images';
+import { pointsText } from '../src/lib/generate_options';
 import { modelsResponse, type PublicModel } from '../src/lib/models_response';
 import { IMAGES_CHANGED_EVENT } from '../src/lib/images_changed';
 import type { UploadClient } from '../src/lib/upload_client';
@@ -98,7 +99,20 @@ function renderPanel(
 const instruction = () => screen.getByRole('textbox', { name: 'Describe your change' });
 const versionButton = (n: number) => screen.getByRole('button', { name: `Version ${n}` });
 const apply = () => screen.getByRole('button', { name: /Apply edit|Starting|Editing/ });
-const modelSelect = () => screen.getByRole<HTMLSelectElement>('combobox', { name: 'Model' });
+const modelSelect = () => screen.getByRole('combobox', { name: 'Model' });
+const nameOf = (id: string) => models.find((model) => model.id === id)!.displayName;
+
+/** Opens a select from the keyboard, as Radix's select does in jsdom, and returns its options. */
+function openSelect(label: string): HTMLElement[] {
+  fireEvent.keyDown(screen.getByRole('combobox', { name: label }), { key: 'Enter' });
+  return screen.getAllByRole('option');
+}
+
+/** Picks an option in the Model or Quality select. */
+function chooseOption(label: string, option: string | RegExp) {
+  openSelect(label);
+  fireEvent.click(screen.getByRole('option', { name: option }));
+}
 
 describe('EditPanel', () => {
   afterEach(() => {
@@ -129,13 +143,12 @@ describe('EditPanel', () => {
 
   it('starts on Gemini 3.1 Flash Image and shows the cost before submitting', () => {
     renderPanel();
-    expect(modelSelect().value).toBe('gemini-3.1-flash-image');
+    expect(modelSelect().textContent).toBe(nameOf('gemini-3.1-flash-image'));
     // Only models that can edit are offered.
-    const options = within(modelSelect())
-      .getAllByRole('option')
-      .map((option) => option.getAttribute('value'));
-    expect(options).not.toContain('stable-image-core');
-    expect(options).toContain('gpt-image-2');
+    const options = openSelect('Model').map((option) => option.textContent);
+    expect(options).not.toContain(nameOf('stable-image-core'));
+    expect(options).toContain(nameOf('gpt-image-2'));
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
     const gemini = models.find((model) => model.id === 'gemini-3.1-flash-image');
     const standard = gemini?.qualities.find((option) => option.quality === 'standard');
     expect(screen.getByText(`Uses ${standard?.costPoints} of your 25 points today`)).toBeTruthy();
@@ -164,7 +177,8 @@ describe('EditPanel', () => {
     );
     expect(screen.getByText('Edits version 1. Earlier versions are always kept.')).toBeTruthy();
 
-    fireEvent.change(modelSelect(), { target: { value: 'mock' } });
+    chooseOption('Model', nameOf('mock'));
+    expect(modelSelect().textContent).toBe(nameOf('mock'));
     fireEvent.change(instruction(), { target: { value: 'Add snow' } });
     fireEvent.click(apply());
 
@@ -187,6 +201,43 @@ describe('EditPanel', () => {
     // The sidebar history and points refresh.
     expect(imagesChanged).toHaveBeenCalledOnce();
     window.removeEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
+  });
+
+  it('offers each quality with its points per image, and sends the one picked', async () => {
+    const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
+    renderPanel();
+    chooseOption('Model', nameOf('mock'));
+    const mock = models.find((model) => model.id === 'mock')!;
+    const draft = mock.qualities.find((option) => option.quality === 'draft')!;
+    const options = openSelect('Quality');
+    expect(options.map((option) => option.textContent)).toEqual(
+      expect.arrayContaining([`Draft${pointsText(draft.costPoints)}`]),
+    );
+    fireEvent.click(screen.getByRole('option', { name: /^Draft/ }));
+    expect(screen.getByRole('combobox', { name: 'Quality' }).textContent).toBe('Draft');
+    expect(screen.getByText(`Uses ${draft.costPoints} of your 25 points today`)).toBeTruthy();
+
+    fireEvent.change(instruction(), { target: { value: 'Make it night' } });
+    fireEvent.click(apply());
+    await waitFor(() => expect(jobBodies(fetchMock)).toHaveLength(1));
+    expect(jobBodies(fetchMock)[0]).toMatchObject({ modelId: 'mock', quality: 'draft' });
+  });
+
+  it('marks a quality the model does not offer as unavailable', () => {
+    renderPanel();
+    const gemini = models.find((model) => model.id === 'gemini-3.1-flash-image')!;
+    const missing = (['draft', 'standard', 'high'] as const).find(
+      (quality) => !gemini.qualities.some((option) => option.quality === quality),
+    );
+    const options = openSelect('Quality');
+    if (!missing) {
+      expect(options.every((option) => option.getAttribute('aria-disabled') !== 'true')).toBe(true);
+      return;
+    }
+    const label = { draft: 'Draft', standard: 'Standard', high: 'High' }[missing];
+    const option = screen.getByRole('option', { name: new RegExp(`^${label}`) });
+    expect(option.getAttribute('aria-disabled')).toBe('true');
+    expect(option.textContent).toContain(`Not offered by ${gemini.displayName}`);
   });
 
   it('asks for an instruction before submitting', () => {
@@ -267,7 +318,7 @@ describe('EditPanel', () => {
     );
     renderPanel({ models: noReferences });
     expect(screen.getByRole('group', { name: 'Reference images (optional)' })).toBeTruthy();
-    fireEvent.change(modelSelect(), { target: { value: 'gpt-image-2' } });
+    chooseOption('Model', nameOf('gpt-image-2'));
     expect(screen.queryByRole('group', { name: 'Reference images (optional)' })).toBeNull();
   });
 
