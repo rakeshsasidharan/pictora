@@ -86,7 +86,7 @@ describe('generate page', () => {
     expect(rerun.settings).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { level: 1, name: 'Create an image' })).toBeTruthy();
     expect(screen.getByText('19 of 25 points left today')).toBeTruthy();
-    fireEvent.click(screen.getByText('Advanced'));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
     expect(screen.getByRole('radio', { name: /^Mock/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /^Stable Image Core/ })).toBeNull();
@@ -96,7 +96,7 @@ describe('generate page', () => {
     for (const groups of [[], ['admins']]) {
       signIn(groups);
       render(await page());
-      fireEvent.click(screen.getByText('Advanced'));
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
       expect(screen.queryByRole('radio', { name: /^Mock/ })).toBeNull();
       expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
       cleanup();
@@ -108,11 +108,31 @@ describe('generate page', () => {
     pause.current = { until: new Date('2026-11-01T00:00:00.000Z') };
     render(await page());
     expect(screen.getByText(/Premium models are paused until 1 November/)).toBeTruthy();
-    const draft = screen.getByRole<HTMLInputElement>('radio', { name: /^Draft/ });
-    expect(draft.disabled).toBe(false);
-    expect(draft.checked).toBe(true);
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^Standard/ }).disabled).toBe(true);
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: /^High/ }).disabled).toBe(true);
+    const quality = screen.getByRole('combobox', { name: 'Quality' });
+    expect(quality.textContent).toBe('Draft');
+    fireEvent.keyDown(quality, { key: 'Enter' });
+    const disabled = (name: RegExp) =>
+      screen.getByRole('option', { name }).getAttribute('aria-disabled') === 'true';
+    expect(disabled(/^Draft/)).toBe(false);
+    expect(disabled(/^Standard/)).toBe(true);
+    expect(disabled(/^High/)).toBe(true);
+  });
+
+  it('starts the form afresh when moving between a rerun and an empty form', async () => {
+    signIn();
+    rerun.settings.mockResolvedValue({
+      prompt: 'A lighthouse at dusk',
+      style: 'none',
+      modelId: 'mock',
+      quality: 'draft',
+      aspect: '1:1',
+    });
+    // The page stays mounted when only the search changes, so the form's key follows the rerun.
+    const empty = await page();
+    const rerunForm = await page({ rerun: '01JAAAAAAAAAAAAAAAAAAAAAAA' });
+    const otherRerun = await page({ rerun: '01JBBBBBBBBBBBBBBBBBBBBBBB' });
+    expect(new Set([empty.key, rerunForm.key, otherRerun.key]).size).toBe(3);
+    expect((await page()).key).toBe(empty.key);
   });
 
   it("fills the form with a gallery image's settings for a rerun", async () => {
@@ -134,7 +154,7 @@ describe('generate page', () => {
     expect(
       screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Describe your image' }).value,
     ).toBe('A lighthouse at dusk');
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: '16:9' }).checked).toBe(true);
+    expect(screen.getByRole('combobox', { name: 'Aspect ratio' }).textContent).toBe('16:9');
     expect(screen.getByText(/Uses seed 7 from the original image/)).toBeTruthy();
   });
 

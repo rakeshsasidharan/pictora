@@ -1,16 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell, isActivePath } from '../src/components/app_shell';
 import { notifyImagesChanged } from '../src/lib/images_changed';
 import type { GalleryImageBody } from '../src/lib/images';
 
-const location = vi.hoisted(() => ({ pathname: '/generate', search: '' }));
+const location = vi.hoisted(() => ({ pathname: '/generate' }));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => location.pathname,
-  useSearchParams: () => new URLSearchParams(location.search),
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -83,7 +81,6 @@ const trigger = () =>
 describe('AppShell', () => {
   beforeEach(() => {
     location.pathname = '/generate';
-    location.search = '';
     setMobile(false);
     vi.stubGlobal(
       'ResizeObserver',
@@ -136,25 +133,21 @@ describe('AppShell', () => {
       await screen.findByText('No images yet');
     });
 
-    it('has a New image button that opens an empty generate screen', async () => {
+    it('has no New image button: the Generate link opens the generate screen', async () => {
       stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
-      function Counter() {
-        const [count, setCount] = useState(0);
-        return <button onClick={() => setCount(count + 1)}>Clicked {count}</button>;
-      }
-      render(
-        <AppShell email="user@example.com" admin={false} defaultOpen>
-          <Counter />
-        </AppShell>,
-      );
-      const newImage = screen.getByRole('link', { name: 'New image' });
-      expect(newImage.getAttribute('href')).toBe('/generate');
-
-      // On the generate screen already, it starts it afresh.
-      fireEvent.click(screen.getByRole('button', { name: 'Clicked 0' }));
-      expect(screen.getByRole('button', { name: 'Clicked 1' })).toBeTruthy();
-      fireEvent.click(newImage);
-      expect(screen.getByRole('button', { name: 'Clicked 0' })).toBeTruthy();
+      renderShell();
+      expect(screen.queryByRole('link', { name: 'New image' })).toBeNull();
+      expect(screen.queryByText('New image')).toBeNull();
+      const header = document.querySelector('[data-slot="sidebar-header"]') as HTMLElement;
+      // The header holds only the Pictora home link.
+      expect(
+        within(header)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['Pictora']);
+      const generate = within(pages()).getByRole('link', { name: 'Generate' });
+      expect(generate.getAttribute('href')).toBe('/generate');
+      expect(generate.getAttribute('aria-current')).toBe('page');
       await screen.findByText('No images yet');
     });
   });

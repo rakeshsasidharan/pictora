@@ -38,7 +38,9 @@ test.describe('app shell', () => {
     // The test user is never an admin.
     await expect(pages.getByRole('link', { name: 'Admin' })).toHaveCount(0);
 
-    await page.getByRole('link', { name: 'New image' }).click();
+    // The sidebar has no New image button (#128); Generate opens an empty form.
+    await expect(page.getByRole('link', { name: 'New image' })).toHaveCount(0);
+    await pages.getByRole('link', { name: 'Generate' }).click();
     await expect(page).toHaveURL(/\/generate$/);
     await expect(page.getByRole('textbox', { name: 'Describe your image' })).toHaveValue('');
   });

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { uniquePrompt, useOwnWords } from '../src/generate.js';
+import { chooseCount, chooseMock, uniquePrompt, useOwnWords } from '../src/generate.js';
 
 // Batch mode (P1, tech design 5.4): half the points, delivered later. The batch submitter and poller run every
 // 15 minutes, longer than the suite's budget, so this covers scheduling; the Lambdas have their own tests.
@@ -11,12 +11,12 @@ test.describe('batch', () => {
     await page.goto('/generate');
     await useOwnWords(page);
     await page.getByRole('textbox', { name: 'Describe your image' }).fill(prompt);
-    await page.getByText('Advanced').click();
-    await page.getByText('Mock (dev only)').click();
     // Mock standard is 2 points an image: 4 for two, 2 delivered later.
-    await page.getByText('Standard', { exact: true }).click();
-    await page.getByRole('combobox', { name: 'Number of images' }).selectOption('2');
-    await page.getByRole('checkbox', { name: 'Save points: deliver later' }).click();
+    await chooseMock(page, 'Standard');
+    await chooseCount(page, 2);
+    const later = page.getByRole('button', { name: 'Save points: deliver later' });
+    await later.click();
+    await expect(later).toHaveAttribute('aria-pressed', 'true');
     await expect(
       page.getByText(/^Uses 2 of your \d+ points today \(half of 4, delivered later\)$/),
     ).toBeVisible();
