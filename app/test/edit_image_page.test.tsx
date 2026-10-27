@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { loadSeedRegistry, TESTERS_GROUP } from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ImageDetailBody } from '../src/lib/images';
 import { SESSION_HEADERS } from '../src/lib/session';
@@ -11,6 +11,17 @@ const onboarded = vi.hoisted(() => ({ current: true }));
 const detail = vi.hoisted(() => ({
   current: undefined as { status: number; body: Record<string, unknown> } | undefined,
 }));
+
+/** A model's display name in the seed registry. */
+function nameOf(id: string): string {
+  return loadSeedRegistry().find((model) => model.id === id)!.displayName;
+}
+
+/** Opens the Model select from the keyboard, as Radix's select does in jsdom, and lists its options. */
+function modelOptions(): (string | null)[] {
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Model' }), { key: 'Enter' });
+  return screen.getAllByRole('option').map((option) => option.textContent);
+}
 
 vi.mock('next/headers', () => ({ headers: async () => requestHeaders.current }));
 
@@ -102,24 +113,20 @@ describe('edit image page', () => {
     render(await page());
     expect(screen.getByRole('heading', { level: 1, name: 'Edit image' })).toBeTruthy();
     expect(screen.getByText('19 of 25 points left today')).toBeTruthy();
-    const options = within(screen.getByRole('combobox', { name: 'Model' }))
-      .getAllByRole('option')
-      .map((option) => option.getAttribute('value'));
-    expect(options).toContain('mock');
-    expect(options).not.toContain('stable-image-core');
     expect(screen.getByRole('button', { name: 'Version 2' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
+    const options = modelOptions();
+    expect(options).toContain(nameOf('mock'));
+    expect(options).not.toContain(nameOf('stable-image-core'));
   });
 
   it('never offers the Mock model to a user outside the testers group', async () => {
     requestHeaders.current.set(SESSION_HEADERS.groups, '');
     render(await page());
-    const options = within(screen.getByRole('combobox', { name: 'Model' }))
-      .getAllByRole('option')
-      .map((option) => option.getAttribute('value'));
-    expect(options).not.toContain('mock');
-    expect(options).toContain('gpt-image-2');
+    const options = modelOptions();
+    expect(options).not.toContain(nameOf('mock'));
+    expect(options).toContain(nameOf('gpt-image-2'));
   });
 
   it('starts from the version in the query', async () => {

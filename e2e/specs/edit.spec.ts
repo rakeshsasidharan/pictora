@@ -21,8 +21,14 @@ async function openEditPanel(page: Page): Promise<void> {
 
 /** Edits the selected version with the mock model at draft quality and waits for version `expected`. */
 async function applyEdit(page: Page, instruction: string, expected: number): Promise<void> {
-  await page.getByRole('combobox', { name: 'Model' }).selectOption('mock');
-  await page.getByText('Draft', { exact: true }).click();
+  const model = page.getByRole('combobox', { name: 'Model' });
+  await model.click();
+  await page.getByRole('option', { name: 'Mock (dev only)' }).click();
+  await expect(model).toHaveText('Mock (dev only)');
+  const quality = page.getByRole('combobox', { name: 'Quality' });
+  await quality.click();
+  await page.getByRole('option', { name: /^Draft/ }).click();
+  await expect(quality).toHaveText('Draft');
   await page.getByRole('textbox', { name: 'Describe your change' }).fill(instruction);
   await page.getByRole('button', { name: 'Apply edit' }).click();
   const created = page.getByRole('button', { name: `Version ${expected}`, exact: true });

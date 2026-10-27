@@ -30,11 +30,9 @@ export default async function GalleryImagePage({
   if (detail.status !== 200) notFound();
 
   return (
-    <div className="gallery">
-      <ImageDetailPage
-        detail={detail.body as unknown as ImageDetailBody}
-        modelNames={await modelNames()}
-      />
-    </div>
+    <ImageDetailPage
+      detail={detail.body as unknown as ImageDetailBody}
+      modelNames={await modelNames()}
+    />
   );
 }

@@ -10,8 +10,10 @@ function Progress({
   ...props
 }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
   return (
+    // The value goes to the root too, so assistive tech reads it (shadcn's source only moves the bar).
     <ProgressPrimitive.Root
       data-slot="progress"
+      value={value}
       className={cn('relative h-2 w-full overflow-hidden rounded-full bg-primary/20', className)}
       {...props}
     >

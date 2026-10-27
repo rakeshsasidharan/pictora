@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { altTextFor } from '../lib/generate_options';
 import type { GalleryImageBody, GalleryPageBody } from '../lib/images';
 
@@ -11,8 +14,8 @@ export interface GalleryPickerProps {
 }
 
 /**
- * Picks a reference image from the gallery for an edit (EDIT-5): the user's images newest first, 24 at a time,
- * with a button to load more.
+ * Picks a reference image from the gallery for an edit (EDIT-5), in a dialog: the user's images newest first, 24
+ * at a time, with a button to load more.
  */
 export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
   const [images, setImages] = useState<GalleryImageBody[]>([]);
@@ -46,55 +49,62 @@ export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
     };
   }, [request]);
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') onClose();
-  }
-
   return (
-    <div className="detail-modal-backdrop" onKeyDown={onKeyDown}>
-      <div
-        className="detail-modal gallery-picker"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="gallery-picker-heading"
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-3xl"
       >
-        {/* Focused on open, so Escape works straight away. */}
-        <button type="button" className="detail-modal-close" onClick={onClose} autoFocus>
-          Close
-        </button>
-        <h2 id="gallery-picker-heading">Choose a reference image</h2>
+        <DialogHeader>
+          <DialogTitle>Choose a reference image</DialogTitle>
+        </DialogHeader>
         {images.length > 0 && (
-          <ul className="gallery-grid" aria-label="Your images">
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Your images">
             {images.map((image) => (
               <li key={image.imageId}>
                 <button
                   type="button"
-                  className="gallery-tile"
+                  className="block aspect-square w-full overflow-hidden rounded-lg border bg-muted outline-none hover:ring-2 hover:ring-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   aria-label={`Use ${image.title}`}
                   onClick={() => onPick(image)}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-                  <img src={image.thumbUrl} alt={altTextFor(image.title)} loading="lazy" />
+                  <img
+                    src={image.thumbUrl}
+                    alt={altTextFor(image.title)}
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
                 </button>
               </li>
             ))}
           </ul>
         )}
         {state === 'loading' && (
-          <p className="gallery-status" role="status">
-            Loading your images…
-          </p>
+          <div role="status" className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            <span className="sr-only">Loading your images…</span>
+            {Array.from({ length: 4 }, (_, index) => (
+              <Skeleton
+                key={index}
+                aria-hidden="true"
+                className="aspect-square w-full rounded-lg"
+              />
+            ))}
+          </div>
         )}
         {state === 'error' && (
-          <p className="form-error" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             We couldn&apos;t load your gallery.
           </p>
         )}
-        {state === 'ready' && images.length === 0 && <p>Your gallery is empty.</p>}
+        {state === 'ready' && images.length === 0 && (
+          <p className="text-sm text-muted-foreground">Your gallery is empty.</p>
+        )}
         {state !== 'loading' && (nextCursor || state === 'error') && (
-          <button
+          <Button
             type="button"
-            className="button"
+            variant="outline"
+            className="self-center"
             onClick={() => {
               setState('loading');
               setRequest({
@@ -103,9 +113,9 @@ export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
             }}
           >
             {state === 'error' ? 'Try again' : 'Load more'}
-          </button>
+          </Button>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
