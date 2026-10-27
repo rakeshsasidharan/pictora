@@ -37,4 +37,10 @@ describe('SiteHeader', () => {
       );
     }
   });
+
+  it('shows the Pictora icon and name inside the home link', () => {
+    const html = renderToStaticMarkup(<SiteHeader />);
+    const homeLink = html.match(/<a[^>]*href="\/"[^>]*>(.*?)<\/a>/)?.[1];
+    expect(homeLink).toMatch(/^<img [^>]*alt=""[^>]*src="\/icons\/icon_192\.png"[^>]*\/>Pictora$/);
+  });
 });

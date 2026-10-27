@@ -443,13 +443,6 @@
     border-bottom: 1px solid var(--legacy-border);
   }
 
-  .site-name {
-    color: var(--legacy-text);
-    font-size: 1.25rem;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
   .site-account {
     display: flex;
     flex-wrap: wrap;
