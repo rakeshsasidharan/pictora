@@ -49,7 +49,7 @@ describe('(app) layout', () => {
     signIn();
     request.cookies.clear();
     const props = await shellProps();
-    expect(props).toMatchObject({ email: 'user@example.com', admin: false, defaultOpen: true });
+    expect(props).toMatchObject({ email: 'user@example.com', admin: false });
     expect(renderToStaticMarkup(props.children)).toBe('<p>Page</p>');
     // The legal links stay under each page.
     expect(renderToStaticMarkup(props.footer)).toContain('href="/terms"');
@@ -58,12 +58,21 @@ describe('(app) layout', () => {
     expect((await shellProps()).admin).toBe(true);
   });
 
+  it('starts the sidebar collapsed when the user has not chosen yet', async () => {
+    signIn();
+    request.cookies.clear();
+    expect((await shellProps()).defaultOpen).toBe(false);
+  });
+
   it('opens the sidebar as the user left it', async () => {
     signIn();
     request.cookies.set('sidebar_state', 'false');
     expect((await shellProps()).defaultOpen).toBe(false);
     request.cookies.set('sidebar_state', 'true');
     expect((await shellProps()).defaultOpen).toBe(true);
+    // Anything else is no choice at all.
+    request.cookies.set('sidebar_state', '');
+    expect((await shellProps()).defaultOpen).toBe(false);
   });
 
   it('sends a visitor without a session home', async () => {

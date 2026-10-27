@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test';
 import { e2eConfig, requireCredentials } from '../src/config.js';
 import { startMockImage, uniquePrompt } from '../src/generate.js';
 
+/** The cookie shadcn's sidebar keeps its expanded or collapsed state in; with none, it starts collapsed. */
+const SIDEBAR_STATE_COOKIE = 'sidebar_state';
+
 // The sidebar shell around every signed-in page (#107).
 test.describe('app shell', () => {
   test('navigates between the signed-in pages by the sidebar', async ({ page }) => {
@@ -63,19 +66,40 @@ test.describe('app shell', () => {
     expect(headerBox!.x + headerBox!.width - (themeBox!.x + themeBox!.width)).toBeLessThan(24);
   });
 
-  test('collapses to icons and back with Ctrl+B', async ({ page }) => {
+  test('floats, starts collapsed in a fresh session, and keeps the choice across reloads', async ({
+    page,
+  }) => {
+    // A first visit: no sidebar_state cookie yet.
+    await page.context().clearCookies({ name: SIDEBAR_STATE_COOKIE });
     await page.goto('/gallery');
     const sidebar = page.locator('[data-slot="sidebar"]');
+    await expect(sidebar).toHaveAttribute('data-variant', 'floating');
+    await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+
+    await page.keyboard.press('Control+b');
     await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+    await page.reload();
+    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+    await page.goto('/edit');
+    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+
+    // The page header lines up with the floating panel: it starts where the sidebar's gap ends, with no overlap.
+    const gap = await page.locator('[data-slot="sidebar-gap"]').boundingBox();
+    const header = await page.locator('[data-slot="sidebar-inset"] > header').boundingBox();
+    expect(gap && header).toBeTruthy();
+    expect(Math.abs(header!.x - (gap!.x + gap!.width))).toBeLessThan(1);
+
     await page.keyboard.press('Control+b');
     await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
-    await page.keyboard.press('Control+b');
-    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+    await page.reload();
+    await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   });
 
-  test('lists a new image in the history and opens its detail page', async ({ page }) => {
+  test('lists a new image in the history and opens its detail page', async ({ page, baseURL }) => {
     // A generate through the queue, the worker and the mock's delay.
     test.setTimeout(90_000);
+    // The history shows only while the sidebar is expanded.
+    await page.context().addCookies([{ name: SIDEBAR_STATE_COOKIE, value: 'true', url: baseURL! }]);
     const prompt = uniquePrompt('A kite over a beach');
     await startMockImage(page, prompt);
     await expect(page.getByText('Status: Done')).toBeVisible({ timeout: 60_000 });

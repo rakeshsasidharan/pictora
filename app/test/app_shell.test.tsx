@@ -181,6 +181,17 @@ describe('AppShell', () => {
       await screen.findByText('No images yet');
     });
 
+    it('renders as the floating variant, expanded and collapsed to icons', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
+      renderShell();
+      expect(sidebar().getAttribute('data-variant')).toBe('floating');
+      fireEvent.click(trigger());
+      expect(sidebar().getAttribute('data-state')).toBe('collapsed');
+      expect(sidebar().getAttribute('data-variant')).toBe('floating');
+      expect(sidebar().getAttribute('data-collapsible')).toBe('icon');
+      await screen.findByText('No images yet');
+    });
+
     it('starts collapsed when the user left it collapsed', async () => {
       stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
       renderShell({ defaultOpen: false });
