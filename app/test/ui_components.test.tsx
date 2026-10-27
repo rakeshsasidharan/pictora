@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio_group';
+import { ScrollArea } from '@/components/ui/scroll_area';
 import {
   Select,
   SelectContent,
@@ -189,6 +190,14 @@ const EXAMPLES: Record<string, { text: string; element: ReactNode }> = {
           <RadioGroupItem value="standard" /> Standard
         </label>
       </RadioGroup>
+    ),
+  },
+  scroll_area: {
+    text: 'A long prompt',
+    element: (
+      <ScrollArea type="auto" viewportProps={{ className: 'max-h-32', tabIndex: 0 }}>
+        <p>A long prompt</p>
+      </ScrollArea>
     ),
   },
   select: {

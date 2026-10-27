@@ -306,12 +306,13 @@ export function Gallery({
       </div>
       {open && (
         <Dialog open onOpenChange={(next) => !next && setOpen(undefined)}>
+          {/* The same height whatever the prompt: it fits the window, centred, and the detail fills it (#145). */}
           <DialogContent
             aria-describedby={undefined}
-            className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-5xl"
+            className="flex h-[min(calc(100svh-2rem),52rem)] flex-col overflow-y-auto sm:max-w-5xl"
           >
             <DialogTitle className="sr-only">Image details</DialogTitle>
-            <ImageDetail imageId={open} modelNames={modelNames} onDeleted={deleted} />
+            <ImageDetail imageId={open} modelNames={modelNames} onDeleted={deleted} fill />
           </DialogContent>
         </Dialog>
       )}

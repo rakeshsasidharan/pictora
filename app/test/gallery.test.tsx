@@ -267,6 +267,10 @@ describe('Gallery', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Image details' });
     expect(await within(dialog).findByRole('heading', { name: 'Image 2' })).toBeTruthy();
     expect(within(dialog).getByText('Mock (dev only)')).toBeTruthy();
+    // A fixed height that fits the window, whatever the prompt; the detail fills it (#145).
+    expect(dialog.className).toContain('h-[min(calc(100svh-2rem),52rem)]');
+    expect(dialog.querySelector('[data-slot="image-detail"]')?.className).toContain('flex-1');
+    expect(within(dialog).getByRole('group', { name: 'Prompt' }).textContent).toBe('Image 2');
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     // The confirmation opens over the modal.
