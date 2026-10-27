@@ -48,6 +48,9 @@ export default async function GeneratePage({
   );
   return (
     <GenerateScreen
+      // Moving between a rerun and an empty `/generate` only changes the search, which keeps the page mounted;
+      // a new key starts the form afresh with the new settings.
+      key={rerunId ?? ''}
       models={models}
       styles={styles}
       points={{ left: me.pointsLeft, limit: me.dailyLimit }}

@@ -118,6 +118,23 @@ describe('generate page', () => {
     expect(disabled(/^High/)).toBe(true);
   });
 
+  it('starts the form afresh when moving between a rerun and an empty form', async () => {
+    signIn();
+    rerun.settings.mockResolvedValue({
+      prompt: 'A lighthouse at dusk',
+      style: 'none',
+      modelId: 'mock',
+      quality: 'draft',
+      aspect: '1:1',
+    });
+    // The page stays mounted when only the search changes, so the form's key follows the rerun.
+    const empty = await page();
+    const rerunForm = await page({ rerun: '01JAAAAAAAAAAAAAAAAAAAAAAA' });
+    const otherRerun = await page({ rerun: '01JBBBBBBBBBBBBBBBBBBBBBBB' });
+    expect(new Set([empty.key, rerunForm.key, otherRerun.key]).size).toBe(3);
+    expect((await page()).key).toBe(empty.key);
+  });
+
   it("fills the form with a gallery image's settings for a rerun", async () => {
     signIn();
     rerun.settings.mockResolvedValue({
