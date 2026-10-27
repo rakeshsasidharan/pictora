@@ -47,8 +47,8 @@
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.36.0",
     "@aws-lambda-powertools/metrics": "^2.36.0",
-    "@aws-sdk/client-dynamodb": "^3.1152.0",
-    "@aws-sdk/lib-dynamodb": "^3.1152.0",
+    "@aws-sdk/client-dynamodb": "^3.1156.0",
+    "@aws-sdk/lib-dynamodb": "^3.1156.0",
     "zod": "^4.6.7"
   }
 }
