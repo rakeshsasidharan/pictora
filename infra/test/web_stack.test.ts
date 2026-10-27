@@ -1,6 +1,13 @@
+import { readFileSync } from 'node:fs';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { CERTIFICATE_REGION } from '../lib/certificate_stack.js';
+import {
+  LOGIN_COLOURS,
+  LOGIN_FAVICON_PATH,
+  LOGIN_LOGO_PATH,
+  LOGIN_RADIUS,
+} from '../lib/login_branding.js';
 import { US_INFERENCE_REGIONS, enhancerModelArns } from '../lib/web_stack.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
@@ -253,6 +260,103 @@ describe('Web stack: Cognito app client', () => {
         ]),
       },
     });
+  });
+});
+
+function loginBranding(template: Template) {
+  const brandings = Object.values(template.findResources('AWS::Cognito::ManagedLoginBranding'));
+  expect(brandings).toHaveLength(1);
+  return brandings[0]?.Properties;
+}
+
+/** Every value in the settings at `key`, at any depth. */
+function valuesAt(settings: unknown, key: string): unknown[] {
+  if (Array.isArray(settings)) return settings.flatMap((item) => valuesAt(item, key));
+  if (!settings || typeof settings !== 'object') return [];
+  return Object.entries(settings).flatMap(([k, v]) => (k === key ? [v] : valuesAt(v, key)));
+}
+
+describe('Web stack: managed login branding', () => {
+  it('gives the app client a branding style in its own user pool', () => {
+    for (const template of [dev, prod]) {
+      expect(loginBranding(template)).toMatchObject({
+        ClientId: { Ref: expect.stringMatching(/^AppClient/) },
+        UserPoolId: appClient(template)?.UserPoolId,
+      });
+      expect(loginBranding(template)).not.toHaveProperty('UseCognitoProvidedValues');
+    }
+  });
+
+  it('follows the browser between light and dark, with the app colours for each', () => {
+    const { Settings: settings } = loginBranding(dev);
+    expect(settings.categories.global.colorSchemeMode).toBe('DYNAMIC');
+    expect(settings.components.pageBackground).toEqual({
+      lightMode: { color: LOGIN_COLOURS.light.background },
+      darkMode: { color: LOGIN_COLOURS.dark.background },
+      image: { enabled: false },
+    });
+    expect(settings.components.primaryButton.lightMode.defaults).toEqual({
+      backgroundColor: LOGIN_COLOURS.light.primary,
+      textColor: 'fafafaff',
+    });
+    expect(settings.components.primaryButton.darkMode.defaults).toEqual({
+      backgroundColor: 'e5e5e5ff',
+      textColor: '171717ff',
+    });
+    expect(settings.components.form).toMatchObject({
+      borderRadius: LOGIN_RADIUS.form,
+      lightMode: { backgroundColor: 'ffffffff', borderColor: 'e5e5e5ff' },
+      darkMode: { backgroundColor: '171717ff' },
+    });
+    // Every colour is an 8-digit RRGGBBAA hex value, the format managed login takes.
+    const colours = ['color', 'backgroundColor', 'borderColor', 'textColor'].flatMap((key) =>
+      valuesAt(settings, key),
+    );
+    expect(colours.length).toBeGreaterThan(50);
+    for (const colour of colours) expect(colour).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('uses the app radius on buttons, inputs and the form', () => {
+    const { Settings: settings } = loginBranding(dev);
+    expect(settings.componentClasses.buttons.borderRadius).toBe(LOGIN_RADIUS.control);
+    expect(settings.componentClasses.input.borderRadius).toBe(LOGIN_RADIUS.control);
+    expect(settings.componentClasses.dropDown.borderRadius).toBe(LOGIN_RADIUS.control);
+  });
+
+  it('offers Continue with Google above email and password', () => {
+    const { Settings: settings } = loginBranding(dev);
+    expect(settings.categories.auth.authMethodOrder).toEqual([
+      [
+        { display: 'BUTTON', type: 'FEDERATED' },
+        { display: 'INPUT', type: 'USERNAME_PASSWORD' },
+      ],
+    ]);
+    expect(settings.componentClasses.idpButtons).toEqual({ icons: { enabled: true } });
+  });
+
+  it('shows the Pictora icon above the form and as the favicon', () => {
+    const { Settings: settings, Assets: assets } = loginBranding(dev);
+    expect(settings.components.form.logo).toEqual({
+      enabled: true,
+      formInclusion: 'IN',
+      location: 'CENTER',
+      position: 'TOP',
+    });
+    expect(settings.components.favicon).toEqual({ enabledTypes: ['ICO'] });
+    expect(assets).toEqual([
+      {
+        Category: 'FORM_LOGO',
+        ColorMode: 'DYNAMIC',
+        Extension: 'PNG',
+        Bytes: readFileSync(LOGIN_LOGO_PATH).toString('base64'),
+      },
+      {
+        Category: 'FAVICON_ICO',
+        ColorMode: 'DYNAMIC',
+        Extension: 'ICO',
+        Bytes: readFileSync(LOGIN_FAVICON_PATH).toString('base64'),
+      },
+    ]);
   });
 });
 

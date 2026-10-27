@@ -3,6 +3,7 @@ import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import {
   AccountRecovery,
   FeaturePlan,
+  ManagedLoginVersion,
   ProviderAttribute,
   UserPool,
   UserPoolClientIdentityProvider,
@@ -54,7 +55,7 @@ export interface AuthStackProps extends StackProps {
 
 /**
  * The Cognito user pool (tech design 8): email as the username with verification, Google as a federated
- * provider, the managed login domain, the `admins` group, and the pre-sign-up trigger that checks new accounts
+ * provider, the managed login domain (managed login version 2), the `admins` group, and the pre-sign-up trigger that checks new accounts
  * for abuse signals (a disposable email domain, many sign-ups from one IP). The app client lives in the `Web` stack,
  * because its callback URLs need the site URL, which is the CloudFront domain when there is no custom domain.
  */
@@ -103,8 +104,11 @@ export class AuthStack extends Stack {
       },
     });
 
+    // Managed login (not the classic hosted UI), so the sign-in pages take the Pictora branding style that the
+    // Web stack sets up with the app client.
     this.domain = this.userPool.addDomain('Domain', {
       cognitoDomain: { domainPrefix: authDomainPrefix },
+      managedLoginVersion: ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
     this.domainBaseUrl = this.domain.baseUrl();
 

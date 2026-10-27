@@ -54,6 +54,7 @@ import {
   type QueueProvider,
   type SecretProvider,
 } from './jobs_stack.js';
+import { addLoginBranding } from './login_branding.js';
 import { HOSTED_ZONE_NAME, LOCAL_DEV_URL, type StageConfig } from './stage_config.js';
 
 /** The ECR repository the pipeline pushes the app image to (`PictoraCicd` stack). */
@@ -305,7 +306,8 @@ export class WebStack extends Stack {
 
   /**
    * The Cognito app client (tech design 8): authorization code flow with PKCE and no client secret, since the
-   * code is exchanged by the app's server with a one-time PKCE verifier. Dev also allows local `next dev`.
+   * code is exchanged by the app's server with a one-time PKCE verifier. Dev also allows local `next dev`. The
+   * client gets the Pictora managed login branding style, so its sign-in pages match the app.
    */
   private createUserPoolClient(props: WebStackProps, siteUrl: string): UserPoolClient {
     const { config, auth } = props;
@@ -331,6 +333,10 @@ export class WebStack extends Stack {
     });
     // The client can only name Google once the provider exists.
     client.node.addDependency(auth.googleProvider);
+    addLoginBranding(this, 'AppClientLoginBranding', {
+      userPoolId: auth.userPool.userPoolId,
+      clientId: client.userPoolClientId,
+    });
     return client;
   }
 
