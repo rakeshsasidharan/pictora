@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { PROVIDER_COLOURS, dollars, providerLabel } from '../lib/admin_format';
+import { cn } from '@/lib/utils';
+import { dollars, providerColour, providerLabel } from '../lib/admin_format';
 import type { StatsDay } from '../lib/admin_stats';
 
 const WIDTH = 640;
@@ -13,7 +14,7 @@ const PLOT_LEFT = 48;
 const GAP = 2;
 
 /**
- * Daily provider spend as stacked bars, one colour per provider (ADM-3). Hovering or focusing a day shows its
+ * Daily provider spend as stacked bars, one theme chart colour per provider (ADM-3). Hovering or focusing a day shows its
  * total and the split by provider. The legend names every provider; the table beside it carries the numbers.
  */
 export function SpendChart({ days, providers }: { days: StatsDay[]; providers: string[] }) {
@@ -30,14 +31,13 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
   const shown = active === undefined ? undefined : days[active];
 
   return (
-    <figure className="spend-chart">
-      <figcaption>Daily provider spend</figcaption>
-      <ul className="chart-legend" aria-label="Providers">
+    <figure className="flex flex-col gap-2">
+      <figcaption className="font-medium">Daily provider spend</figcaption>
+      <ul className="flex flex-wrap gap-4 text-sm" aria-label="Providers">
         {providers.map((provider) => (
-          <li key={provider}>
+          <li key={provider} className="flex items-center gap-1.5">
             <span
-              className="legend-swatch"
-              style={{ background: PROVIDER_COLOURS[provider] ?? PROVIDER_COLOURS.unknown }}
+              className={cn('size-3 rounded-[3px]', providerColour(provider).swatch)}
               aria-hidden="true"
             />
             {providerLabel(provider)}
@@ -48,6 +48,7 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
         aria-label={`Daily provider spend, highest ${dollars(max)}`}
+        className="block h-auto w-full"
         onMouseLeave={() => setActive(undefined)}
       >
         {[0, 0.5, 1].map((share) => (
@@ -57,9 +58,14 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
               x2={WIDTH}
               y1={y(max * share)}
               y2={y(max * share)}
-              className="chart-grid"
+              className="stroke-border"
             />
-            <text x={PLOT_LEFT - 6} y={y(max * share) + 4} textAnchor="end" className="chart-axis">
+            <text
+              x={PLOT_LEFT - 6}
+              y={y(max * share) + 4}
+              textAnchor="end"
+              className="fill-muted-foreground text-[11px]"
+            >
               {dollars(max * share)}
             </text>
           </g>
@@ -79,6 +85,7 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
               key={day.date}
               tabIndex={0}
               role="button"
+              className="outline-none focus-visible:outline-2 focus-visible:outline-ring"
               aria-label={`${day.date}: ${dollars(totals[index] ?? 0)}`}
               onMouseEnter={() => setActive(index)}
               onFocus={() => setActive(index)}
@@ -100,7 +107,7 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
                   width={barWidth}
                   height={Math.max(1, segment.height - (at === 0 ? 0 : GAP))}
                   rx={at === segments.length - 1 ? 4 : 0}
-                  fill={PROVIDER_COLOURS[segment.provider] ?? PROVIDER_COLOURS.unknown}
+                  className={providerColour(segment.provider).fill}
                 />
               ))}
               {index % labelEvery === 0 && (
@@ -108,7 +115,7 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
                   x={x + barWidth / 2}
                   y={HEIGHT - 8}
                   textAnchor="middle"
-                  className="chart-axis"
+                  className="fill-muted-foreground text-[11px]"
                 >
                   {day.date.slice(5)}
                 </text>
@@ -117,7 +124,7 @@ export function SpendChart({ days, providers }: { days: StatsDay[]; providers: s
           );
         })}
       </svg>
-      <p className="chart-tooltip" role="status" aria-live="polite">
+      <p className="min-h-6 text-sm text-muted-foreground" role="status" aria-live="polite">
         {shown
           ? `${shown.date}: ${dollars(totals[active ?? 0] ?? 0)} — ${providers
               .map(

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountDetails } from '../src/components/account_details';
 import { DeleteAccount } from '../src/components/delete_account';
@@ -8,7 +8,9 @@ import type { MeBody } from '../src/lib/jobs';
 function openDialog(onDeleted = vi.fn()) {
   render(<DeleteAccount onDeleted={onDeleted} />);
   fireEvent.click(screen.getByRole('button', { name: 'Delete account' }));
+  const dialog = screen.getByRole('alertdialog', { name: 'Are you sure?' });
   return {
+    dialog,
     onDeleted,
     input: screen.getByRole('textbox', { name: /Type DELETE to confirm/ }),
     confirm: screen.getByRole('button', { name: 'Delete my account' }) as HTMLButtonElement,
@@ -25,7 +27,7 @@ describe('DeleteAccount', () => {
     render(<DeleteAccount />);
     expect(screen.getByText(/every image you created/)).toBeTruthy();
     expect(screen.getByText(/Job records expire within 30 days/)).toBeTruthy();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('only deletes once DELETE has been typed exactly', () => {
@@ -70,11 +72,34 @@ describe('DeleteAccount', () => {
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
+  it('keeps the dialog open while deleting, then shows the error inside it', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    );
+    const { dialog, input, confirm } = openDialog();
+    fireEvent.change(input, { target: { value: 'DELETE' } });
+    fireEvent.click(confirm);
+    expect(await within(dialog).findByRole('button', { name: 'Deleting…' })).toBeTruthy();
+    expect(
+      (within(dialog).getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    answer(new Response(JSON.stringify({ error: 'Nothing was deleted.' }), { status: 503 }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('Nothing was deleted.');
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
   it('cancels without deleting and clears what was typed', () => {
     const { input } = openDialog();
     fireEvent.change(input, { target: { value: 'DELETE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Delete account' }));
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
   });
@@ -101,6 +126,7 @@ describe('AccountDetails', () => {
     expect(screen.getByText('Google')).toBeTruthy();
     expect(screen.getByText('3 September 2026')).toBeTruthy();
     expect(screen.getByText(/18 of 25 left \(7 used\)/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Profile' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Delete account' })).toBeTruthy();
   });
 });

@@ -54,6 +54,26 @@ describe('OnboardingForm', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('gates Continue on both checkboxes, which their labels also tick', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { age, terms, submit, onDone } = renderForm();
+    expect(age.getAttribute('aria-checked')).toBe('false');
+    expect(terms.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(screen.getByText('I am 13 years old or older.'));
+    expect(age.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(submit);
+    expect(screen.getByRole('alert').textContent).toMatch(/Accept the terms of service/);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(terms);
+    expect(terms.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(submit);
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('posts both confirmations and the version, then moves on', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

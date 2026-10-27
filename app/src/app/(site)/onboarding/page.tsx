@@ -2,6 +2,7 @@ import { TOS_VERSION } from '@pictora/core';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { OnboardingForm } from '../../../components/onboarding_form';
 import { documentClient, tableName } from '../../../lib/dynamodb';
 import { LEGAL_PAGES } from '../../../lib/legal_pages';
@@ -22,20 +23,33 @@ export default async function OnboardingPage() {
 
   const termsChanged = profile.tosAcceptedAt !== undefined;
   return (
-    <main className="onboarding">
-      <h1>{termsChanged ? 'Our terms have changed' : 'Welcome to Pictora'}</h1>
-      <p>
-        {termsChanged
-          ? 'Please read and accept the updated terms to keep creating images.'
-          : 'Before your first image, please confirm your age and accept our terms.'}
-      </p>
-      <OnboardingForm
-        tosVersion={TOS_VERSION}
-        documents={LEGAL_PAGES.filter((page) => page.acceptedAtOnboarding).map((page) => ({
-          title: page.title,
-          path: page.path,
-        }))}
-      />
+    <main
+      data-slot="onboarding-page"
+      className="flex w-full max-w-none flex-1 items-center justify-center px-4 py-12"
+    >
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <CardTitle>
+            <h1 className="text-xl">
+              {termsChanged ? 'Our terms have changed' : 'Welcome to Pictora'}
+            </h1>
+          </CardTitle>
+          <CardDescription>
+            {termsChanged
+              ? 'Please read and accept the updated terms to keep creating images.'
+              : 'Before your first image, please confirm your age and accept our terms.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OnboardingForm
+            tosVersion={TOS_VERSION}
+            documents={LEGAL_PAGES.filter((page) => page.acceptedAtOnboarding).map((page) => ({
+              title: page.title,
+              path: page.path,
+            }))}
+          />
+        </CardContent>
+      </Card>
     </main>
   );
 }

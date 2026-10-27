@@ -18,17 +18,32 @@ export const PROVIDER_LABELS: Record<string, string> = {
 };
 
 /**
- * Chart colours by provider, in a fixed order so a provider keeps its colour whatever else is shown. These are
- * the first four slots of the validated categorical palette; yellow and aqua sit below 3:1 on white, so the chart
- * always has a table of the same numbers under it.
+ * Chart colours by provider, from the theme's chart tokens (`--chart-1` to `--chart-4`, with light and dark
+ * values), in a fixed order so a provider keeps its colour whatever else is shown. Some slots sit below 3:1
+ * against the background, so the chart always has a table of the same numbers under it. Whole class names, so
+ * Tailwind finds them: `fill` for the bars, `swatch` for the legend.
  */
-export const PROVIDER_COLOURS: Record<string, string> = {
-  openai: '#2a78d6',
-  gemini: '#eb6834',
-  bedrock: '#1baf7a',
-  mock: '#eda100',
-  unknown: '#55535e',
+export const PROVIDER_COLOURS: Record<string, ProviderColour> = {
+  openai: { fill: 'fill-chart-1', swatch: 'bg-chart-1' },
+  gemini: { fill: 'fill-chart-2', swatch: 'bg-chart-2' },
+  bedrock: { fill: 'fill-chart-3', swatch: 'bg-chart-3' },
+  mock: { fill: 'fill-chart-4', swatch: 'bg-chart-4' },
 };
+
+/** Any other provider, such as `unknown`. */
+export const OTHER_PROVIDER_COLOUR: ProviderColour = {
+  fill: 'fill-muted-foreground',
+  swatch: 'bg-muted-foreground',
+};
+
+export interface ProviderColour {
+  fill: string;
+  swatch: string;
+}
+
+export function providerColour(provider: string): ProviderColour {
+  return PROVIDER_COLOURS[provider] ?? OTHER_PROVIDER_COLOUR;
+}
 
 export function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
