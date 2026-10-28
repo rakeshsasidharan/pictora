@@ -2,8 +2,14 @@
 
 import type { ReviewVerdict } from '@pictora/core';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import type { ModerationEntry, ModerationListBody } from '../lib/admin_moderation';
+import { ADMIN_LINK_CLASS } from './admin_parts';
 
 type ListState =
   | { phase: 'loading' }
@@ -20,6 +26,7 @@ export const VERDICT_LABELS: Record<ReviewVerdict, string> = {
  * `confirmed`. Reports show the reported image's thumbnail.
  */
 export function ModerationReview({ initialDate }: { initialDate: string }) {
+  const dayId = useId();
   const [date, setDate] = useState(initialDate);
   const [state, setState] = useState<ListState>({ phase: 'loading' });
   const [actionError, setActionError] = useState<string>();
@@ -85,12 +92,16 @@ export function ModerationReview({ initialDate }: { initialDate: string }) {
   }
 
   return (
-    <section className="moderation-review" aria-labelledby="moderation-heading">
-      <h1 id="moderation-heading">Moderation review</h1>
-      <label className="admin-filters">
-        Day
-        <input
+    <section className="flex flex-col gap-6" aria-labelledby="moderation-heading">
+      <h1 id="moderation-heading" className="text-xl font-semibold">
+        Moderation review
+      </h1>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={dayId}>Day</Label>
+        <Input
+          id={dayId}
           type="date"
+          className="w-auto self-start"
           value={date}
           onChange={(event) => {
             if (!event.target.value) return;
@@ -98,66 +109,80 @@ export function ModerationReview({ initialDate }: { initialDate: string }) {
             setDate(event.target.value);
           }}
         />
-      </label>
+      </div>
       {actionError && (
-        <p className="form-error" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {actionError}
         </p>
       )}
       {state.phase === 'loading' && (
-        <p role="status" className="admin-note">
+        <p role="status" className="text-sm text-muted-foreground">
           Loading entries…
         </p>
       )}
       {state.phase === 'error' && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="text-sm text-destructive">
           {state.message}
         </p>
       )}
       {state.phase === 'ready' && state.entries.length === 0 && (
-        <p className="admin-note">No blocks or reports on {date}.</p>
+        <p className="text-sm text-muted-foreground">No blocks or reports on {date}.</p>
       )}
       {state.phase === 'ready' && state.entries.length > 0 && (
-        <ul className="moderation-list" aria-label="Entries">
+        <ul className="flex flex-col gap-3" aria-label="Entries">
           {state.entries.map((entry) => (
-            <li key={entry.id} className="moderation-entry">
-              {entry.thumbUrl && (
-                // eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them
-                <img src={entry.thumbUrl} alt="Reported image" width={96} height={96} />
-              )}
-              <div className="moderation-details">
-                <p className="moderation-title">
-                  {entry.type === 'block'
-                    ? `Block · ${entry.stage} · ${entry.category}`
-                    : `Report · ${entry.reason}`}
-                </p>
-                <p>{entry.promptExcerpt || <em>No prompt (uploaded image)</em>}</p>
-                <p className="field-hint">
-                  {new Date(entry.createdAt).toISOString().slice(11, 16)} UTC ·{' '}
-                  <Link href={`/admin/users/${encodeURIComponent(entry.userId)}`}>
-                    {entry.userId}
-                  </Link>
-                  {entry.modelId ? ` · ${entry.modelId}` : ''}
-                </p>
-                <p className="field-hint" aria-live="polite">
-                  {entry.review ? `Reviewed: ${VERDICT_LABELS[entry.review]}` : 'Not reviewed'}
-                </p>
-              </div>
-              <div className="result-actions">
-                {(['ok', 'confirmed'] as const).map((verdict) => (
-                  <button
-                    key={verdict}
-                    type="button"
-                    className="button"
-                    aria-pressed={entry.review === verdict}
-                    aria-label={`${VERDICT_LABELS[verdict]}: ${entry.id}`}
-                    disabled={saving === entry.id}
-                    onClick={() => void review(entry, verdict)}
-                  >
-                    {VERDICT_LABELS[verdict]}
-                  </button>
-                ))}
-              </div>
+            <li key={entry.id}>
+              <Card className="flex-row flex-wrap gap-x-4 gap-y-3 p-4">
+                {entry.thumbUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them
+                  <img
+                    src={entry.thumbUrl}
+                    alt="Reported image"
+                    width={96}
+                    height={96}
+                    className="size-24 rounded-md object-cover"
+                  />
+                )}
+                <div className="flex min-w-[min(100%,15rem)] flex-1 flex-col gap-1 text-sm break-words">
+                  <p className="font-medium">
+                    {entry.type === 'block'
+                      ? `Block · ${entry.stage} · ${entry.category}`
+                      : `Report · ${entry.reason}`}
+                  </p>
+                  <p>{entry.promptExcerpt || <em>No prompt (uploaded image)</em>}</p>
+                  <p className="text-muted-foreground">
+                    {new Date(entry.createdAt).toISOString().slice(11, 16)} UTC ·{' '}
+                    <Link
+                      href={`/admin/users/${encodeURIComponent(entry.userId)}`}
+                      className={ADMIN_LINK_CLASS}
+                    >
+                      {entry.userId}
+                    </Link>
+                    {entry.modelId ? ` · ${entry.modelId}` : ''}
+                  </p>
+                  <p aria-live="polite">
+                    <Badge variant={entry.review ? 'outline' : 'secondary'}>
+                      {entry.review ? `Reviewed: ${VERDICT_LABELS[entry.review]}` : 'Not reviewed'}
+                    </Badge>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-start gap-2">
+                  {(['ok', 'confirmed'] as const).map((verdict) => (
+                    <Button
+                      key={verdict}
+                      type="button"
+                      size="sm"
+                      variant={entry.review === verdict ? 'default' : 'outline'}
+                      aria-pressed={entry.review === verdict}
+                      aria-label={`${VERDICT_LABELS[verdict]}: ${entry.id}`}
+                      disabled={saving === entry.id}
+                      onClick={() => void review(entry, verdict)}
+                    >
+                      {VERDICT_LABELS[verdict]}
+                    </Button>
+                  ))}
+                </div>
+              </Card>
             </li>
           ))}
         </ul>

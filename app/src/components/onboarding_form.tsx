@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { GENERATE_PATH } from '../lib/site';
+
+const LINK_CLASS = 'font-medium text-foreground underline underline-offset-4';
 
 export interface OnboardingFormProps {
   tosVersion: string;
@@ -13,6 +18,7 @@ export interface OnboardingFormProps {
 
 /** The age confirmation and terms acceptance (AUTH-4). Both boxes must be ticked before it submits. */
 export function OnboardingForm({ tosVersion, documents, onDone }: OnboardingFormProps) {
+  const id = useId();
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState<string>();
@@ -52,42 +58,46 @@ export function OnboardingForm({ tosVersion, documents, onDone }: OnboardingForm
   }
 
   return (
-    <form className="onboarding-form" onSubmit={submit} noValidate>
-      <label>
-        <input
-          type="checkbox"
+    <form className="flex flex-col gap-5" onSubmit={submit} noValidate>
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={`${id}-age`}
+          className="mt-0.5"
           checked={ageConfirmed}
-          onChange={(event) => setAgeConfirmed(event.target.checked)}
+          onCheckedChange={(checked) => setAgeConfirmed(checked === true)}
         />
-        I am 13 years old or older.
-      </label>
-      <label>
-        <input
-          type="checkbox"
+        <Label htmlFor={`${id}-age`} className="leading-snug font-normal">
+          I am 13 years old or older.
+        </Label>
+      </div>
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={`${id}-terms`}
+          className="mt-0.5"
           checked={termsAccepted}
-          onChange={(event) => setTermsAccepted(event.target.checked)}
+          onCheckedChange={(checked) => setTermsAccepted(checked === true)}
         />
-        <span>
+        <Label htmlFor={`${id}-terms`} className="block leading-snug font-normal">
           I accept the{' '}
           {documents.map((document, index) => (
             <span key={document.path}>
               {index > 0 && (index === documents.length - 1 ? ' and ' : ', ')}
-              <a href={document.path} target="_blank" rel="noopener">
+              <a href={document.path} target="_blank" rel="noopener" className={LINK_CLASS}>
                 {document.title.toLowerCase()}
               </a>
             </span>
           ))}{' '}
           (version {tosVersion}).
-        </span>
-      </label>
+        </Label>
+      </div>
       {error && (
-        <p className="form-error" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
       )}
-      <button type="submit" className="button button-primary" disabled={submitting}>
+      <Button type="submit" className="self-start" disabled={submitting}>
         {submitting ? 'Saving…' : 'Continue'}
-      </button>
+      </Button>
     </form>
   );
 }

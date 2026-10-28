@@ -71,7 +71,7 @@ export function AppShell({ email, admin, defaultOpen, footer, children }: AppShe
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <AppSidebar email={email} admin={admin} pathname={pathname} />
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator

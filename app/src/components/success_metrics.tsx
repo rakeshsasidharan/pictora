@@ -2,8 +2,20 @@
 
 import { METRIC_IDS, meetsTarget, type MetricId, type MetricTarget } from '@pictora/core';
 import { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 import type { AdminMetricsBody, MetricsDay } from '../lib/admin_metrics';
 import { METRIC_LABELS, formatMetric, formatTarget } from '../lib/metrics_format';
+import { ADMIN_CAPTION_CLASS, NUMBER_CLASS, TILE_GRID_CLASS } from './admin_parts';
 
 type MetricsState =
   | { phase: 'loading' }
@@ -55,15 +67,17 @@ export function SuccessMetrics({ range }: { range: { from?: string; to?: string 
   }, [range]);
 
   return (
-    <section className="success-metrics" aria-labelledby="metrics-heading">
-      <h2 id="metrics-heading">Success metrics</h2>
+    <section className="flex flex-col gap-4" aria-labelledby="metrics-heading">
+      <h2 id="metrics-heading" className="text-lg font-semibold">
+        Success metrics
+      </h2>
       {state.phase === 'loading' && (
-        <p role="status" className="admin-note">
+        <p role="status" className="text-sm text-muted-foreground">
           Loading metrics…
         </p>
       )}
       {state.phase === 'error' && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="text-sm text-destructive">
           {state.message}
         </p>
       )}
@@ -75,14 +89,14 @@ export function SuccessMetrics({ range }: { range: { from?: string; to?: string 
 function MetricsView({ metrics }: { metrics: AdminMetricsBody }) {
   return (
     <>
-      <p className="admin-note">
+      <p className="text-sm text-muted-foreground">
         {metrics.from} to {metrics.to}. Computed each day after midnight UTC
         {metrics.computedAt
           ? `, last at ${metrics.computedAt.slice(0, 16).replace('T', ' ')} UTC`
           : ''}
         . Keep rate and week-1 retention are known 8 days after the day.
       </p>
-      <ul className="kpi-tiles" aria-label="Success metrics over the range">
+      <ul className={TILE_GRID_CLASS} aria-label="Success metrics over the range">
         {METRIC_IDS.map((metric) => (
           <MetricTile
             key={metric}
@@ -92,56 +106,77 @@ function MetricsView({ metrics }: { metrics: AdminMetricsBody }) {
           />
         ))}
       </ul>
-      <div className="table-scroll">
-        <table className="admin-table">
-          <caption>Success metrics by day</caption>
-          <thead>
-            <tr>
-              <th scope="col">Day</th>
-              {METRIC_IDS.map((metric) => (
-                <th key={metric} scope="col">
-                  {METRIC_LABELS[metric]}
-                  <span className="field-hint">
-                    {' '}
-                    {formatTarget(metric, metrics.targets[metric])}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.days.map((day) => (
-              <tr key={day.date}>
-                <th scope="row">{day.date}</th>
-                {METRIC_IDS.map((metric) =>
-                  day.computed ? (
-                    <MetricCell
-                      key={metric}
-                      metric={metric}
-                      value={dayValue(day, metric)}
-                      target={metrics.targets[metric]}
-                    />
-                  ) : (
-                    <td key={metric} className="metric-pending">
-                      Pending
-                    </td>
-                  ),
-                )}
-              </tr>
+      <Table className="tabular-nums">
+        <TableCaption className={ADMIN_CAPTION_CLASS}>Success metrics by day</TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col">Day</TableHead>
+            {METRIC_IDS.map((metric) => (
+              <TableHead key={metric} scope="col" className={NUMBER_CLASS}>
+                {METRIC_LABELS[metric]}
+                <span className="font-normal text-muted-foreground">
+                  {' '}
+                  {formatTarget(metric, metrics.targets[metric])}
+                </span>
+              </TableHead>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {metrics.days.map((day) => (
+            <TableRow key={day.date}>
+              <TableHead scope="row">{day.date}</TableHead>
+              {METRIC_IDS.map((metric) =>
+                day.computed ? (
+                  <MetricCell
+                    key={metric}
+                    metric={metric}
+                    value={dayValue(day, metric)}
+                    target={metrics.targets[metric]}
+                  />
+                ) : (
+                  <TableCell
+                    key={metric}
+                    data-status="pending"
+                    className={cn(NUMBER_CLASS, 'text-muted-foreground')}
+                  >
+                    Pending
+                  </TableCell>
+                ),
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </>
   );
 }
 
-function status(value: number | null, target: MetricTarget): 'met' | 'missed' | 'none' {
+type Status = 'met' | 'missed' | 'none';
+
+function status(value: number | null, target: MetricTarget): Status {
   if (value === null) return 'none';
   return meetsTarget(target, value) ? 'met' : 'missed';
 }
 
-const STATUS_TEXT = { met: 'Meets target', missed: 'Misses target', none: 'No data yet' };
+const STATUS_TEXT: Record<Status, string> = {
+  met: 'Meets target',
+  missed: 'Misses target',
+  none: 'No data yet',
+};
+
+/** Met targets are green and missed ones red, in both themes; the words always say it too. */
+const STATUS_TEXT_CLASS: Record<Status, string> = {
+  met: 'text-green-700 dark:text-green-400',
+  missed: 'text-destructive',
+  none: 'text-muted-foreground',
+};
+
+const STATUS_BORDER_CLASS: Record<Status, string> = {
+  met: 'border-l-4 border-l-green-600 dark:border-l-green-400',
+  missed: 'border-l-4 border-l-destructive',
+  none: '',
+};
 
 function MetricTile({
   metric,
@@ -154,12 +189,19 @@ function MetricTile({
 }) {
   const result = status(value, target);
   return (
-    <li className={`kpi-tile metric-${result}`} data-testid={`metric-${metric}`}>
-      <span className="kpi-label">{METRIC_LABELS[metric]}</span>
-      <span className="kpi-value">{value === null ? '—' : formatMetric(metric, value)}</span>
-      <span className="field-hint">
-        Target {formatTarget(metric, target)} · <strong>{STATUS_TEXT[result]}</strong>
-      </span>
+    <li data-testid={`metric-${metric}`} data-status={result}>
+      <Card className={cn('h-full gap-1 py-4', STATUS_BORDER_CLASS[result])}>
+        <CardHeader className="gap-1 px-4">
+          <CardDescription>{METRIC_LABELS[metric]}</CardDescription>
+          <CardTitle className="text-2xl font-bold tabular-nums">
+            {value === null ? '—' : formatMetric(metric, value)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 text-sm text-muted-foreground">
+          Target {formatTarget(metric, target)} ·{' '}
+          <strong className={STATUS_TEXT_CLASS[result]}>{STATUS_TEXT[result]}</strong>
+        </CardContent>
+      </Card>
     </li>
   );
 }
@@ -174,11 +216,17 @@ function MetricCell({
   target: MetricTarget;
 }) {
   const result = status(value, target);
-  if (value === null) return <td className="metric-none">—</td>;
+  if (value === null) {
+    return (
+      <TableCell data-status="none" className={cn(NUMBER_CLASS, STATUS_TEXT_CLASS.none)}>
+        —
+      </TableCell>
+    );
+  }
   return (
-    <td className={`metric-${result}`}>
+    <TableCell data-status={result} className={cn(NUMBER_CLASS, STATUS_TEXT_CLASS[result])}>
       {formatMetric(metric, value)}
-      <span className="visually-hidden">, {STATUS_TEXT[result].toLowerCase()}</span>
-    </td>
+      <span className="sr-only">, {STATUS_TEXT[result].toLowerCase()}</span>
+    </TableCell>
   );
 }
