@@ -64,10 +64,12 @@ function json(body: unknown, status = 200): Response {
 function fields(): Record<string, string> {
   const list = document.querySelector('[data-slot="detail-fields"]')!;
   return Object.fromEntries(
-    [...list.querySelectorAll('div')].map((row) => [
-      row.querySelector('dt')!.textContent,
-      row.querySelector('dd')!.textContent,
-    ]),
+    [...list.querySelectorAll(':scope > div')].map((row) => {
+      const value = row.querySelector('dd')!;
+      // Long text sits in a scroll area, whose root also holds Radix's style tag.
+      const viewport = value.querySelector('[data-slot="scroll-area-viewport"]');
+      return [row.querySelector('dt')!.textContent, (viewport ?? value).textContent];
+    }),
   );
 }
 
@@ -137,6 +139,91 @@ describe('ImageDetail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous version' }));
     expect(screen.getByRole('img', { name: 'A lighthouse at dusk' })).toBeTruthy();
+  });
+
+  it('shows the prompt and the enhanced prompt in capped scroll areas the keyboard can reach (#145)', () => {
+    render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([ORIGINAL])}
+        modelNames={MODEL_NAMES}
+        onDeleted={vi.fn()}
+      />,
+    );
+    for (const [label, text] of [
+      ['Prompt', ORIGINAL.prompt],
+      ['Enhanced prompt', ORIGINAL.enhancedPrompt],
+    ] as const) {
+      const box = screen.getByRole('group', { name: label });
+      expect(box.getAttribute('data-slot')).toBe('scroll-area-viewport');
+      expect(box.closest('[data-slot="scroll-area"]')).toBeTruthy();
+      expect(box.className).toContain('max-h-32');
+      expect(box.tabIndex).toBe(0);
+      expect(box.textContent).toBe(text);
+    }
+    // Short settings are plain text.
+    expect(screen.queryByRole('group', { name: 'Model' })).toBeNull();
+  });
+
+  it('puts a 2,000-character prompt in the same capped scroll area as a short one', () => {
+    const long = 'A lighthouse at dusk with gulls overhead. '.repeat(50).slice(0, 2000);
+    render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([{ ...ORIGINAL, prompt: long, enhancedPrompt: undefined }])}
+        modelNames={MODEL_NAMES}
+        onDeleted={vi.fn()}
+      />,
+    );
+    const box = screen.getByRole('group', { name: 'Prompt' });
+    expect(box.textContent).toBe(long);
+    expect(box.className).toContain('max-h-32');
+    // The picture and the actions are outside the scroll area.
+    expect(box.contains(screen.getByRole('link', { name: 'Download PNG' }))).toBe(false);
+    expect(box.contains(screen.getByRole('img', { name: /lighthouse/ }))).toBe(false);
+  });
+
+  it('puts an edit instruction in a scroll area too', () => {
+    render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([ORIGINAL, NIGHT])}
+        modelNames={MODEL_NAMES}
+        onDeleted={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('group', { name: 'Edit' }).textContent).toBe('Make it night');
+  });
+
+  it('fills its container in the modal, and sizes to its content on the page', () => {
+    const { unmount } = render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([ORIGINAL])}
+        modelNames={MODEL_NAMES}
+        onDeleted={vi.fn()}
+        fill
+      />,
+    );
+    const filled = document.querySelector<HTMLElement>('[data-slot="image-detail"]')!;
+    expect(filled.className).toContain('flex-1');
+    expect(screen.getByRole('img', { name: /lighthouse/ }).className).toContain('flex-1');
+    unmount();
+
+    render(
+      <ImageDetail
+        imageId={IMAGE_ID}
+        initial={detail([ORIGINAL])}
+        modelNames={MODEL_NAMES}
+        headingLevel={1}
+        onDeleted={vi.fn()}
+      />,
+    );
+    const page = document.querySelector<HTMLElement>('[data-slot="image-detail"]')!;
+    expect(page.className).not.toContain('flex-1');
+    expect(screen.getByRole('img', { name: /lighthouse/ }).className).toContain('max-h-[70svh]');
+    // The page has the same capped scroll area.
+    expect(screen.getByRole('group', { name: 'Prompt' }).className).toContain('max-h-32');
   });
 
   it('offers download, rerun, edit and report for the selected version', () => {

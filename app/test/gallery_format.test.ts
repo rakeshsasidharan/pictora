@@ -19,7 +19,7 @@ const base: ImageVersionBody = {
 };
 
 describe('versionFields', () => {
-  it('lists how a generated version was made, then its settings', () => {
+  it('lists how a generated version was made, then its settings, marking the free text to scroll', () => {
     expect(
       versionFields(
         {
@@ -38,9 +38,9 @@ describe('versionFields', () => {
         { mock: 'Mock (dev only)' },
       ),
     ).toEqual([
-      { label: 'Prompt', value: 'A fox' },
-      { label: 'Enhanced prompt', value: 'A red fox in snow' },
-      { label: 'Avoid', value: 'text' },
+      { label: 'Prompt', value: 'A fox', scroll: true },
+      { label: 'Enhanced prompt', value: 'A red fox in snow', scroll: true },
+      { label: 'Avoid', value: 'text', scroll: true },
       { label: 'Model', value: 'Mock (dev only)' },
       { label: 'Style', value: 'Anime' },
       { label: 'Size', value: '1536 × 1024 (3:2)' },
@@ -58,7 +58,7 @@ describe('versionFields', () => {
         {},
       ),
     ).toEqual([
-      { label: 'Edit', value: 'Add snow' },
+      { label: 'Edit', value: 'Add snow', scroll: true },
       { label: 'Edited from', value: 'Version 1' },
       { label: 'Model', value: 'old' },
       { label: 'Size', value: '1536 × 1024' },

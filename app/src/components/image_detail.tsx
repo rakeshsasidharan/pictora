@@ -16,7 +16,9 @@ import {
 } from '@/components/ui/alert_dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll_area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { versionAltText } from '../lib/edit_options';
 import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
@@ -33,6 +35,11 @@ export interface ImageDetailProps {
   modelNames: Readonly<Record<string, string>>;
   /** `h1` on the detail page, `h2` in the modal. */
   headingLevel?: 1 | 2;
+  /**
+   * Fill the container's height, as in the gallery modal (#145): the picture takes the space left, and the
+   * settings card scrolls when the window is short, so the view is the same size whatever the prompt.
+   */
+  fill?: boolean;
   /** Called once the image is deleted. */
   onDeleted: (imageId: string) => void;
 }
@@ -47,13 +54,15 @@ type Load =
  * instruction, model, style, size, seed and date; the version history, as a row of thumbnails under the
  * picture (#125); and a toolbar to download the original PNG, rerun, edit, report and delete (after a
  * confirmation in an alert dialog). Presigned URLs that expired are fetched again when an image fails to load
- * (GAL-4).
+ * (GAL-4). Long text (the prompt, enhanced prompt, what to avoid, the edit instruction) sits in a capped box that
+ * scrolls, so it never pushes the picture or the actions out of view (#145).
  */
 export function ImageDetail({
   imageId,
   initial,
   modelNames,
   headingLevel = 2,
+  fill = false,
   onDeleted,
 }: ImageDetailProps) {
   const [load, setLoad] = useState<Load>(() =>
@@ -177,14 +186,24 @@ export function ImageDetail({
   return (
     <article
       data-slot="image-detail"
-      className="flex flex-col gap-4"
+      className={cn('flex flex-col gap-4', fill && 'min-h-0 flex-1')}
       aria-labelledby="image-detail-heading"
     >
-      <Heading id="image-detail-heading" className="pr-8 text-xl font-semibold break-words">
+      <Heading
+        id="image-detail-heading"
+        className="shrink-0 pr-8 text-xl font-semibold break-words"
+      >
         {detail.image.title}
       </Heading>
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="flex min-w-0 flex-col gap-3">
+      <div
+        className={cn(
+          'grid gap-6',
+          fill
+            ? 'min-h-0 flex-1 grid-cols-[minmax(0,1fr)_18rem] grid-rows-[minmax(0,1fr)]'
+            : 'md:grid-cols-[minmax(0,1fr)_18rem]',
+        )}
+      >
+        <div className="flex min-h-0 min-w-0 flex-col gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
           <img
             src={current.url}
@@ -192,7 +211,10 @@ export function ImageDetail({
             width={current.width}
             height={current.height}
             onError={refreshUrls}
-            className="h-auto max-h-[70svh] w-full rounded-lg border bg-muted object-contain"
+            className={cn(
+              'w-full rounded-lg border bg-muted object-contain',
+              fill ? 'min-h-32 flex-1' : 'h-auto max-h-[70svh]',
+            )}
           />
           {versionCount > 1 && (
             <VersionCarousel
@@ -202,7 +224,7 @@ export function ImageDetail({
               onImageError={refreshUrls}
             />
           )}
-          <div role="group" aria-label="Image actions" className="flex flex-wrap gap-2">
+          <div role="group" aria-label="Image actions" className="flex shrink-0 flex-wrap gap-2">
             <Button asChild>
               <a href={downloadPath(imageId, current.version)} download>
                 <DownloadIcon aria-hidden="true" />
@@ -268,7 +290,7 @@ export function ImageDetail({
           </div>
         </div>
 
-        <Card className="h-fit gap-4 py-4">
+        <Card className={cn('h-fit gap-4 py-4', fill && 'max-h-full overflow-y-auto')}>
           <CardHeader className="px-4">
             <SubHeading className="text-base font-semibold">Version {current.version}</SubHeading>
           </CardHeader>
@@ -277,7 +299,24 @@ export function ImageDetail({
               {fields.map((field) => (
                 <div key={field.label} className="flex flex-col gap-0.5">
                   <dt className="text-xs font-medium text-muted-foreground">{field.label}</dt>
-                  <dd className="break-words whitespace-pre-wrap">{field.value}</dd>
+                  {field.scroll ? (
+                    <dd>
+                      <ScrollArea
+                        type="auto"
+                        viewportProps={{
+                          // Focusable, so a long prompt can be scrolled from the keyboard.
+                          tabIndex: 0,
+                          role: 'group',
+                          'aria-label': field.label,
+                          className: 'max-h-32 rounded-sm',
+                        }}
+                      >
+                        <p className="pr-3 break-words whitespace-pre-wrap">{field.value}</p>
+                      </ScrollArea>
+                    </dd>
+                  ) : (
+                    <dd className="break-words whitespace-pre-wrap">{field.value}</dd>
+                  )}
                 </div>
               ))}
             </dl>
