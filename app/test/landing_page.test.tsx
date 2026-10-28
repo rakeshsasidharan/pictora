@@ -43,6 +43,7 @@ describe('landing page', () => {
     expect(ctas.length).toBeGreaterThan(0);
     for (const cta of ctas) {
       expect(cta.getAttribute('href')).toBe('/auth/login?returnTo=%2Fgenerate');
+      expect(cta.getAttribute('data-slot')).toBe('button');
     }
   });
 
@@ -56,6 +57,7 @@ describe('landing page', () => {
       const image = within(grid).getByAltText(sample.alt);
       expect(image.getAttribute('src')).toBe(sample.src);
       expect(within(grid).getByText(sample.prompt)).toBeTruthy();
+      expect(image.closest('[data-slot="card"]')).not.toBeNull();
     }
     expect(within(grid).getByText('Watercolour')).toBeTruthy();
   });
@@ -65,7 +67,11 @@ describe('landing page', () => {
 
     const how = screen.getByRole('heading', { name: 'How it works' }).closest('section');
     expect(how).not.toBeNull();
-    expect(within(how!).getAllByRole('listitem')).toHaveLength(3);
+    const steps = within(how!).getAllByRole('listitem');
+    expect(steps).toHaveLength(3);
+    expect(
+      steps.map((step) => within(step).getByRole('heading', { level: 3 }).textContent),
+    ).toEqual(['Describe it', 'Pick a style', 'Refine and download']);
     expect(screen.getByRole('heading', { name: 'Free, with a daily allowance' })).toBeTruthy();
   });
 

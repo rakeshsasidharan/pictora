@@ -85,7 +85,9 @@ describe('(site) layout', () => {
   it('keeps the site header and footer on public pages', async () => {
     request.headers = new Headers();
     const html = renderToStaticMarkup(await SiteLayout({ children: <main>Terms</main> }));
-    expect(html).toMatch(/^<header class="site-header">.*<main>Terms<\/main><footer/);
+    expect(html).toMatch(
+      /^<header data-slot="site-header"[^>]*>.*<main>Terms<\/main><footer data-slot="site-footer"/,
+    );
     expect(html).toContain('href="/auth/login"');
 
     signIn();

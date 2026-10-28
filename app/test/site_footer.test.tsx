@@ -21,6 +21,12 @@ describe('SiteFooter', () => {
     ]);
   });
 
+  it('is outside the legacy styles, so its links use the theme colours', () => {
+    render(<SiteFooter />);
+    expect(screen.getByRole('contentinfo').getAttribute('data-slot')).toBe('site-footer');
+    for (const link of screen.getAllByRole('link')) expect(link.className).toContain('text-');
+  });
+
   it('shows the contact email', () => {
     render(<SiteFooter />);
     expect(screen.getByRole('link', { name: CONTACT_EMAIL }).getAttribute('href')).toBe(
