@@ -30,6 +30,9 @@ const CREATED_FORMAT = new Intl.DateTimeFormat('en-GB', {
 export interface DetailField {
   label: string;
   value: string;
+  /** Free text that can run long (a prompt, an enhanced prompt, what to avoid, an edit instruction), which the
+   * detail view shows in a capped box that scrolls (#145). */
+  scroll?: true;
 }
 
 /**
@@ -41,20 +44,21 @@ export function versionFields(
   modelNames: Readonly<Record<string, string>>,
 ): DetailField[] {
   const fields: DetailField[] = [];
-  const add = (label: string, value: string | undefined) => {
-    if (value !== undefined && value !== '') fields.push({ label, value });
+  const add = (label: string, value: string | undefined, scroll?: true) => {
+    if (value !== undefined && value !== '')
+      fields.push({ label, value, ...(scroll && { scroll }) });
   };
   if (version.editInstruction) {
-    add('Edit', version.editInstruction);
+    add('Edit', version.editInstruction, true);
     if (version.parentVersion !== undefined) {
       add('Edited from', `Version ${version.parentVersion}`);
     }
   } else if (version.source === 'upload') {
     add('Source', 'Uploaded image');
   } else {
-    add('Prompt', version.prompt);
-    add('Enhanced prompt', version.enhancedPrompt);
-    add('Avoid', version.avoid);
+    add('Prompt', version.prompt, true);
+    add('Enhanced prompt', version.enhancedPrompt, true);
+    add('Avoid', version.avoid, true);
   }
   if (version.modelId) add('Model', modelNames[version.modelId] ?? version.modelId);
   if (version.style && version.style !== 'none') add('Style', styleName(version.style));
