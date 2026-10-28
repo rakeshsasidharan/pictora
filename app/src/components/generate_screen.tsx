@@ -670,7 +670,9 @@ export function GenerateScreen({
     ...(count > 1 ? [variationsLabel(count)] : []),
   ].join(' · ');
   const extraOptions: ExtraOptionsProps = {
-    ...(transparentOffered ? { transparent: { value: transparent, onChange: setTransparent } } : {}),
+    ...(transparentOffered
+      ? { transparent: { value: transparent, onChange: setTransparent } }
+      : {}),
     ...(batchOffered ? { later: { value: later, onChange: setLater } } : {}),
     ...(model.capabilities.negativePrompt ? { avoid: { value: avoid, onChange: setAvoid } } : {}),
   };
@@ -843,7 +845,8 @@ export function GenerateScreen({
                     </Toggle>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Adds detail about the subject, composition and lighting. You can edit the result.
+                    Adds detail about the subject, composition and lighting. You can edit the
+                    result.
                   </TooltipContent>
                 </Tooltip>
 
@@ -861,7 +864,10 @@ export function GenerateScreen({
                       <span className="truncate">{settingsSummary}</span>
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto rounded-t-2xl">
+                  <SheetContent
+                    side="bottom"
+                    className="max-h-[85svh] overflow-y-auto rounded-t-2xl"
+                  >
                     <SheetHeader>
                       <SheetTitle>Image settings</SheetTitle>
                       <SheetDescription>They apply to your next request.</SheetDescription>

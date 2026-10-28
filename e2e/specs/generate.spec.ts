@@ -128,7 +128,9 @@ test.describe('generate', () => {
     }
     // The row sits right above the prompt, and the settings button is for small screens only.
     const rowBox = await row.boundingBox();
-    const promptBox = await page.getByRole('textbox', { name: 'Describe your image' }).boundingBox();
+    const promptBox = await page
+      .getByRole('textbox', { name: 'Describe your image' })
+      .boundingBox();
     expect(rowBox && promptBox && rowBox.y + rowBox.height <= promptBox.y).toBe(true);
     await expect(page.getByRole('button', { name: /^Image settings:/ })).toBeHidden();
   });

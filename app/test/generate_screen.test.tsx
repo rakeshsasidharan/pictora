@@ -1158,7 +1158,10 @@ describe('GenerateScreen', () => {
       expect(polls).toBeGreaterThan(0);
       cleanup();
 
-      stubApi({ statuses: [{ status: 'succeeded', pointsCharged: 2, images }], me: { pointsLeft: 1 } });
+      stubApi({
+        statuses: [{ status: 'succeeded', pointsCharged: 2, images }],
+        me: { pointsLeft: 1 },
+      });
       renderScreen({ left: 3, limit: 25 });
       fireEvent.click(toggleButton('Enhance prompt'));
       chooseModel(/^Mock/);
