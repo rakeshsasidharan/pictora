@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import {
   chooseCount,
   chooseMock,
+  generateButton,
   threadTurns,
   uniquePrompt,
   useOwnWords,
@@ -50,9 +51,12 @@ test.describe('generate', () => {
       .fill('A lighthouse at dusk (e2e)');
     await chooseMock(page);
     await chooseCount(page, 2);
-    await expect(page.getByText(`Uses 2 of your ${before} points today`)).toBeVisible();
+    await expect(generateButton(page)).toHaveText('Generate · 2 points');
+    await expect(generateButton(page)).toHaveAccessibleDescription(
+      `Uses 2 of your ${before} points today`,
+    );
 
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await generateButton(page).click();
     await expect(page.getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
 
     const results = page.getByRole('list', { name: 'Results' });
@@ -72,8 +76,8 @@ test.describe('generate', () => {
   });
 
   test('keeps two requests and their results in one thread', async ({ page }) => {
-    // Two mock jobs run one after the other.
-    test.setTimeout(120_000);
+    // Three mock jobs run one after the other.
+    test.setTimeout(180_000);
     const first = uniquePrompt('A red umbrella in the rain');
     const second = uniquePrompt('A green bicycle by a canal');
     await page.goto('/generate');
@@ -82,7 +86,7 @@ test.describe('generate', () => {
     const composer = page.getByRole('textbox', { name: 'Describe your image' });
 
     await composer.fill(first);
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await generateButton(page).click();
     const turns = threadTurns(page);
     await expect(turns.nth(0).getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
 
@@ -96,25 +100,66 @@ test.describe('generate', () => {
     await expect(turns.nth(0).getByRole('img', { name: first })).toHaveCount(1);
     await expect(turns.nth(1).getByText(second, { exact: true })).toBeVisible();
     await expect(turns.nth(1).getByRole('img', { name: second })).toHaveCount(1);
-    await expect(turns.nth(1).getByRole('list', { name: 'Options' })).toContainText('Draft');
+    await expect(turns.nth(1)).toContainText('Mock (dev only)');
+    await expect(turns.nth(1)).toContainText(/ · Draft · 1 image · /);
+
+    // More variations sends the second request again and adds a turn.
+    const more = turns.nth(1).getByRole('button', { name: /^More variations/ });
+    await expect(more).toBeEnabled();
+    await more.click();
+    await expect(turns).toHaveCount(3);
+    await expect(turns.nth(2).getByText(second, { exact: true })).toBeVisible();
+    await expect(turns.nth(2).getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
   });
 
-  test('keeps the composer and its options reachable at 360 px', async ({ page }) => {
+  test('keeps the settings on the composer, in a row above the prompt', async ({ page }) => {
+    await page.goto('/generate');
+    const row = page.getByRole('group', { name: 'Image settings' });
+    await expect(row).toBeVisible();
+    for (const control of [
+      row.getByRole('button', { name: /^Style:/ }),
+      row.getByRole('combobox', { name: 'Aspect ratio' }),
+      row.getByRole('combobox', { name: 'Quality' }),
+      row.getByRole('combobox', { name: 'Variations' }),
+      row.getByRole('button', { name: /^More options/ }),
+      row.getByRole('button', { name: /^Model:/ }),
+    ]) {
+      await expect(control).toBeVisible();
+    }
+    // The row sits right above the prompt, and the settings button is for small screens only.
+    const rowBox = await row.boundingBox();
+    const promptBox = await page
+      .getByRole('textbox', { name: 'Describe your image' })
+      .boundingBox();
+    expect(rowBox && promptBox && rowBox.y + rowBox.height <= promptBox.y).toBe(true);
+    await expect(page.getByRole('button', { name: /^Image settings:/ })).toBeHidden();
+  });
+
+  test('keeps the composer and its settings reachable at 360 px', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto('/generate');
     // The sidebar is a sheet at this width, so the page has the full width.
     const composer = page.getByRole('textbox', { name: 'Describe your image' });
     await expect(composer).toBeInViewport();
+    // The settings row folds into one button that opens them in a sheet.
+    await expect(page.getByRole('group', { name: 'Image settings' })).toBeHidden();
+    const settings = page.getByRole('button', { name: /^Image settings:/ });
+    for (const control of [settings, generateButton(page)]) {
+      await expect(control).toBeInViewport();
+    }
+    await settings.click();
+    const sheet = page.getByRole('dialog', { name: 'Image settings' });
     for (const control of [
-      page.getByRole('button', { name: /^Style:/ }),
-      page.getByRole('combobox', { name: 'Aspect ratio' }),
-      page.getByRole('combobox', { name: 'Quality' }),
-      page.getByRole('radiogroup', { name: 'Number of images' }),
-      page.getByRole('button', { name: 'Advanced' }),
-      page.getByRole('button', { name: 'Generate', exact: true }),
+      sheet.getByRole('button', { name: /^Style:/ }),
+      sheet.getByRole('combobox', { name: 'Aspect ratio' }),
+      sheet.getByRole('combobox', { name: 'Quality' }),
+      sheet.getByRole('combobox', { name: 'Variations' }),
+      sheet.getByRole('button', { name: /^Model:/ }),
     ]) {
       await expect(control).toBeInViewport();
     }
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
     // Nothing scrolls sideways.
     const width = await page
       .locator('html')

@@ -77,8 +77,22 @@ describe('generate page', () => {
     onboarded.current = true;
     pause.current = undefined;
     rerun.settings.mockReset();
+    // The generate screen follows the window width (useIsMobile); jsdom has no matchMedia.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((media: string) => ({
+        matches: false,
+        media,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      })),
+    );
+    window.matchMedia = globalThis.matchMedia;
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it('shows the form with the models that have a queue and today’s points', async () => {
     signIn();
@@ -86,7 +100,7 @@ describe('generate page', () => {
     expect(rerun.settings).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { level: 1, name: 'Create an image' })).toBeTruthy();
     expect(screen.getByText('19 of 25 points left today')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Model:/ }));
     expect(screen.getByRole('radio', { name: /^Mock/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /^Stable Image Core/ })).toBeNull();
@@ -96,7 +110,7 @@ describe('generate page', () => {
     for (const groups of [[], ['admins']]) {
       signIn(groups);
       render(await page());
-      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Model:/ }));
       expect(screen.queryByRole('radio', { name: /^Mock/ })).toBeNull();
       expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
       cleanup();

@@ -1,9 +1,10 @@
 'use client';
 
-import { TERMINAL_JOB_STATUSES } from '@pictora/core';
-import { useEffect, useRef } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { BATCH_POLL_TIMEOUT_MS } from '../lib/generate_options';
+import { TERMINAL_JOB_STATUSES, type GenerateJobRequest, type Quality } from '@pictora/core';
+import { PlusIcon } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { BATCH_POLL_TIMEOUT_MS, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { useJobStatus } from '../lib/use_job_status';
 import { JobProgress } from './job_progress';
@@ -12,8 +13,14 @@ import { JobProgress } from './job_progress';
 export interface GenerateTurn {
   jobId: string;
   prompt: string;
-  /** The options chosen for it, such as the style, aspect and quality, shown as chips. */
-  options: string[];
+  /** The main options (style, aspect, quality, variations, model), shown as one line under the prompt. */
+  summary: string[];
+  /** Options set less often (transparent background, avoid, enhanced, delivered later), shown on request. */
+  extras: string[];
+  /** The request as sent, which "More variations" sends again on the model it ran on. */
+  request: GenerateJobRequest;
+  /** The quality it ran at, which Auto may have lowered to fit the points left. */
+  quality: Quality;
   pointsReserved: number;
   /** The model the job runs on, which Auto picks on the server. */
   modelId: string;
@@ -32,12 +39,18 @@ export interface GenerateTurnViewProps {
   onFinish: (job: JobStatusBody) => void;
   /** Called once the screen stops following the job: finished, timed out or lost. */
   onEnd: (jobId: string) => void;
+  /** "More variations": the same request again. Disabled while another job runs or the points don't cover it. */
+  onMoreVariations: (turn: GenerateTurn) => void;
+  moreVariationsDisabled: boolean;
+  /** Shown under the prompt, such as the editable enhanced prompt on the latest turn. */
+  children?: ReactNode;
 }
 
 /**
- * A turn of the thread: the prompt and its options on the right, like a sent message, then the job's live
- * status and results (GEN-8). It follows its own job, so earlier batch jobs keep updating while new ones run,
- * and scrolls itself into view when it is added.
+ * A turn of the thread: the prompt on the right, like a sent message, with its options as one muted line and the
+ * rarer ones behind Details, then the job's live status and results (GEN-8) and, once done, "More variations". It
+ * follows its own job, so earlier batch jobs keep updating while new ones run, and scrolls itself into view when
+ * it is added.
  */
 export function GenerateTurnView({
   turn,
@@ -46,8 +59,13 @@ export function GenerateTurnView({
   batchPollIntervalMs,
   onFinish,
   onEnd,
+  onMoreVariations,
+  moreVariationsDisabled,
+  children,
 }: GenerateTurnViewProps) {
   const item = useRef<HTMLLIElement>(null);
+  const extrasId = useId();
+  const [showExtras, setShowExtras] = useState(false);
   const poll = useJobStatus(turn.jobId, {
     intervalMs: turn.batch ? batchPollIntervalMs : pollIntervalMs,
     timeoutMs: turn.batch ? BATCH_POLL_TIMEOUT_MS : pollTimeoutMs,
@@ -57,6 +75,7 @@ export function GenerateTurnView({
     poll.timedOut ||
     poll.lost ||
     (poll.job !== undefined && TERMINAL_JOB_STATUSES.includes(poll.job.status));
+  const succeeded = poll.job?.status === 'succeeded' && (poll.job.images?.length ?? 0) > 0;
 
   useEffect(() => {
     item.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
@@ -68,18 +87,37 @@ export function GenerateTurnView({
 
   return (
     <li ref={item} className="flex scroll-mt-16 flex-col gap-3">
-      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-2">
-        <p className="rounded-2xl bg-muted px-4 py-2 break-words whitespace-pre-wrap">
+      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+        <p className="rounded-2xl bg-muted px-4 py-2 wrap-break-word whitespace-pre-wrap">
           {turn.prompt}
         </p>
-        <ul aria-label="Options" className="flex flex-wrap justify-end gap-1">
-          {turn.options.map((option) => (
-            <li key={option}>
-              <Badge variant="outline">{option}</Badge>
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-wrap items-baseline justify-end gap-x-2 text-xs text-muted-foreground">
+          <p data-slot="turn-summary">{turn.summary.join(' · ')}</p>
+          {turn.extras.length > 0 && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="h-auto p-0 text-xs text-muted-foreground"
+              aria-expanded={showExtras}
+              aria-controls={extrasId}
+              onClick={() => setShowExtras((shown) => !shown)}
+            >
+              {showExtras ? 'Hide details' : 'Details'}
+            </Button>
+          )}
+        </div>
+        {turn.extras.length > 0 && (
+          <p
+            id={extrasId}
+            hidden={!showExtras}
+            className="text-right text-xs wrap-break-word text-muted-foreground"
+          >
+            {turn.extras.join(' · ')}
+          </p>
+        )}
       </div>
+      {children}
       <JobProgress
         poll={poll}
         pointsReserved={turn.pointsReserved}
@@ -88,6 +126,19 @@ export function GenerateTurnView({
         count={turn.count}
         modelName={turn.modelName}
       />
+      {succeeded && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          disabled={moreVariationsDisabled}
+          onClick={() => onMoreVariations(turn)}
+        >
+          <PlusIcon aria-hidden="true" />
+          More variations · {pointsText(turn.pointsReserved)}
+        </Button>
+      )}
     </li>
   );
 }
