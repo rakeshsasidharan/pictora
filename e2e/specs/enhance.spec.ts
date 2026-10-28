@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { chooseMock, threadTurns, useEnhancer } from '../src/generate.js';
+import { chooseMock, generateButton, threadTurns, useEnhancer } from '../src/generate.js';
 
 /** What the dev enhancer (`ENHANCER_MODEL=mock`) adds to every prompt. */
 const MOCK_DETAIL = 'detailed composition, balanced framing, soft natural lighting, rich colour';
@@ -24,10 +24,14 @@ test.describe('prompt enhancer', () => {
       }
     });
 
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await generateButton(page).click();
+    const turns = threadTurns(page);
+    // The enhanced prompt sits collapsed in its turn.
+    const toggle = turns.nth(0).getByRole('button', { name: 'Enhanced prompt' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
     const enhanced = page.getByRole('textbox', { name: 'Enhanced prompt' });
     await expect(enhanced).toHaveValue(`A red kite over hills (e2e), ${MOCK_DETAIL}`);
-    const turns = threadTurns(page);
     await expect(turns.nth(0).getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
     expect(jobs[0]).toMatchObject({
       prompt: 'A red kite over hills (e2e)',
@@ -53,9 +57,10 @@ test.describe('prompt enhancer', () => {
     await page.getByRole('textbox', { name: 'Describe your image' }).fill('A blue door (e2e)');
     await chooseMock(page);
 
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByRole('textbox', { name: 'Enhanced prompt' })).toBeVisible();
+    await generateButton(page).click();
     await expect(page.getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
+    await threadTurns(page).nth(0).getByRole('button', { name: 'Enhanced prompt' }).click();
+    await expect(page.getByRole('textbox', { name: 'Enhanced prompt' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Use my words' }).click();
     await expect(page.getByRole('button', { name: 'Enhance prompt' })).toHaveAttribute(
@@ -65,7 +70,7 @@ test.describe('prompt enhancer', () => {
     const job = page.waitForRequest(
       (request) => request.url().endsWith('/api/jobs') && request.method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
+    await generateButton(page).click();
     const body = (await job).postDataJSON() as Record<string, unknown>;
     expect(body.prompt).toBe('A blue door (e2e)');
     expect(body).not.toHaveProperty('enhancedPrompt');

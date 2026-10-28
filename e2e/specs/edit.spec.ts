@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { chooseMock, useOwnWords } from '../src/generate.js';
+import { chooseMock, generateButton, useOwnWords } from '../src/generate.js';
 
 /** The first bytes of every PNG file. */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -13,7 +13,7 @@ async function openEditPanel(page: Page): Promise<void> {
     .getByRole('textbox', { name: 'Describe your image' })
     .fill('A harbour at dusk (e2e edit)');
   await chooseMock(page);
-  await page.getByRole('button', { name: 'Generate', exact: true }).click();
+  await generateButton(page).click();
   await expect(page.getByText('Status: Done')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('list', { name: 'Results' }).getByRole('link', { name: 'Edit' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Edit image' })).toBeVisible();

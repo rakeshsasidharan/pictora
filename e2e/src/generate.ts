@@ -17,12 +17,28 @@ export async function useEnhancer(page: Page): Promise<void> {
   await expect(enhance).toHaveAttribute('aria-pressed', 'true');
 }
 
-/** Picks the Mock model in the Advanced popover, then a quality in the composer's Quality select. */
+/** The composer's send button, which carries the cost (for example `Generate · 2 points`). */
+export function generateButton(page: Page): Locator {
+  return page.getByRole('button', { name: /^Generate · \d+ points?$/ });
+}
+
+/** The send button while "Save points: deliver later" is on. */
+export function scheduleButton(page: Page): Locator {
+  return page.getByRole('button', { name: /^Schedule · \d+ points?$/ });
+}
+
+/** Opens More in the composer's settings row: transparent background, saving points and avoid. */
+export async function openMore(page: Page): Promise<void> {
+  const more = page.getByRole('button', { name: /^More options/ });
+  if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+}
+
+/** Picks the Mock model in the model popover, then a quality in the composer's Quality select. */
 export async function chooseMock(
   page: Page,
   quality: 'Draft' | 'Standard' = 'Draft',
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: /^Model:/ }).click();
   const mock = page.getByRole('radio', { name: /^Mock \(dev only\)/ });
   await mock.click();
   await expect(mock).toBeChecked();
@@ -33,12 +49,13 @@ export async function chooseMock(
   await expect(select).toHaveText(quality);
 }
 
-/** Picks how many images to make, from 1 to 4. */
+/** Picks one image, or that many variations (up to 4), in the Variations select. */
 export async function chooseCount(page: Page, count: number): Promise<void> {
-  await page
-    .getByRole('radiogroup', { name: 'Number of images' })
-    .getByRole('radio', { name: `${count} ${count === 1 ? 'image' : 'images'}` })
-    .click();
+  const label = count === 1 ? '1 image' : `${count} variations`;
+  const select = page.getByRole('combobox', { name: 'Variations' });
+  await select.click();
+  await page.getByRole('option', { name: new RegExp(`^${label}`) }).click();
+  await expect(select).toHaveText(label);
 }
 
 /** The generate thread's turns, oldest first: each a prompt with its options, then its job. */
@@ -55,7 +72,7 @@ export async function startMockImage(page: Page, prompt: string): Promise<void> 
   await useOwnWords(page);
   await page.getByRole('textbox', { name: 'Describe your image' }).fill(prompt);
   await chooseMock(page);
-  await page.getByRole('button', { name: 'Generate', exact: true }).click();
+  await generateButton(page).click();
   await expect(page.getByText(/Status: (Queued|Generating|Done)/)).toBeVisible();
 }
 

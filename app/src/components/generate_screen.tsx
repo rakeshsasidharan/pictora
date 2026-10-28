@@ -8,12 +8,14 @@ import {
   batchPoints,
   promptAsksForText,
   routeModel,
+  type GenerateJobRequest,
   type Quality,
   type StyleId,
 } from '@pictora/core';
-import { ArrowUpIcon, ClockIcon, SparklesIcon, SquareDashedIcon } from 'lucide-react';
+import { ArrowUpIcon, ChevronDownIcon, SlidersHorizontalIcon, SparklesIcon } from 'lucide-react';
 import {
   useCallback,
+  useId,
   useRef,
   useState,
   useSyncExternalStore,
@@ -21,9 +23,20 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useIsMobile } from '@/hooks/use_mobile';
+import { cn } from '@/lib/utils';
 import {
   BATCH_POLL_INTERVAL_MS,
   DEFAULT_QUALITY,
@@ -47,11 +60,15 @@ import type { MeBody } from '../lib/jobs';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
 import {
   AspectPicker,
-  AvoidPicker,
-  CountPicker,
+  ExtraOptions,
   ModelPicker,
+  MorePicker,
   QualityPicker,
   StylePicker,
+  VariationsPicker,
+  hasExtraOptions,
+  variationsLabel,
+  type ExtraOptionsProps,
   type QualityOption,
 } from './generate_controls';
 import { GenerateTurnView, type GenerateTurn } from './generate_turn';
@@ -166,6 +183,105 @@ async function requestEnhancement(
   }
 }
 
+/** The prompt counter shows once the prompt is this close to the limit. */
+export const PROMPT_COUNT_MARGIN = 200;
+
+/**
+ * A request's options for its turn in the thread: the main ones as a summary line, and the rarer ones that show
+ * behind Details.
+ */
+function describeRequest(
+  request: GenerateJobRequest,
+  styles: readonly PublicStyle[],
+  quality: Quality,
+  modelLabel: string,
+): { summary: string[]; extras: string[] } {
+  const styleName = styles.find((style) => style.id === request.style)?.name ?? request.style;
+  return {
+    summary: [
+      request.style === 'none' ? 'No style' : styleName,
+      request.aspect,
+      QUALITY_LABELS[quality],
+      variationsLabel(request.count),
+      modelLabel,
+    ],
+    extras: [
+      ...(request.transparentBackground ? ['Transparent background'] : []),
+      ...(request.avoid ? [`Avoid: ${request.avoid}`] : []),
+      ...(request.enhancedPrompt ? ['Enhanced prompt'] : []),
+      ...(request.delivery === 'batch' ? ['Delivered later'] : []),
+    ],
+  };
+}
+
+/**
+ * The enhancer's editable output (ENH-2), collapsed until opened. It sits in the latest turn, so it reads as part of
+ * that request instead of sitting between the thread and the composer.
+ */
+function EnhancedPromptPanel({
+  text,
+  onChange,
+  regenerateDisabled,
+  onRegenerate,
+  onUseMyWords,
+}: {
+  text: string;
+  onChange: (text: string) => void;
+  regenerateDisabled: boolean;
+  onRegenerate: () => void;
+  onUseMyWords: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  return (
+    <section aria-label="Enhanced prompt" className="flex flex-col items-end gap-2">
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="text-muted-foreground"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((shown) => !shown)}
+      >
+        <SparklesIcon aria-hidden="true" />
+        Enhanced prompt
+        <ChevronDownIcon aria-hidden="true" className={cn(open && 'rotate-180')} />
+      </Button>
+      <div
+        id={bodyId}
+        hidden={!open}
+        className="flex w-full flex-col gap-2 rounded-xl border bg-muted/40 p-3 sm:max-w-[85%]"
+      >
+        <label htmlFor="enhanced-prompt" className="sr-only">
+          Enhanced prompt
+        </label>
+        <Textarea
+          id="enhanced-prompt"
+          rows={3}
+          maxLength={MAX_PROMPT_LENGTH}
+          value={text}
+          className="max-h-40 bg-background"
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={regenerateDisabled || !text.trim()}
+            onClick={onRegenerate}
+          >
+            Regenerate with this prompt
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onUseMyWords}>
+            Use my words
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** Prompts the empty thread offers; picking one fills the composer. */
 export const EXAMPLE_PROMPTS = [
   'A lighthouse on a rocky coast at dusk, warm light in its windows',
@@ -176,8 +292,10 @@ export const EXAMPLE_PROMPTS = [
 
 /**
  * The generate screen (GEN-1 to GEN-10, LIM-2), laid out like a chat: a thread of this visit's requests, each
- * prompt with its options and then its job's status and results, above a composer pinned to the bottom with
- * the prompt, the enhancer, the options (style, aspect ratio, quality, count, model) and the cost.
+ * prompt with a one-line summary of its options and then its job's status and results, above a composer pinned to
+ * the bottom. The composer's header row holds the settings (style, aspect ratio, quality, variations, More, model),
+ * so they sit with the prompt they apply to; below 768 px the row folds into one button that opens them in a sheet.
+ * Under the prompt are the enhancer toggle and the send button, which carries the cost.
  */
 export function GenerateScreen({
   models,
@@ -214,6 +332,10 @@ export function GenerateScreen({
   /** Jobs the screen stopped following: finished, timed out or lost. */
   const [endedJobs, setEndedJobs] = useState<ReadonlySet<string>>(() => new Set());
   const promptBox = useRef<HTMLTextAreaElement>(null);
+  /** The settings sheet on small screens; it closes itself when the window grows past the breakpoint. */
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const sheetIds = { aspect: useId(), quality: useId(), variations: useId() };
   // The server render, and so hydration, assumes the default: on.
   const storedEnhanceOn = useSyncExternalStore(
     subscribeEnhanceSetting,
@@ -340,6 +462,21 @@ export function GenerateScreen({
     if (qualityPaused(model, option)) return { disabled: true, hint: 'Paused this month' };
     return { disabled: false, hint: `${pointsText(perImage)} per image` };
   }
+
+  /** What a request of `images` images would use, routed as now with Auto, and halved when delivered later. */
+  function variationsCost(images: number): number {
+    if (!model || !routing || !choices || !chosenQuality) return 0;
+    const routed =
+      auto &&
+      routeModel({
+        ...routing,
+        quality: choices.quality,
+        pointsLeft: points.left * (deliverLater ? 2 : 1),
+        count: images,
+      });
+    const full = routed ? routed.points : requestCost(model, chosenQuality, images);
+    return batch ? batchPoints(full) : full;
+  }
   const affordable = cost <= points.left;
   // A batch job takes hours and holds no slot, so the form stays open for the next request.
   const latest = turns.at(-1);
@@ -434,60 +571,21 @@ export function GenerateScreen({
       }
       const enhancedPrompt = finalPrompt && finalPrompt !== text ? finalPrompt : undefined;
       const avoidText = model.capabilities.negativePrompt ? avoid.trim() : '';
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'generate',
-          prompt: text,
-          ...(enhancedPrompt ? { enhancedPrompt } : {}),
-          ...(avoidText ? { avoid: avoidText } : {}),
-          style: styleId,
-          modelId: auto ? AUTO_MODEL_ID : model.id,
-          aspect: choices.aspect,
-          quality: choices.quality,
-          count,
-          ...(!auto && model.capabilities.seed && seed !== undefined ? { seed } : {}),
-          ...(transparentOffered && transparent ? { transparentBackground: true } : {}),
-          ...(batch ? { delivery: 'batch' } : {}),
-        }),
-      });
-      const body = (await response.json().catch(() => ({}))) as {
-        jobId?: string;
-        pointsReserved?: number;
-        modelId?: string;
-        error?: string;
-      };
-      if (response.status !== 202 || !body.jobId) {
-        setFormError(body.error ?? "We couldn't start your images. Please try again.");
-        void refreshPoints();
-        return;
-      }
-      const reserved = body.pointsReserved ?? cost;
-      const modelId = body.modelId ?? model.id;
-      const styleName = styles.find((style) => style.id === styleId)?.name ?? styleId;
-      const turn: GenerateTurn = {
-        jobId: body.jobId,
+      const request: GenerateJobRequest = {
+        type: 'generate',
         prompt: text,
-        options: [
-          styleId === 'none' ? 'No style' : styleName,
-          choices.aspect,
-          QUALITY_LABELS[chosenQuality ?? choices.quality],
-          `${count} ${count === 1 ? 'image' : 'images'}`,
-          auto ? 'Auto model' : model.displayName,
-          ...(transparentOffered && transparent ? ['Transparent background'] : []),
-          ...(avoidText ? [`Avoid: ${avoidText}`] : []),
-          ...(enhancedPrompt ? ['Enhanced prompt'] : []),
-          ...(batch ? ['Delivered later'] : []),
-        ],
-        pointsReserved: reserved,
-        modelId,
-        modelName: models.find((candidate) => candidate.id === modelId)?.displayName ?? modelId,
+        ...(enhancedPrompt ? { enhancedPrompt } : {}),
+        ...(avoidText ? { avoid: avoidText } : {}),
+        style: styleId,
+        modelId: auto ? AUTO_MODEL_ID : model.id,
+        aspect: choices.aspect,
+        quality: choices.quality,
         count,
-        batch,
+        ...(!auto && model.capabilities.seed && seed !== undefined ? { seed } : {}),
+        ...(transparentOffered && transparent ? { transparentBackground: true } : {}),
+        ...(batch ? { delivery: 'batch' as const } : {}),
       };
-      setTurns((current) => [...current, turn]);
-      setPoints((current) => ({ ...current, left: Math.max(0, current.left - reserved) }));
+      await startJob(request, chosenQuality ?? choices.quality, auto ? 'Auto model' : undefined);
     } catch {
       setFormError('Something went wrong. Check your connection and try again.');
     } finally {
@@ -495,13 +593,110 @@ export function GenerateScreen({
     }
   }
 
+  /**
+   * "More variations": the turn's request again, on the model and at the quality it ran with, so the new takes
+   * compare with the first ones. A rerun's seed is left out, since it would make the same image again.
+   */
+  async function moreVariations(turn: GenerateTurn) {
+    if (busy) return;
+    setFormError(undefined);
+    setNotice(undefined);
+    setSubmitting(true);
+    try {
+      const request: GenerateJobRequest = {
+        ...turn.request,
+        modelId: turn.modelId,
+        quality: turn.quality,
+      };
+      delete request.seed;
+      await startJob(request, turn.quality);
+    } catch {
+      setFormError('Something went wrong. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /**
+   * Queues the job and adds its turn to the thread. `modelLabel` names the model in the turn's summary when it isn't
+   * the one the server ran it on, as with Auto.
+   */
+  async function startJob(request: GenerateJobRequest, quality: Quality, modelLabel?: string) {
+    const response = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      jobId?: string;
+      pointsReserved?: number;
+      modelId?: string;
+      error?: string;
+    };
+    if (response.status !== 202 || !body.jobId) {
+      setFormError(body.error ?? "We couldn't start your images. Please try again.");
+      void refreshPoints();
+      return;
+    }
+    const reserved = body.pointsReserved ?? cost;
+    const modelId = body.modelId ?? request.modelId;
+    const modelName = models.find((candidate) => candidate.id === modelId)?.displayName ?? modelId;
+    const turn: GenerateTurn = {
+      jobId: body.jobId,
+      prompt: request.prompt,
+      ...describeRequest(request, styles, quality, modelLabel ?? modelName),
+      request,
+      quality,
+      pointsReserved: reserved,
+      modelId,
+      modelName,
+      count: request.count,
+      batch: request.delivery === 'batch',
+    };
+    setTurns((current) => [...current, turn]);
+    setPoints((current) => ({ ...current, left: Math.max(0, current.left - reserved) }));
+  }
+
   const sendLabel = submitting
     ? 'Starting…'
     : jobActive
       ? 'Generating…'
-      : batch
-        ? 'Schedule'
-        : 'Generate';
+      : `${batch ? 'Schedule' : 'Generate'} · ${pointsText(cost)}`;
+  const styleName = styles.find((style) => style.id === styleId)?.name ?? styleId;
+  const settingsSummary = [
+    styleName,
+    choices.aspect,
+    QUALITY_LABELS[choices.quality],
+    ...(count > 1 ? [variationsLabel(count)] : []),
+  ].join(' · ');
+  const extraOptions: ExtraOptionsProps = {
+    ...(transparentOffered ? { transparent: { value: transparent, onChange: setTransparent } } : {}),
+    ...(batchOffered ? { later: { value: later, onChange: setLater } } : {}),
+    ...(model.capabilities.negativePrompt ? { avoid: { value: avoid, onChange: setAvoid } } : {}),
+  };
+  const modelPicker = (
+    <ModelPicker
+      models={available}
+      auto={auto}
+      modelId={model.id}
+      modelName={model.displayName}
+      autoReason={
+        auto ? `Auto picks ${model.displayName}${reasonText ? `: ${reasonText}` : ''}.` : undefined
+      }
+      onAuto={() => setAuto(true)}
+      onModel={chooseModel}
+    />
+  );
+  const showCount = prompt.length >= MAX_PROMPT_LENGTH - PROMPT_COUNT_MARGIN;
+  const enhancedPanel = enhanceOn && enhanced && (
+    <EnhancedPromptPanel
+      text={enhanced.text}
+      onChange={(text) => setEnhanced({ ...enhanced, text })}
+      regenerateDisabled={!affordable || busy}
+      onRegenerate={() => void run(true)}
+      onUseMyWords={useMyWords}
+    />
+  );
 
   return (
     <TooltipProvider>
@@ -542,7 +737,7 @@ export function GenerateScreen({
           </section>
         ) : (
           <ol aria-label="Your requests" className="flex flex-1 flex-col gap-8">
-            {turns.map((turn) => (
+            {turns.map((turn, index) => (
               <GenerateTurnView
                 key={turn.jobId}
                 turn={turn}
@@ -551,43 +746,17 @@ export function GenerateScreen({
                 batchPollIntervalMs={batchPollIntervalMs}
                 onFinish={onJobFinish}
                 onEnd={onJobEnd}
-              />
+                onMoreVariations={(chosen) => void moreVariations(chosen)}
+                moreVariationsDisabled={busy || turn.pointsReserved > points.left}
+              >
+                {index === turns.length - 1 && enhancedPanel}
+              </GenerateTurnView>
             ))}
           </ol>
         )}
 
-        {/* Below the thread rather than in the pinned composer, so it never covers the thread. */}
-        {enhanceOn && enhanced && (
-          <section
-            aria-label="Enhanced prompt"
-            className="flex flex-col gap-2 rounded-xl border bg-muted/40 p-3"
-          >
-            <label htmlFor="enhanced-prompt" className="text-sm font-medium">
-              Enhanced prompt
-            </label>
-            <Textarea
-              id="enhanced-prompt"
-              rows={3}
-              maxLength={MAX_PROMPT_LENGTH}
-              value={enhanced.text}
-              className="max-h-40 bg-background"
-              onChange={(event) => setEnhanced({ ...enhanced, text: event.target.value })}
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                disabled={!affordable || busy || !enhanced.text.trim()}
-                onClick={() => void run(true)}
-              >
-                Regenerate with this prompt
-              </Button>
-              <Button type="button" size="sm" variant="outline" onClick={useMyWords}>
-                Use my words
-              </Button>
-            </div>
-          </section>
-        )}
+        {/* Before the first turn, as on a rerun that brings its enhanced prompt, it sits above the composer. */}
+        {turns.length === 0 && enhancedPanel}
 
         <form
           onSubmit={submit}
@@ -604,41 +773,13 @@ export function GenerateScreen({
               {notice}
             </p>
           )}
-          <div className="flex flex-col gap-2 rounded-2xl border bg-card p-3 shadow-sm focus-within:border-ring">
-            <label htmlFor="prompt" className="sr-only">
-              Describe your image
-            </label>
-            <Textarea
-              ref={promptBox}
-              id="prompt"
-              rows={2}
-              maxLength={MAX_PROMPT_LENGTH}
-              value={prompt}
-              placeholder="Describe the image you want to create"
-              aria-describedby="prompt-count"
-              className="max-h-48 min-h-12 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={onPromptKeyDown}
-            />
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Toggle
-                    variant="outline"
-                    size="sm"
-                    aria-label="Enhance prompt"
-                    pressed={enhanceOn}
-                    onPressedChange={toggleEnhance}
-                  >
-                    <SparklesIcon aria-hidden="true" />
-                    <span className="hidden sm:inline">Enhance</span>
-                  </Toggle>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Adds detail about the subject, composition and lighting. You can edit the result.
-                </TooltipContent>
-              </Tooltip>
+          <div className="flex flex-col rounded-2xl border bg-card shadow-sm focus-within:border-ring">
+            {/* The settings row, from 768 px: the settings sit on the composer, with the prompt they apply to. */}
+            <div
+              role="group"
+              aria-label="Image settings"
+              className="hidden flex-wrap items-center gap-2 rounded-t-2xl border-b bg-muted/40 px-3 py-2 md:flex"
+            >
               <StylePicker styles={styles} value={styleId} onChange={chooseStyle} />
               <AspectPicker
                 aspects={aspects}
@@ -650,96 +791,151 @@ export function GenerateScreen({
                 option={qualityOption}
                 onChange={(quality) => setChoices({ ...choices, quality })}
               />
-              <CountPicker value={count} onChange={setCount} />
-              {transparentOffered && (
-                <Toggle
-                  variant="outline"
-                  size="sm"
-                  aria-label="Transparent background"
-                  pressed={transparent}
-                  onPressedChange={setTransparent}
-                >
-                  <SquareDashedIcon aria-hidden="true" />
-                  <span className="hidden sm:inline">Transparent</span>
-                </Toggle>
-              )}
-              {model.capabilities.negativePrompt && (
-                <AvoidPicker value={avoid} onChange={setAvoid} />
-              )}
-              {batchOffered && (
-                <Toggle
-                  variant="outline"
-                  size="sm"
-                  aria-label="Save points: deliver later"
-                  aria-describedby="deliver-later-hint"
-                  pressed={later}
-                  onPressedChange={setLater}
-                >
-                  <ClockIcon aria-hidden="true" />
-                  <span className="hidden sm:inline">Save points</span>
-                </Toggle>
-              )}
-              <ModelPicker
-                models={available}
-                auto={auto}
-                modelId={model.id}
-                onAuto={() => setAuto(true)}
-                onModel={chooseModel}
-              />
+              <VariationsPicker value={count} cost={variationsCost} onChange={setCount} />
+              {hasExtraOptions(extraOptions) && <MorePicker {...extraOptions} />}
+              <div className="ml-auto min-w-0">{modelPicker}</div>
             </div>
 
-            {batchOffered && (
-              // Read out with the toggle; shown once it is on.
-              <p
-                id="deliver-later-hint"
-                className={later ? 'text-xs text-muted-foreground' : 'sr-only'}
-              >
-                Half the points. Your images arrive in your gallery within 24 hours, often much
-                sooner. The points stay reserved until then, and come back if the images don&apos;t.
-              </p>
-            )}
-            {!auto && model.capabilities.seed && seed !== undefined && (
-              <p className="text-xs text-muted-foreground">
-                Uses seed {seed} from the original image, so the result comes out close to it.{' '}
-                <Button
-                  type="button"
-                  variant="link"
-                  size="xs"
-                  className="h-auto p-0"
-                  onClick={() => setSeed(undefined)}
-                >
-                  Use a random seed
-                </Button>
-              </p>
-            )}
+            <div className="flex flex-col gap-2 p-3">
+              <label htmlFor="prompt" className="sr-only">
+                Describe your image
+              </label>
+              <Textarea
+                ref={promptBox}
+                id="prompt"
+                rows={2}
+                maxLength={MAX_PROMPT_LENGTH}
+                value={prompt}
+                placeholder="Describe the image you want to create"
+                aria-describedby={showCount ? 'prompt-count' : undefined}
+                className="max-h-48 min-h-12 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={onPromptKeyDown}
+              />
 
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs text-muted-foreground">
-                <p id="cost" className="text-sm font-medium text-foreground">
-                  Uses {cost} of your {points.left} points today
-                  {batch ? ` (half of ${fullCost}, delivered later)` : ''}
+              {!auto && model.capabilities.seed && seed !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Uses seed {seed} from the original image, so the result comes out close to it.{' '}
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="xs"
+                    className="h-auto p-0"
+                    onClick={() => setSeed(undefined)}
+                  >
+                    Use a random seed
+                  </Button>
                 </p>
-                {auto && (
-                  <p aria-live="polite">
-                    Auto picks {model.displayName}
-                    {reasonText ? `: ${reasonText}` : ''}.
+              )}
+
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Toggle
+                      variant="outline"
+                      size="sm"
+                      aria-label="Enhance prompt"
+                      pressed={enhanceOn}
+                      onPressedChange={toggleEnhance}
+                    >
+                      <SparklesIcon aria-hidden="true" />
+                      <span className="hidden sm:inline">Enhance</span>
+                    </Toggle>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Adds detail about the subject, composition and lighting. You can edit the result.
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Below 768 px the settings row folds into this button, which opens them in a sheet. */}
+                <Sheet open={sheetOpen && isMobile} onOpenChange={setSheetOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Image settings: ${settingsSummary}`}
+                      className="min-w-0 md:hidden"
+                    >
+                      <SlidersHorizontalIcon aria-hidden="true" />
+                      <span className="truncate">{settingsSummary}</span>
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto rounded-t-2xl">
+                    <SheetHeader>
+                      <SheetTitle>Image settings</SheetTitle>
+                      <SheetDescription>They apply to your next request.</SheetDescription>
+                    </SheetHeader>
+                    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 px-4 pb-6">
+                      <span aria-hidden="true" className="text-sm font-medium">
+                        Style
+                      </span>
+                      <div>
+                        <StylePicker styles={styles} value={styleId} onChange={chooseStyle} />
+                      </div>
+                      <Label htmlFor={sheetIds.aspect}>Aspect ratio</Label>
+                      <div>
+                        <AspectPicker
+                          id={sheetIds.aspect}
+                          aspects={aspects}
+                          value={choices.aspect}
+                          onChange={(aspect) => setChoices({ ...choices, aspect })}
+                        />
+                      </div>
+                      <Label htmlFor={sheetIds.quality}>Quality</Label>
+                      <div>
+                        <QualityPicker
+                          id={sheetIds.quality}
+                          value={choices.quality}
+                          option={qualityOption}
+                          onChange={(quality) => setChoices({ ...choices, quality })}
+                        />
+                      </div>
+                      <Label htmlFor={sheetIds.variations}>Variations</Label>
+                      <div>
+                        <VariationsPicker
+                          id={sheetIds.variations}
+                          value={count}
+                          cost={variationsCost}
+                          onChange={setCount}
+                        />
+                      </div>
+                      <span aria-hidden="true" className="text-sm font-medium">
+                        Model
+                      </span>
+                      <div className="min-w-0">{modelPicker}</div>
+                      {hasExtraOptions(extraOptions) && (
+                        <div className="col-span-2 border-t pt-3">
+                          <ExtraOptions {...extraOptions} />
+                        </div>
+                      )}
+                    </div>
+                  </SheetContent>
+                </Sheet>
+
+                <div className="ml-auto flex shrink-0 items-center gap-3">
+                  {showCount && (
+                    <p id="prompt-count" className="text-xs text-muted-foreground">
+                      {prompt.length} / {MAX_PROMPT_LENGTH}
+                    </p>
+                  )}
+                  <p id="cost" className="sr-only">
+                    Uses {cost} of your {points.left} points today
+                    {batch ? ` (half of ${fullCost}, delivered later)` : ''}
                   </p>
-                )}
-                <p id="prompt-count">
-                  {prompt.length} / {MAX_PROMPT_LENGTH}
-                </p>
+                  <Button type="submit" disabled={!affordable || busy} aria-describedby="cost">
+                    {sendLabel}
+                    <ArrowUpIcon aria-hidden="true" />
+                  </Button>
+                </div>
               </div>
-              <Button type="submit" disabled={!affordable || busy} aria-describedby="cost">
-                {sendLabel}
-                <ArrowUpIcon aria-hidden="true" />
-              </Button>
             </div>
           </div>
 
           {!affordable && (
             <p className="text-sm text-destructive">
-              You don&apos;t have enough points left today. Pick a lower quality or fewer images, or
-              come back after 00:00 UTC.
+              You don&apos;t have enough points left today. Pick a lower quality or fewer
+              variations, or come back after 00:00 UTC.
             </p>
           )}
           {formError && (

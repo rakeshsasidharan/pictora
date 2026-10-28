@@ -10,10 +10,18 @@ import {
   type Quality,
   type StyleId,
 } from '@pictora/core';
-import { BanIcon, ChevronDownIcon, SlidersHorizontalIcon } from 'lucide-react';
+import {
+  ChevronDownIcon,
+  ClockIcon,
+  EllipsisIcon,
+  SlidersHorizontalIcon,
+  SquareDashedIcon,
+} from 'lucide-react';
 import Image from 'next/image';
+import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -22,7 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle_group';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { ASPECT_SHAPES, QUALITY_LABELS, modelCostSummary } from '../lib/generate_options';
 import type { PublicModel, PublicStyle } from '../lib/models_response';
@@ -35,6 +45,14 @@ const COUNTS = Array.from(
   { length: MAX_IMAGE_COUNT - MIN_IMAGE_COUNT + 1 },
   (_, index) => MIN_IMAGE_COUNT + index,
 );
+
+/**
+ * How a request's image count reads (GEN-6): one image, or that many variations, since each is a separate take
+ * on the same prompt.
+ */
+export function variationsLabel(count: number): string {
+  return count === 1 ? '1 image' : `${count} variations`;
+}
 
 /** A style's sample image, or "Aa" for None, which adds nothing to the prompt. */
 function StyleThumbnail({ styleId, className }: { styleId: StyleId; className: string }) {
@@ -122,17 +140,20 @@ function AspectIcon({ aspect }: { aspect: Aspect }) {
 
 /** The aspect ratios the model (or, with Auto, any model) offers, each with its shape (GEN-3). */
 export function AspectPicker({
+  id,
   aspects,
   value,
   onChange,
 }: {
+  /** Set where a visible label names the select, as in the settings sheet. */
+  id?: string;
   aspects: readonly Aspect[];
   value: Aspect;
   onChange: (aspect: Aspect) => void;
 }) {
   return (
     <Select value={value} onValueChange={(next) => onChange(next as Aspect)}>
-      <SelectTrigger size="sm" aria-label="Aspect ratio">
+      <SelectTrigger id={id} size="sm" aria-label={id ? undefined : 'Aspect ratio'}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -188,103 +209,218 @@ export function QualityPicker({
   );
 }
 
-/** One to four images per request (GEN-9). */
-export function CountPicker({
+/**
+ * One image, or two to four variations of the same prompt, each with what the request would cost (GEN-6). Every
+ * variation is a separate take that costs full points, so the points are shown next to each choice.
+ */
+export function VariationsPicker({
+  id,
   value,
+  cost,
   onChange,
 }: {
+  /** Set where a visible label names the select, as in the settings sheet. */
+  id?: string;
   value: number;
+  /** The points a request of this many images would use. */
+  cost: (count: number) => number;
   onChange: (count: number) => void;
 }) {
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      size="sm"
-      aria-label="Number of images"
-      value={String(value)}
-      onValueChange={(next) => next && onChange(Number(next))}
-    >
-      {COUNTS.map((count) => (
-        <ToggleGroupItem
-          key={count}
-          value={String(count)}
-          aria-label={`${count} ${count === 1 ? 'image' : 'images'}`}
-        >
-          {count}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    <Select value={String(value)} onValueChange={(next) => onChange(Number(next))}>
+      <SelectTrigger id={id} size="sm" aria-label={id ? undefined : 'Variations'}>
+        <SelectValue>{variationsLabel(value)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {COUNTS.map((count) => {
+          const points = cost(count);
+          return (
+            <SelectItem key={count} value={String(count)}>
+              {variationsLabel(count)}
+              <span className="text-xs text-muted-foreground">
+                {points} {points === 1 ? 'point' : 'points'}
+              </span>
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
 
-/** The negative prompt, for models that take one (GEN-2). */
-export function AvoidPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (avoid: string) => void;
-}) {
-  const set = value.trim() !== '';
+/** A setting the More options offer, where the model (or, with Auto, any model) supports it. */
+export interface ExtraOption<T> {
+  value: T;
+  onChange: (value: T) => void;
+}
+
+export interface ExtraOptionsProps {
+  /** Transparent background (GEN-9). */
+  transparent?: ExtraOption<boolean>;
+  /** "Save points: deliver later", a batch job at half the points (tech design 5.4). */
+  later?: ExtraOption<boolean>;
+  /** The negative prompt (GEN-2). */
+  avoid?: ExtraOption<string>;
+}
+
+/** Whether any of the More options is offered. */
+export function hasExtraOptions({ transparent, later, avoid }: ExtraOptionsProps): boolean {
+  return transparent !== undefined || later !== undefined || avoid !== undefined;
+}
+
+/** How many of the More options are switched on or filled in, shown on the More button. */
+function extrasInUse({ transparent, later, avoid }: ExtraOptionsProps): number {
+  return [transparent?.value, later?.value, avoid && avoid.value.trim() !== ''].filter(Boolean)
+    .length;
+}
+
+/**
+ * The less common settings: transparent background, saving points by delivering later, and things to avoid. They
+ * sit behind More in the composer's settings row, and inline in the settings sheet on small screens.
+ */
+export function ExtraOptions({ transparent, later, avoid }: ExtraOptionsProps) {
+  const avoidId = useId();
+  const laterHintId = useId();
+  return (
+    <div className="flex flex-col gap-3">
+      {(transparent || later) && (
+        <div className="flex flex-wrap gap-2">
+          {transparent && (
+            <Toggle
+              variant="outline"
+              size="sm"
+              aria-label="Transparent background"
+              pressed={transparent.value}
+              onPressedChange={transparent.onChange}
+            >
+              <SquareDashedIcon aria-hidden="true" />
+              Transparent background
+            </Toggle>
+          )}
+          {later && (
+            <Toggle
+              variant="outline"
+              size="sm"
+              aria-label="Save points: deliver later"
+              aria-describedby={laterHintId}
+              pressed={later.value}
+              onPressedChange={later.onChange}
+            >
+              <ClockIcon aria-hidden="true" />
+              Save points
+            </Toggle>
+          )}
+        </div>
+      )}
+      {later && (
+        <p id={laterHintId} className="text-xs text-muted-foreground">
+          Half the points. Your images arrive in your gallery within 24 hours, often much sooner.
+          The points stay reserved until then, and come back if the images don&apos;t.
+        </p>
+      )}
+      {avoid && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={avoidId}>Avoid (optional)</Label>
+          <Input
+            id={avoidId}
+            type="text"
+            maxLength={MAX_AVOID_LENGTH}
+            value={avoid.value}
+            placeholder="Things to leave out, for example text or blur"
+            onChange={(event) => avoid.onChange(event.target.value)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The More button in the composer's settings row, with the extra options in a popover. */
+export function MorePicker(props: ExtraOptionsProps) {
+  const inUse = extrasInUse(props);
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button
           type="button"
-          variant={set ? 'secondary' : 'outline'}
+          variant={inUse > 0 ? 'secondary' : 'outline'}
           size="sm"
-          aria-label={set ? `Avoid: ${value.trim()}` : 'Avoid'}
+          aria-label={inUse > 0 ? `More options, ${inUse} on` : 'More options'}
         >
-          <BanIcon aria-hidden="true" />
-          Avoid
+          <EllipsisIcon aria-hidden="true" />
+          More
+          {inUse > 0 && <span className="text-xs text-muted-foreground">{inUse}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="grid w-[min(20rem,calc(100vw-2rem))] gap-2">
-        <label htmlFor="avoid" className="text-sm font-medium">
-          Avoid (optional)
-        </label>
-        <Input
-          id="avoid"
-          type="text"
-          maxLength={MAX_AVOID_LENGTH}
-          value={value}
-          placeholder="Things to leave out, for example text or blur"
-          onChange={(event) => onChange(event.target.value)}
-        />
+      <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))]">
+        <ExtraOptions {...props} />
       </PopoverContent>
     </Popover>
   );
 }
 
-/** Auto and every available model, with its strengths and costs, behind "Advanced" (GEN-5). */
+/**
+ * Auto and every available model, with its strengths and costs (GEN-5). The button names the model, or with
+ * Auto the model it picks, and a tooltip explains why Auto picked it.
+ */
 export function ModelPicker({
   models,
   auto,
   modelId,
+  modelName,
+  autoReason,
   onAuto,
   onModel,
 }: {
   models: readonly PublicModel[];
   auto: boolean;
   modelId: string;
+  /** The chosen model's name, or with Auto the one it picks. */
+  modelName: string;
+  /** Why Auto picked the model, as a sentence; read out with the button. */
+  autoReason?: string;
   onAuto: () => void;
   onModel: (model: PublicModel) => void;
 }) {
+  const reasonId = useId();
+  const shown = auto ? `Auto · ${modelName}` : modelName;
   function choose(next: string) {
     if (next === AUTO_MODEL_ID) onAuto();
     const model = models.find((candidate) => candidate.id === next);
     if (model) onModel(model);
   }
 
+  const trigger = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-label={`Model: ${shown}`}
+      aria-describedby={auto && autoReason ? reasonId : undefined}
+      className="max-w-full min-w-0"
+    >
+      <SlidersHorizontalIcon aria-hidden="true" />
+      <span className="truncate">{shown}</span>
+    </Button>
+  );
+
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" aria-label="Advanced">
-          <SlidersHorizontalIcon aria-hidden="true" />
-          <span className="hidden sm:inline">Advanced</span>
-        </Button>
-      </PopoverTrigger>
+      {auto && autoReason ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{autoReason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      )}
+      {auto && autoReason && (
+        <span id={reasonId} className="sr-only" aria-live="polite">
+          {autoReason}
+        </span>
+      )}
       <PopoverContent
         align="end"
         className="max-h-[min(28rem,var(--radix-popover-content-available-height))] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto"
