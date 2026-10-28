@@ -1,9 +1,29 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ADMIN_RUNBOOK_URL, dollars, percent, providerLabel } from '../lib/admin_format';
 import type { AdminStatsBody } from '../lib/admin_stats';
+import {
+  ADMIN_CAPTION_CLASS,
+  ADMIN_LINK_CLASS,
+  NUMBER_CLASS,
+  StatusBadge,
+  TILE_GRID_CLASS,
+} from './admin_parts';
 import { SpendChart } from './spend_chart';
 import { SuccessMetrics } from './success_metrics';
 
@@ -17,6 +37,7 @@ type StatsState =
  * PRD's success metrics over the same range.
  */
 export function AdminDashboard() {
+  const id = useId();
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
   const [draft, setDraft] = useState<{ from: string; to: string }>({ from: '', to: '' });
   const [state, setState] = useState<StatsState>({ phase: 'loading' });
@@ -56,37 +77,43 @@ export function AdminDashboard() {
   }
 
   return (
-    <section className="admin-dashboard" aria-labelledby="dashboard-heading">
-      <h1 id="dashboard-heading">Dashboard</h1>
-      <form className="admin-filters" onSubmit={applyRange}>
-        <label>
-          From
-          <input
+    <section className="flex flex-col gap-6" aria-labelledby="dashboard-heading">
+      <h1 id="dashboard-heading" className="text-xl font-semibold">
+        Dashboard
+      </h1>
+      <form className="flex flex-wrap items-end gap-3" onSubmit={applyRange}>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`${id}-from`}>From</Label>
+          <Input
+            id={`${id}-from`}
             type="date"
+            className="w-auto"
             value={draft.from}
             onChange={(event) => setDraft({ ...draft, from: event.target.value })}
           />
-        </label>
-        <label>
-          To
-          <input
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`${id}-to`}>To</Label>
+          <Input
+            id={`${id}-to`}
             type="date"
+            className="w-auto"
             value={draft.to}
             onChange={(event) => setDraft({ ...draft, to: event.target.value })}
           />
-        </label>
-        <button type="submit" className="button">
+        </div>
+        <Button type="submit" variant="outline">
           Show
-        </button>
+        </Button>
       </form>
 
       {state.phase === 'loading' && (
-        <p role="status" className="admin-note">
+        <p role="status" className="text-sm text-muted-foreground">
           Loading stats…
         </p>
       )}
       {state.phase === 'error' && (
-        <p role="alert" className="form-error">
+        <p role="alert" className="text-sm text-destructive">
           {state.message}
         </p>
       )}
@@ -94,9 +121,13 @@ export function AdminDashboard() {
 
       <SuccessMetrics range={range} />
 
-      <p className="admin-note">
+      <p className="text-sm text-muted-foreground">
         Model kill switches (ADM-2) and per-user point overrides (ADM-5) are changed with the AWS
-        CLI; see the <a href={ADMIN_RUNBOOK_URL}>documented commands</a>.
+        CLI; see the{' '}
+        <a href={ADMIN_RUNBOOK_URL} className={ADMIN_LINK_CLASS}>
+          documented commands
+        </a>
+        .
       </p>
     </section>
   );
@@ -110,7 +141,7 @@ function StatsView({ stats }: { stats: AdminStatsBody }) {
 
   return (
     <>
-      <ul className="kpi-tiles" aria-label={`Today, ${today.date}`}>
+      <ul className={TILE_GRID_CLASS} aria-label={`Today, ${today.date}`}>
         <Tile label="Spend today" value={dollars(today.spendCents)} />
         <Tile
           label="Month to date"
@@ -131,108 +162,129 @@ function StatsView({ stats }: { stats: AdminStatsBody }) {
         />
       </ul>
 
-      <h2>
+      <h2 className="text-lg font-semibold">
         {stats.from} to {stats.to}
       </h2>
       {empty ? (
-        <p className="admin-note">No jobs or spend in this range.</p>
+        <p className="text-sm text-muted-foreground">No jobs or spend in this range.</p>
       ) : (
         <>
           <SpendChart days={stats.days} providers={stats.providers} />
-          <div className="table-scroll">
-            <table className="admin-table">
-              <caption>Spend and jobs by day</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Day</th>
+          <Table className="tabular-nums">
+            <TableCaption className={ADMIN_CAPTION_CLASS}>Spend and jobs by day</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Day</TableHead>
+                {stats.providers.map((provider) => (
+                  <TableHead key={provider} scope="col" className={NUMBER_CLASS}>
+                    {providerLabel(provider)}
+                  </TableHead>
+                ))}
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Enhancer
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Images
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Failures
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Blocks
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stats.days.map((day) => (
+                <TableRow key={day.date}>
+                  <TableHead scope="row">{day.date}</TableHead>
                   {stats.providers.map((provider) => (
-                    <th key={provider} scope="col">
-                      {providerLabel(provider)}
-                    </th>
+                    <TableCell key={provider} className={NUMBER_CLASS}>
+                      {dollars(day.spendCents[provider] ?? 0)}
+                    </TableCell>
                   ))}
-                  <th scope="col">Enhancer</th>
-                  <th scope="col">Images</th>
-                  <th scope="col">Failures</th>
-                  <th scope="col">Blocks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.days.map((day) => (
-                  <tr key={day.date}>
-                    <th scope="row">{day.date}</th>
-                    {stats.providers.map((provider) => (
-                      <td key={provider}>{dollars(day.spendCents[provider] ?? 0)}</td>
-                    ))}
-                    <td>{dollars(day.enhancerCostCents)}</td>
-                    <td>{day.images}</td>
-                    <td>{day.failures}</td>
-                    <td>{day.blocks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  <TableCell className={NUMBER_CLASS}>{dollars(day.enhancerCostCents)}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{day.images}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{day.failures}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{day.blocks}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
-          <div className="table-scroll">
-            <table className="admin-table">
-              <caption>By model</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Model</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col">Spend</th>
-                  <th scope="col">Points</th>
-                  <th scope="col">Images</th>
-                  <th scope="col">Failures</th>
-                  <th scope="col">Blocks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.models.map((model) => (
-                  <tr key={model.modelId}>
-                    <th scope="row">{model.displayName}</th>
-                    <td>{providerLabel(model.provider)}</td>
-                    <td>{dollars(model.providerCostCents)}</td>
-                    <td>{model.points}</td>
-                    <td>{model.images}</td>
-                    <td>{model.failures}</td>
-                    <td>{model.blocks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="tabular-nums">
+            <TableCaption className={ADMIN_CAPTION_CLASS}>By model</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Model</TableHead>
+                <TableHead scope="col">Provider</TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Spend
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Points
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Images
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Failures
+                </TableHead>
+                <TableHead scope="col" className={NUMBER_CLASS}>
+                  Blocks
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stats.models.map((model) => (
+                <TableRow key={model.modelId}>
+                  <TableHead scope="row">{model.displayName}</TableHead>
+                  <TableCell>{providerLabel(model.provider)}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{dollars(model.providerCostCents)}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{model.points}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{model.images}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{model.failures}</TableCell>
+                  <TableCell className={NUMBER_CLASS}>{model.blocks}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </>
       )}
 
-      <h2>Top users today</h2>
+      <h2 className="text-lg font-semibold">Top users today</h2>
       {stats.topUsers.length === 0 ? (
-        <p className="admin-note">Nobody has used points today.</p>
+        <p className="text-sm text-muted-foreground">Nobody has used points today.</p>
       ) : (
-        <div className="table-scroll">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th scope="col">User</th>
-                <th scope="col">Status</th>
-                <th scope="col">Points today</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.topUsers.map((user) => (
-                <tr key={user.sub}>
-                  <th scope="row">
-                    <Link href={`/admin/users/${encodeURIComponent(user.sub)}`}>
-                      {user.email ?? user.sub}
-                    </Link>
-                  </th>
-                  <td>{user.status ?? '—'}</td>
-                  <td>{user.pointsUsed}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table className="tabular-nums">
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">User</TableHead>
+              <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col" className={NUMBER_CLASS}>
+                Points today
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {stats.topUsers.map((user) => (
+              <TableRow key={user.sub}>
+                <TableHead scope="row">
+                  <Link
+                    href={`/admin/users/${encodeURIComponent(user.sub)}`}
+                    className={ADMIN_LINK_CLASS}
+                  >
+                    {user.email ?? user.sub}
+                  </Link>
+                </TableHead>
+                <TableCell>
+                  <StatusBadge status={user.status} />
+                </TableCell>
+                <TableCell className={NUMBER_CLASS}>{user.pointsUsed}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </>
   );
@@ -240,10 +292,16 @@ function StatsView({ stats }: { stats: AdminStatsBody }) {
 
 function Tile({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <li className="kpi-tile">
-      <span className="kpi-label">{label}</span>
-      <span className="kpi-value">{value}</span>
-      {detail && <span className="field-hint">{detail}</span>}
+    <li>
+      <Card className="h-full gap-1 py-4">
+        <CardHeader className="gap-1 px-4">
+          <CardDescription>{label}</CardDescription>
+          <CardTitle className="text-2xl font-bold tabular-nums">{value}</CardTitle>
+        </CardHeader>
+        {detail && (
+          <CardContent className="px-4 text-sm text-muted-foreground">{detail}</CardContent>
+        )}
+      </Card>
     </li>
   );
 }

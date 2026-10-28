@@ -40,9 +40,16 @@ describe('SuccessMetrics', () => {
       'Cost per active user$1.75Target ≤ $1.75 · Meets target',
       'Moderation false blocks1.0%Target < 2.0% · Meets target',
     ]);
-    expect(screen.getByTestId('metric-activation').className).toContain('metric-met');
-    expect(screen.getByTestId('metric-keepRate').className).toContain('metric-missed');
-    expect(screen.getByTestId('metric-weekOneRetention').className).toContain('metric-none');
+    expect(screen.getByTestId('metric-activation').dataset.status).toBe('met');
+    expect(screen.getByTestId('metric-keepRate').dataset.status).toBe('missed');
+    expect(screen.getByTestId('metric-weekOneRetention').dataset.status).toBe('none');
+    // Green for met and red for missed, from the theme in both light and dark.
+    expect(
+      within(screen.getByTestId('metric-activation')).getByText('Meets target').className,
+    ).toContain('text-green-700');
+    expect(
+      within(screen.getByTestId('metric-keepRate')).getByText('Misses target').className,
+    ).toContain('text-destructive');
     expect(screen.getByText(/last at 2026-10-15 00:30 UTC/)).toBeTruthy();
   });
 
@@ -60,12 +67,22 @@ describe('SuccessMetrics', () => {
       '$1.75, meets target',
       '1.0%, meets target',
     ]);
-    expect(cells[0]?.className).toBe('metric-met');
+    expect(cells.map((cell) => cell.dataset.status)).toEqual([
+      'met',
+      'none',
+      'met',
+      'met',
+      'none',
+      'met',
+      'met',
+    ]);
+    expect(cells[0]?.className).toContain('text-green-700');
     expect(
       within(pending!)
         .getAllByRole('cell')
         .map((cell) => cell.textContent),
     ).toEqual(Array(7).fill('Pending'));
+    expect(within(pending!).getAllByRole('cell')[0]?.dataset.status).toBe('pending');
   });
 
   it('asks for the range it is given, and shows an API error', async () => {

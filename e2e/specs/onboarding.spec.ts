@@ -21,13 +21,17 @@ test.describe('onboarding', () => {
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.getByText('Email and password')).toBeVisible();
 
+    await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+
+    // The confirmation is an alert dialog (#110).
     await page.getByRole('button', { name: 'Delete account' }).click();
-    const confirm = page.getByRole('button', { name: 'Delete my account' });
+    const dialog = page.getByRole('alertdialog', { name: 'Are you sure?' });
+    const confirm = dialog.getByRole('button', { name: 'Delete my account' });
     await expect(confirm).toBeDisabled();
-    await page.getByRole('textbox', { name: /Type DELETE to confirm/ }).fill('DELETE');
+    await dialog.getByRole('textbox', { name: /Type DELETE to confirm/ }).fill('DELETE');
     await expect(confirm).toBeEnabled();
     // Cancel: deleting would remove the shared test user.
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(confirm).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
   });
 });

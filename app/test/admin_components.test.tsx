@@ -113,12 +113,31 @@ describe('AdminDashboard', () => {
         .getAllByRole('listitem')
         .map((item) => item.textContent),
     ).toEqual(['OpenAI', 'Gemini']);
+    // The chart's colours are the theme's chart tokens, so they follow light and dark.
+    const swatches = within(screen.getByRole('list', { name: 'Providers' }))
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('span'));
+    expect(swatches.map((swatch) => swatch?.getAttribute('class'))).toEqual([
+      expect.stringContaining('bg-chart-1'),
+      expect.stringContaining('bg-chart-2'),
+    ]);
+    expect(swatches.every((swatch) => !swatch?.hasAttribute('style'))).toBe(true);
+    const bars = screen
+      .getByRole('img', { name: /Daily provider spend/ })
+      .querySelectorAll('rect[class]');
+    expect([...bars].map((bar) => bar.getAttribute('class'))).toEqual([
+      'fill-chart-1',
+      'fill-chart-2',
+      'fill-chart-2',
+    ]);
     const daily = screen.getByRole('table', { name: 'Spend and jobs by day' });
     expect(within(daily).getAllByRole('row')[1]?.textContent).toBe('2026-10-14$0.17$0.13$0.00511');
     expect(within(screen.getByRole('table', { name: 'By model' })).getByText('$0.39')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'heavy@example.com' }).getAttribute('href')).toBe(
       '/admin/users/heavy',
     );
+    // Statuses are badges.
+    expect(screen.getByText('active').getAttribute('data-slot')).toBe('badge');
     expect(screen.getByRole('link', { name: 'documented commands' })).toBeTruthy();
     // The success metrics for the same range follow.
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/metrics', { cache: 'no-store' });
@@ -302,12 +321,70 @@ describe('AdminUser', () => {
     render(<AdminUser sub="heavy" />);
     expect(await screen.findByRole('heading', { name: 'heavy@example.com' })).toBeTruthy();
     expect(screen.getByText('24 of 25')).toBeTruthy();
+    expect(screen.getByText('active')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'Suspend heavy@example.com?' })).getByRole(
+        'button',
+        { name: 'Suspend account' },
+      ),
+    );
     fireEvent.click(await screen.findByRole('button', { name: 'Unsuspend' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog', { name: 'Unsuspend heavy@example.com?' })).getByRole(
+        'button',
+        { name: 'Unsuspend account' },
+      ),
+    );
     await waitFor(() => expect(screen.getByRole('button', { name: 'Suspend' })).toBeTruthy());
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(
       fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => url),
     ).toEqual(['/api/admin/users/heavy/suspend', '/api/admin/users/heavy/unsuspend']);
+  });
+
+  it('asks before suspending, and Cancel changes nothing', async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      json(user),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(<AdminUser sub="heavy" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suspend' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Suspend heavy@example.com?' });
+    expect(within(dialog).getByText(/no longer be able to generate/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+    expect(screen.getByText('active')).toBeTruthy();
+  });
+
+  it('keeps the confirmation open with the error when suspending fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) =>
+        url.endsWith('/suspend') && init?.method === 'POST'
+          ? json({ error: "Admins can't suspend themselves.", code: 'forbidden' }, 403)
+          : json(user),
+      ),
+    );
+    render(<AdminUser sub="heavy" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suspend' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Suspend account' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      "Admins can't suspend themselves.",
+    );
+    expect(screen.getByText('active')).toBeTruthy();
+  });
+
+  it('offers no action for an account being deleted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ ...user, status: 'deleting' })),
+    );
+    render(<AdminUser sub="heavy" />);
+    expect(await screen.findByText('This account is being deleted.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /suspend/i })).toBeNull();
   });
 
   it('says when the user is not found', async () => {
