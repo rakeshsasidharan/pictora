@@ -5,16 +5,27 @@ import { expect, type Locator, type Page } from '@playwright/test';
  * the enhancer use it: each enhancer call counts toward the per-minute request limit, like a job (#115).
  */
 export async function useOwnWords(page: Page): Promise<void> {
-  const enhance = page.getByRole('button', { name: 'Enhance prompt' });
-  if ((await enhance.getAttribute('aria-pressed')) === 'true') await enhance.click();
-  await expect(enhance).toHaveAttribute('aria-pressed', 'false');
+  await setEnhancer(page, false);
 }
 
 /** Turns the prompt enhancer on, if it is off. */
 export async function useEnhancer(page: Page): Promise<void> {
+  await setEnhancer(page, true);
+}
+
+/**
+ * Sets the Enhance toggle, clicking until it stays as wanted. The server render shows it on, and hydration then
+ * applies the setting stored by an earlier visit, so a single click can land as the toggle flips and undo it (#151).
+ */
+async function setEnhancer(page: Page, on: boolean): Promise<void> {
+  // The server render already shows the toggle on, so wait for hydration before trusting it.
+  await page.waitForLoadState('networkidle');
   const enhance = page.getByRole('button', { name: 'Enhance prompt' });
-  if ((await enhance.getAttribute('aria-pressed')) !== 'true') await enhance.click();
-  await expect(enhance).toHaveAttribute('aria-pressed', 'true');
+  const wanted = String(on);
+  await expect(async () => {
+    if ((await enhance.getAttribute('aria-pressed')) !== wanted) await enhance.click();
+    await expect(enhance).toHaveAttribute('aria-pressed', wanted, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /** The composer's send button, which carries the cost (for example `Generate · 2 points`). */
