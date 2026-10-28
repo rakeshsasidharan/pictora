@@ -858,7 +858,8 @@ export function GenerateScreen({
                       variant="outline"
                       size="sm"
                       aria-label={`Image settings: ${settingsSummary}`}
-                      className="min-w-0 md:hidden"
+                      // Buttons don't shrink by default; this one gives way so its summary truncates at 360 px.
+                      className="min-w-0 shrink md:hidden"
                     >
                       <SlidersHorizontalIcon aria-hidden="true" />
                       <span className="truncate">{settingsSummary}</span>

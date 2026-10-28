@@ -449,6 +449,17 @@ describe('GenerateScreen', () => {
       );
     });
 
+    it('lets the settings button shrink, so its summary truncates on narrow screens', () => {
+      renderScreen();
+      const button = screen.getByRole('button', { name: /^Image settings:/ });
+      // The shared Button doesn't shrink (shrink-0); at 360 px this one must, or the row overflows (#151).
+      const classes = button.className.split(/\s+/);
+      expect(classes).toContain('shrink');
+      expect(classes).not.toContain('shrink-0');
+      expect(classes).toContain('min-w-0');
+      expect(within(button).getByText(/^None · 1:1 · Standard$/).className).toMatch(/\btruncate\b/);
+    });
+
     it('puts the cost on the send button', () => {
       renderScreen({ left: 20, limit: 25 });
       expect(generate().textContent).toBe('Generate · 6 points');
