@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll_area';
 import {
   Select,
   SelectContent,
@@ -334,38 +335,42 @@ export function EditPanel({
             Versions
           </h2>
           {/* Capped near the viewer's height, so many versions scroll here instead of down the page. */}
-          <ol
-            data-slot="version-list"
-            aria-label="Versions"
-            className="m-0 flex max-h-[min(520px,70vh)] list-none flex-col gap-2 overflow-y-auto p-1"
-          >
-            {versions.map((version) => (
-              <VersionCard
-                key={version.version}
-                version={version}
-                selected={version.version === current.version}
-                onSelect={setSelected}
-              />
-            ))}
-            {job && jobActive && (
-              <li
-                data-slot="version-pending"
-                role="status"
-                className="flex flex-col rounded-lg border border-dashed border-primary p-2 text-sm"
-              >
-                <span className="flex items-center gap-1.5 font-semibold">
-                  <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
-                  {STATUS_LABELS[status ?? 'queued']}…
-                </span>
-                <span className="max-h-20 overflow-y-auto break-words whitespace-pre-wrap">
-                  {job.instruction}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  From version {job.parentVersion}
-                </span>
-              </li>
-            )}
-          </ol>
+          <ScrollArea type="auto" viewportProps={{ className: 'max-h-[min(520px,70vh)]' }}>
+            <ol
+              data-slot="version-list"
+              aria-label="Versions"
+              className="m-0 flex list-none flex-col gap-2 p-1 pr-3"
+            >
+              {versions.map((version) => (
+                <VersionCard
+                  key={version.version}
+                  version={version}
+                  selected={version.version === current.version}
+                  onSelect={setSelected}
+                />
+              ))}
+              {job && jobActive && (
+                <li
+                  data-slot="version-pending"
+                  role="status"
+                  className="flex flex-col rounded-lg border border-dashed border-primary p-2 text-sm"
+                >
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+                    {STATUS_LABELS[status ?? 'queued']}…
+                  </span>
+                  <ScrollArea type="auto" viewportProps={{ className: 'max-h-20' }}>
+                    <span className="block pr-3 break-words whitespace-pre-wrap">
+                      {job.instruction}
+                    </span>
+                  </ScrollArea>
+                  <span className="text-xs text-muted-foreground">
+                    From version {job.parentVersion}
+                  </span>
+                </li>
+              )}
+            </ol>
+          </ScrollArea>
           {poll.timedOut && (
             <p className="text-sm text-muted-foreground">
               This is taking longer than usual. Refresh the page later to see the new version.

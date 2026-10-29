@@ -3,6 +3,7 @@
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll_area';
 import { cn } from '@/lib/utils';
 import { versionAltText } from '../lib/edit_options';
 import type { ImageVersionBody } from '../lib/images';
@@ -59,41 +60,46 @@ export function VersionCarousel({
       >
         <ChevronLeftIcon />
       </Button>
-      <ol
-        aria-label="Versions"
-        className="flex min-w-0 flex-1 snap-x snap-mandatory list-none gap-2 overflow-x-auto p-1"
+      <ScrollArea
+        type="hover"
+        className="min-w-0 flex-1"
+        viewportProps={{ className: 'snap-x snap-mandatory' }}
       >
-        {versions.map((version) => {
-          const isSelected = version.version === selected;
-          return (
-            <li key={version.version} className="shrink-0 snap-start">
-              <button
-                ref={isSelected ? selectedButton : undefined}
-                type="button"
-                aria-pressed={isSelected}
-                aria-label={`Version ${version.version}`}
-                title={versionAltText(version)}
-                onClick={() => onSelect(version.version)}
-                className={cn(
-                  'flex w-18 flex-col items-center gap-1 rounded-md border bg-card p-1 text-xs text-card-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  isSelected ? 'border-primary ring-1 ring-primary' : 'border-border',
-                )}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
-                <img
-                  src={version.thumbUrl}
-                  alt=""
-                  width={64}
-                  height={64}
-                  onError={onImageError}
-                  className="size-16 rounded bg-muted object-cover"
-                />
-                <span className={cn(isSelected && 'font-semibold')}>v{version.version}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+        <ol aria-label="Versions" className="flex list-none gap-2 p-1 pb-3">
+          {versions.map((version) => {
+            const isSelected = version.version === selected;
+            return (
+              <li key={version.version} className="shrink-0 snap-start">
+                <Button
+                  ref={isSelected ? selectedButton : undefined}
+                  type="button"
+                  variant="ghost"
+                  aria-pressed={isSelected}
+                  aria-label={`Version ${version.version}`}
+                  title={versionAltText(version)}
+                  onClick={() => onSelect(version.version)}
+                  className={cn(
+                    'h-auto w-18 flex-col gap-1 border bg-card p-1 text-xs font-normal text-card-foreground',
+                    isSelected ? 'border-primary ring-1 ring-primary' : 'border-border',
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
+                  <img
+                    src={version.thumbUrl}
+                    alt=""
+                    width={64}
+                    height={64}
+                    onError={onImageError}
+                    className="size-16 rounded bg-muted object-cover"
+                  />
+                  <span className={cn(isSelected && 'font-semibold')}>v{version.version}</span>
+                </Button>
+              </li>
+            );
+          })}
+        </ol>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
       <Button
         type="button"
         variant="outline"

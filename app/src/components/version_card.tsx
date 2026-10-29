@@ -3,6 +3,7 @@
 import { CopyIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll_area';
 import { cn } from '@/lib/utils';
 import { versionDescription } from '../lib/edit_options';
 import type { ImageVersionBody } from '../lib/images';
@@ -44,12 +45,13 @@ export function VersionCard({ version, selected, onSelect }: VersionCardProps) {
       )}
     >
       <div className="flex items-start gap-2">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-pressed={selected}
           aria-label={`Version ${version.version}`}
           onClick={() => onSelect(version.version)}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="h-auto min-w-0 flex-1 justify-start gap-3 p-0 text-left text-base font-normal whitespace-normal hover:bg-transparent dark:hover:bg-transparent"
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
           <img
@@ -67,7 +69,7 @@ export function VersionCard({ version, selected, onSelect }: VersionCardProps) {
               </span>
             )}
           </span>
-        </button>
+        </Button>
         {prompt && (
           <Button
             type="button"
@@ -81,14 +83,21 @@ export function VersionCard({ version, selected, onSelect }: VersionCardProps) {
           </Button>
         )}
       </div>
-      {/* Focusable so the text can be scrolled from the keyboard. */}
-      <p
-        tabIndex={0}
-        aria-label={`Prompt of version ${version.version}`}
-        className="mt-2 mb-0 max-h-20 overflow-y-auto rounded pr-1 text-sm break-words whitespace-pre-wrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      <ScrollArea
+        type="auto"
+        className="mt-2"
+        viewportProps={{
+          // Focusable, so the text can be scrolled from the keyboard.
+          tabIndex: 0,
+          role: 'group',
+          'aria-label': `Prompt of version ${version.version}`,
+          className: 'max-h-20 rounded',
+        }}
       >
-        {versionDescription(version)}
-      </p>
+        <p className="pr-3 text-sm break-words whitespace-pre-wrap">
+          {versionDescription(version)}
+        </p>
+      </ScrollArea>
     </li>
   );
 }

@@ -1042,12 +1042,14 @@ describe('GenerateScreen', () => {
       const [turn] = threadTurns();
       const details = within(turn!).getByRole('button', { name: 'Details' });
       expect(details.getAttribute('aria-expanded')).toBe('false');
-      const extras = within(turn!).getByText('Avoid: blur');
-      expect(extras.hidden).toBe(true);
+      expect(within(turn!).queryByText('Avoid: blur')).toBeNull();
       fireEvent.click(details);
       expect(details.getAttribute('aria-expanded')).toBe('true');
       expect(details.textContent).toBe('Hide details');
-      expect(extras.hidden).toBe(false);
+      const extras = within(turn!).getByText('Avoid: blur');
+      expect(details.getAttribute('aria-controls')).toBe(extras.id);
+      fireEvent.click(details);
+      expect(within(turn!).queryByText('Avoid: blur')).toBeNull();
     });
 
     it('has no Details when a request used no extras', async () => {

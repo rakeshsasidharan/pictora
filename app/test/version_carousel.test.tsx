@@ -54,7 +54,7 @@ describe('VersionCarousel', () => {
     const list = screen.getByRole('list', { name: 'Versions' });
     expect(within(list).getAllByRole('listitem')).toHaveLength(12);
     // One scrolling row, whatever the number of versions or the length of their prompts.
-    expect(list.className).toMatch(/overflow-x-auto/);
+    expect(list.closest('[data-slot="scroll-area"]')).not.toBeNull();
     expect(list.className).not.toMatch(/flex-col/);
     expect(pressed()).toEqual(['Version 12']);
     // Long prompts live in the tooltip, trimmed, not in the row.

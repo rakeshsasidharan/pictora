@@ -23,6 +23,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import {
   Sheet,
@@ -232,53 +233,44 @@ function EnhancedPromptPanel({
   onUseMyWords: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const bodyId = useId();
   return (
-    <section aria-label="Enhanced prompt" className="flex flex-col items-end gap-2">
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="text-muted-foreground"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((shown) => !shown)}
-      >
-        <SparklesIcon aria-hidden="true" />
-        Enhanced prompt
-        <ChevronDownIcon aria-hidden="true" className={cn(open && 'rotate-180')} />
-      </Button>
-      <div
-        id={bodyId}
-        hidden={!open}
-        className="flex w-full flex-col gap-2 rounded-xl border bg-muted/40 p-3 sm:max-w-[85%]"
-      >
-        <label htmlFor="enhanced-prompt" className="sr-only">
-          Enhanced prompt
-        </label>
-        <Textarea
-          id="enhanced-prompt"
-          rows={3}
-          maxLength={MAX_PROMPT_LENGTH}
-          value={text}
-          className="max-h-40 bg-background"
-          onChange={(event) => onChange(event.target.value)}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={regenerateDisabled || !text.trim()}
-            onClick={onRegenerate}
-          >
-            Regenerate with this prompt
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section aria-label="Enhanced prompt" className="flex flex-col items-end gap-2">
+        <CollapsibleTrigger asChild>
+          <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
+            <SparklesIcon aria-hidden="true" />
+            Enhanced prompt
+            <ChevronDownIcon aria-hidden="true" className={cn(open && 'rotate-180')} />
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={onUseMyWords}>
-            Use my words
-          </Button>
-        </div>
-      </div>
-    </section>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="flex w-full flex-col gap-2 rounded-xl border bg-muted/40 p-3 sm:max-w-[85%]">
+          <Label htmlFor="enhanced-prompt" className="sr-only">
+            Enhanced prompt
+          </Label>
+          <Textarea
+            id="enhanced-prompt"
+            rows={3}
+            maxLength={MAX_PROMPT_LENGTH}
+            value={text}
+            className="max-h-40 bg-background"
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={regenerateDisabled || !text.trim()}
+              onClick={onRegenerate}
+            >
+              Regenerate with this prompt
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={onUseMyWords}>
+              Use my words
+            </Button>
+          </div>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -799,9 +791,9 @@ export function GenerateScreen({
             </div>
 
             <div className="flex flex-col gap-2 p-3">
-              <label htmlFor="prompt" className="sr-only">
+              <Label htmlFor="prompt" className="sr-only">
                 Describe your image
-              </label>
+              </Label>
               <Textarea
                 ref={promptBox}
                 id="prompt"
