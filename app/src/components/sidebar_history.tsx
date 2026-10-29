@@ -80,9 +80,9 @@ export function SidebarHistory() {
   }
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>History</SidebarGroupLabel>
-      <SidebarGroupContent>
+    <SidebarGroup className="min-h-0 flex-1 group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel className="shrink-0">History</SidebarGroupLabel>
+      <SidebarGroupContent className="min-h-0 flex-1 overflow-y-auto">
         {state.phase === 'loading' && (
           <SidebarMenu aria-label="Loading history" aria-busy="true">
             {Array.from({ length: 4 }, (_, index) => (

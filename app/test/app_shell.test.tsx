@@ -247,6 +247,20 @@ describe('AppShell', () => {
       expect(screen.queryByRole('list', { name: 'Loading history' })).toBeNull();
     });
 
+    it('scrolls the history on its own while the rest of the sidebar stays put', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [image(1)] })], '/api/me': [json(ME)] });
+      renderShell();
+      const history = await screen.findByRole('navigation', { name: 'History' });
+      const scroller = history.closest('[data-sidebar="group-content"]')!;
+      expect(scroller.className).toContain('overflow-y-auto');
+      expect(scroller.className).toContain('min-h-0');
+      const content = history.closest('[data-sidebar="content"]')!;
+      expect(content.className).toContain('overflow-hidden');
+      expect(content.className).not.toMatch(/(^|\s)overflow-auto(\s|$)/);
+      const pages = screen.getByRole('navigation', { name: 'Pages' });
+      expect(pages.closest('[data-sidebar="group"]')!.className).toContain('shrink-0');
+    });
+
     it('highlights the image whose page is open', async () => {
       location.pathname = `/gallery/${idOf(2)}`;
       stubFetch({ [HISTORY_URL]: [json({ images: [image(1), image(2)] })], '/api/me': [json(ME)] });

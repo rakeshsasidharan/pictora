@@ -124,8 +124,9 @@ function AppSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
+      {/* Only the history scrolls; the header, page links and footer stay in place. */}
+      <SidebarContent className="overflow-hidden">
+        <SidebarGroup className="shrink-0">
           <SidebarGroupContent>
             <nav aria-label="Pages">
               <SidebarMenu>
