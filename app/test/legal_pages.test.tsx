@@ -122,7 +122,13 @@ describe('legal pages', () => {
   ] as const)('%s renders its Markdown with the draft notice', (_slug, Page, title, versioned) => {
     const html = renderToStaticMarkup(<Page />);
     expect(html).toContain(`<h1>${title}</h1>`);
-    expect(html).toContain(`<p class="draft-notice" role="note">${LEGAL_DRAFT_NOTICE}</p>`);
+    // The draft notice is a shadcn Alert, as a standing note rather than a live alert.
+    expect(html).toMatch(
+      new RegExp(`<div data-slot="alert" role="note"[^>]*>.*?${LEGAL_DRAFT_NOTICE}</div></div>`),
+    );
+    expect(html).not.toContain('role="alert"');
+    // The Markdown is set with Tailwind Typography, inverted for the dark theme.
+    expect(html).toMatch(/<article class="prose [^"]*dark:prose-invert[^"]*"><h1>/);
     expect(html.includes(`Version ${TOS_VERSION}`)).toBe(versioned);
   });
 });

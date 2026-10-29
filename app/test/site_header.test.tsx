@@ -5,7 +5,7 @@ import { SiteHeader } from '../src/components/site_header';
 describe('SiteHeader', () => {
   it('offers sign-in to visitors', () => {
     const html = renderToStaticMarkup(<SiteHeader />);
-    expect(html).toContain('href="/auth/login"');
+    expect(html).toMatch(/<a href="\/auth\/login" data-slot="button"[^>]*>Sign in<\/a>/);
     expect(html).not.toContain('Sign out');
     expect(html).not.toContain('href="/gallery"');
   });
@@ -18,7 +18,7 @@ describe('SiteHeader', () => {
     expect(html).toContain('href="/generate"');
     expect(html).toContain('href="/gallery"');
     expect(html).toContain('<form action="/auth/logout" method="post">');
-    expect(html).toContain('Sign out');
+    expect(html).toMatch(/<button data-slot="button"[^>]*type="submit"[^>]*>Sign out<\/button>/);
     expect(html).not.toContain('href="/auth/login"');
     expect(html).not.toContain('href="/admin"');
   });
