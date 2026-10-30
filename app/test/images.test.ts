@@ -7,6 +7,7 @@ import {
   getImageDetail,
   listImages,
   rerunSettings,
+  setVersionAltText,
   versionDownloadUrl,
   type GalleryPageBody,
   type ImageDeleteDeps,
@@ -113,6 +114,44 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('getImageDetail against DynamoDB Local', () 
       body: { code: 'not_found' },
     });
   });
+
+  it("sets a version's own alt text, which the detail returns, and clears it again", async () => {
+    expect(
+      await setVersionAltText(deps, owner, IMAGE_ID, '2', { altText: ' A lighthouse, lit ' }),
+    ).toEqual({
+      status: 200,
+      body: { imageId: IMAGE_ID, version: 2, altText: 'A lighthouse, lit' },
+    });
+    const set = (await getImageDetail(deps, owner, IMAGE_ID)).body as unknown as ImageDetailBody;
+    expect(set.versions[1]).toMatchObject({ version: 2, altText: 'A lighthouse, lit' });
+    expect(set.versions[0]).not.toHaveProperty('altText');
+
+    expect(await setVersionAltText(deps, owner, IMAGE_ID, '2', { altText: null })).toEqual({
+      status: 200,
+      body: { imageId: IMAGE_ID, version: 2, altText: null },
+    });
+    const cleared = (await getImageDetail(deps, owner, IMAGE_ID))
+      .body as unknown as ImageDetailBody;
+    expect(cleared.versions[1]).not.toHaveProperty('altText');
+  });
+
+  it("answers 404 for another user's version, or one that doesn't exist, and writes nothing", async () => {
+    const other: Session = { sub: `other-${Date.now()}`, email: 'b@example.com', groups: [] };
+    expect(await setVersionAltText(deps, other, IMAGE_ID, '2', { altText: 'Mine' })).toMatchObject({
+      status: 404,
+      body: { code: 'not_found' },
+    });
+    expect(await setVersionAltText(deps, owner, IMAGE_ID, '3', { altText: 'Gap' })).toMatchObject({
+      status: 404,
+    });
+    const missing = await client.send(
+      new GetCommand({
+        TableName: tableName,
+        Key: { PK: userPk(owner.sub), SK: versionSk(IMAGE_ID, 3) },
+      }),
+    );
+    expect(missing.Item).toBeUndefined();
+  });
 });
 
 describe('image API input checks', () => {
@@ -139,6 +178,22 @@ describe('image API input checks', () => {
     expect(await versionDownloadUrl(deps, session, IMAGE_ID, '1.5')).toBeUndefined();
     expect(await deleteImage(deps, session, 'nope')).toMatchObject({ status: 404 });
     expect(await rerunSettings(deps, session, 'nope')).toBeUndefined();
+  });
+
+  it('refuses alt text for IDs or versions that are not valid, or a body that is not valid', async () => {
+    const body = { altText: 'A fox' };
+    expect(await setVersionAltText(deps, session, '../x', '1', body)).toMatchObject({
+      status: 404,
+    });
+    expect(await setVersionAltText(deps, session, IMAGE_ID, '0', body)).toMatchObject({
+      status: 404,
+    });
+    for (const invalid of [{}, { altText: '' }, { altText: 'a'.repeat(301) }, { ...body, x: 1 }]) {
+      expect(await setVersionAltText(deps, session, IMAGE_ID, '1', invalid)).toMatchObject({
+        status: 400,
+        body: { code: 'invalid_request' },
+      });
+    }
   });
 });
 

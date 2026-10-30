@@ -1,7 +1,11 @@
-import { BatchWriteCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { BatchWriteCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
+  MAX_ALT_TEXT_OVERRIDE_LENGTH,
   activeJobsGsiPk,
+  altTextRequestSchema,
   imageSk,
+  rateLimitPerMinute,
   userPk,
   versionSk,
   type ActiveJobStatus,
@@ -12,6 +16,7 @@ import {
   type StyleId,
 } from '@pictora/core';
 import { recordDiscarded, recordDownload } from '@pictora/core/metrics-store';
+import { takeRateSlot } from './enhance';
 import { apiError, imageFileName, logError, type ApiResult, type JobsDeps } from './jobs';
 import type { Session } from './session';
 
@@ -25,6 +30,7 @@ export interface ImageDeleteDeps extends ImagesDeps {
 }
 
 const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const VERSION_PATTERN = /^[1-9][0-9]{0,5}$/;
 
 /** Images per gallery page (GAL-1). */
 export const GALLERY_PAGE_SIZE = 24;
@@ -57,6 +63,8 @@ export interface ImageVersionBody {
   /** The seed the provider reported, where the model has one (GAL-2). */
   seed?: number;
   transparentBackground?: boolean;
+  /** The user's own alt text, set in the detail view; absent while the default (the prompt) is used. */
+  altText?: string;
   width: number;
   height: number;
   createdAt?: string;
@@ -113,6 +121,7 @@ interface VersionItem {
   aspect?: Aspect;
   seed?: number;
   transparentBackground?: boolean;
+  altText?: string;
   createdAt?: string;
   /** The job that made it; absent for an upload. */
   jobId?: string;
@@ -162,6 +171,7 @@ export async function getImageDetail(
           ...optional('aspect', item.aspect),
           ...optional('seed', item.seed),
           ...optional('transparentBackground', item.transparentBackground),
+          ...optional('altText', item.altText),
           width: item.width,
           height: item.height,
           ...optional('createdAt', item.createdAt),
@@ -338,7 +348,7 @@ export async function versionDownloadUrl(
   version: string,
 ): Promise<string | undefined> {
   const number = Number(version);
-  if (!ULID_PATTERN.test(imageId) || !/^[1-9][0-9]{0,5}$/.test(version)) return undefined;
+  if (!ULID_PATTERN.test(imageId) || !VERSION_PATTERN.test(version)) return undefined;
   const item = (
     await deps.client.send(
       new GetCommand({
@@ -356,6 +366,66 @@ export async function versionDownloadUrl(
     }
   }
   return deps.presign(item.s3Key, imageFileName(imageId, number));
+}
+
+/** The `PATCH /api/images/:id/versions/:n` body: the version's alt text, or null when the default is used. */
+export interface VersionAltTextBody {
+  imageId: string;
+  version: number;
+  altText: string | null;
+}
+
+/**
+ * `PATCH /api/images/:id/versions/:n` (WCAG 2.2 AA, #30): sets the user's own alt text on one of their versions,
+ * or removes it (`null`) so the prompt or edit instruction is used again. Counts in the minute's rate window
+ * with jobs (429). Another user's version answers 404, the same as one that doesn't exist.
+ */
+export async function setVersionAltText(
+  deps: ImagesDeps,
+  session: Session,
+  imageId: string,
+  version: string,
+  input: unknown,
+  now: Date = new Date(),
+): Promise<ApiResult> {
+  const notFound = apiError('not_found', 'Image not found.');
+  if (!ULID_PATTERN.test(imageId) || !VERSION_PATTERN.test(version)) return notFound;
+  const parsed = altTextRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return apiError(
+      'invalid_request',
+      `Alt text must be 1 to ${MAX_ALT_TEXT_OVERRIDE_LENGTH} characters.`,
+    );
+  }
+  const rateLimit = rateLimitPerMinute(session.groups);
+  if (!(await takeRateSlot(deps.client, deps.tableName, session.sub, now, rateLimit))) {
+    return apiError(
+      'rate_limited',
+      `You've made ${rateLimit} requests in the last minute. Wait a moment, then try again.`,
+    );
+  }
+  const { altText } = parsed.data;
+  const number = Number(version);
+  try {
+    await deps.client.send(
+      new UpdateCommand({
+        TableName: deps.tableName,
+        Key: { PK: userPk(session.sub), SK: versionSk(imageId, number) },
+        ConditionExpression: 'attribute_exists(PK)',
+        ...(altText === null
+          ? { UpdateExpression: 'REMOVE altText' }
+          : {
+              UpdateExpression: 'SET altText = :altText',
+              ExpressionAttributeValues: { ':altText': altText },
+            }),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof ConditionalCheckFailedException) return notFound;
+    throw error;
+  }
+  const body: VersionAltTextBody = { imageId, version: number, altText };
+  return { status: 200, body: { ...body } };
 }
 
 /**

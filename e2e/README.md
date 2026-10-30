@@ -12,10 +12,10 @@ It never runs against prod: `src/config.ts` refuses the prod domain from `infra/
 | `specs/sign_in.setup.ts` | The `setup` project: signs the test user in once and saves the session to `.auth/user.json` |
 | `specs/*.spec.ts`        | The `chromium` project, which reuses that session                                          |
 | `specs/cleanup.teardown.ts` | The `cleanup` project, setup's teardown: after every spec, deletes all images in the test user's gallery |
-| `src/`                   | Settings and the prod guard, the managed login, onboarding and cleanup helpers, and issue links |
+| `src/`                   | Settings and the prod guard, the managed login, onboarding and cleanup helpers, the axe and keyboard helpers, and issue links |
 | `test/`                  | Vitest unit tests for `src/`, run by `npm test`                                            |
 
-The setup project takes the test user through onboarding (AUTH-4) when it lands there. The specs that make images (`generate`, `enhance`, `gallery`, `edit`, `delete`) use the Mock model, which only dev offers and only to the `testers` group, so each run costs nothing but a few of the test user's daily points. When every spec has finished, passed or failed, the `cleanup` project deletes all images in the test user's gallery. It first checks that the account is offered the Mock model, and refuses otherwise, so it can never empty a real person's gallery.
+The setup project takes the test user through onboarding (AUTH-4) when it lands there. The specs that make images (`generate`, `enhance`, `gallery`, `edit`, `delete`, `accessibility`, `keyboard`) use the Mock model, which only dev offers and only to the `testers` group, so each run costs nothing but a few of the test user's daily points. When every spec has finished, passed or failed, the `cleanup` project deletes all images in the test user's gallery. It first checks that the account is offered the Mock model, and refuses otherwise, so it can never empty a real person's gallery.
 
 ## Settings
 

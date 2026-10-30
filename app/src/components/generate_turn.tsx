@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BATCH_POLL_TIMEOUT_MS, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
+import { scrollBehavior } from '../lib/motion';
 import { useJobStatus } from '../lib/use_job_status';
 import { JobProgress } from './job_progress';
 
@@ -78,7 +79,7 @@ export function GenerateTurnView({
   const succeeded = poll.job?.status === 'succeeded' && (poll.job.images?.length ?? 0) > 0;
 
   useEffect(() => {
-    item.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    item.current?.scrollIntoView?.({ behavior: scrollBehavior(), block: 'start' });
   }, []);
 
   useEffect(() => {

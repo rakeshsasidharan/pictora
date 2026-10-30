@@ -120,6 +120,111 @@ describe('ImageDetail', () => {
     });
   });
 
+  describe('alt text (#30)', () => {
+    const renderDetail = (versions: ImageVersionBody[]) =>
+      render(
+        <ImageDetail
+          imageId={IMAGE_ID}
+          initial={detail(versions)}
+          modelNames={MODEL_NAMES}
+          onDeleted={vi.fn()}
+        />,
+      );
+    const altGroup = () => screen.getByRole('group', { name: 'Alt text' });
+    const picture = () =>
+      document.querySelector<HTMLImageElement>('[data-slot="image-detail"] img')!;
+
+    it('falls back to the prompt, then the edit instruction, trimmed to 150 characters', () => {
+      const long = version(1, { prompt: `A lighthouse ${'at dusk, '.repeat(30)}` });
+      renderDetail([long, NIGHT]);
+      expect(picture().getAttribute('alt')).toBe('Make it night');
+      expect(within(altGroup()).getByText('Make it night')).toBeTruthy();
+      expect(within(altGroup()).getByText('From the edit instruction.')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Version 1' }));
+      const alt = picture().getAttribute('alt')!;
+      expect(alt.startsWith('A lighthouse at dusk, at dusk')).toBe(true);
+      expect(alt.length).toBeLessThanOrEqual(150);
+      expect(alt.endsWith('…')).toBe(true);
+      expect(within(altGroup()).getByText('From the prompt.')).toBeTruthy();
+    });
+
+    it('describes an upload as an uploaded image', () => {
+      renderDetail([version(1, { source: 'upload' })]);
+      expect(picture().getAttribute('alt')).toBe('Uploaded image');
+      expect(within(altGroup()).getByText('The default for an upload.')).toBeTruthy();
+    });
+
+    it("uses the user's own alt text over the default", () => {
+      renderDetail([ORIGINAL, { ...NIGHT, altText: 'A lighthouse under a starry night sky' }]);
+      expect(picture().getAttribute('alt')).toBe('A lighthouse under a starry night sky');
+      expect(within(altGroup()).getByText('Written by you.')).toBeTruthy();
+      // The version row's thumbnails use it too.
+      expect(screen.getByRole('button', { name: 'Version 2' }).getAttribute('title')).toBe(
+        'A lighthouse under a starry night sky',
+      );
+    });
+
+    it('saves the alt text the user writes, then goes back to the default', async () => {
+      const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+        const { altText } = JSON.parse(init!.body as string) as { altText: string | null };
+        return json({ imageId: IMAGE_ID, version: 2, altText });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      renderDetail([ORIGINAL, NIGHT]);
+
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Edit alt text' }));
+      const box = within(altGroup()).getByRole('textbox', { name: 'Alt text' });
+      expect(document.activeElement).toBe(box);
+      expect((box as HTMLTextAreaElement).value).toBe('Make it night');
+      fireEvent.change(box, { target: { value: '  A lighthouse at night  ' } });
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(picture().getAttribute('alt')).toBe('A lighthouse at night'));
+      expect(fetchMock).toHaveBeenCalledWith(`/api/images/${IMAGE_ID}/versions/2`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ altText: 'A lighthouse at night' }),
+      });
+      expect(within(altGroup()).getByText('Written by you.')).toBeTruthy();
+
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Edit alt text' }));
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Use the default' }));
+      await waitFor(() => expect(picture().getAttribute('alt')).toBe('Make it night'));
+      expect(JSON.parse(fetchMock.mock.calls[1]![1]!.body as string)).toEqual({ altText: null });
+      expect(within(altGroup()).getByText('From the edit instruction.')).toBeTruthy();
+    });
+
+    it('asks for some text, shows a failed save, and can be cancelled', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          json({ code: 'rate_limited', error: 'Wait a moment, then try again.' }, 429),
+        ),
+      );
+      renderDetail([ORIGINAL, NIGHT]);
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Edit alt text' }));
+      const box = within(altGroup()).getByRole('textbox', { name: 'Alt text' });
+      fireEvent.change(box, { target: { value: '   ' } });
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Save' }));
+      expect(within(altGroup()).getByRole('alert').textContent).toBe(
+        'Write some alt text, or use the default.',
+      );
+      expect(box.getAttribute('aria-invalid')).toBe('true');
+
+      fireEvent.change(box, { target: { value: 'A lighthouse at night' } });
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Save' }));
+      expect((await within(altGroup()).findByRole('alert')).textContent).toBe(
+        'Wait a moment, then try again.',
+      );
+      expect(picture().getAttribute('alt')).toBe('Make it night');
+
+      fireEvent.click(within(altGroup()).getByRole('button', { name: 'Cancel' }));
+      expect(within(altGroup()).queryByRole('textbox')).toBeNull();
+      expect(within(altGroup()).getByText('Make it night')).toBeTruthy();
+    });
+  });
+
   it('shows the versions as a row under the picture, not in the details column (#125)', () => {
     render(
       <ImageDetail

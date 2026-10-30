@@ -270,6 +270,50 @@ describe('EditPanel', () => {
     ).toHaveLength(3);
   });
 
+  it('announces the edit as it runs, then the new version, in a polite live region (#30)', async () => {
+    stubApi({
+      statuses: [
+        { status: 'running' },
+        { status: 'succeeded', images: [{ imageId: IMAGE_ID, version: 4 }] },
+      ],
+      detailAfter: detail([ORIGINAL, NIGHT, STARS, version(4, { editInstruction: 'Add snow' })]),
+    });
+    renderPanel();
+    const region = document.querySelector('[data-slot="job-announcement"]')!;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.textContent).toBe('');
+    fireEvent.change(instruction(), { target: { value: 'Add snow' } });
+    fireEvent.click(apply());
+    await waitFor(() => expect(region.textContent).toBe('Generating…'));
+    await waitFor(() => expect(region.textContent).toBe('Your edited version is ready.'));
+  });
+
+  it('announces a failed edit with the refund', async () => {
+    stubApi({
+      statuses: [
+        { status: 'failed', pointsCharged: 0, error: 'The image model ran into a problem.' },
+      ],
+    });
+    renderPanel();
+    fireEvent.change(instruction(), { target: { value: 'Make it night' } });
+    fireEvent.click(apply());
+    const region = document.querySelector('[data-slot="job-announcement"]')!;
+    await waitFor(() =>
+      expect(region.textContent).toBe('The image model ran into a problem. 1 point returned.'),
+    );
+  });
+
+  it('uses the edit instruction, or the user’s own alt text, for the picture', () => {
+    renderPanel({}, [
+      ORIGINAL,
+      NIGHT,
+      version(3, { editInstruction: 'Add stars', altText: 'Stars over a lighthouse' }),
+    ]);
+    expect(screen.getByRole('img', { name: 'Stars over a lighthouse' })).toBeTruthy();
+    fireEvent.click(versionButton(2));
+    expect(screen.getByRole('img', { name: 'Make it night' })).toBeTruthy();
+  });
+
   it('shows the API error when the edit is refused', async () => {
     stubApi({ created: json({ error: 'Image not found.', code: 'not_found' }, 404) });
     renderPanel();
@@ -362,11 +406,16 @@ describe('EditPanel', () => {
   it('closes the gallery picker without adding a reference', async () => {
     stubApi({ gallery: { images: [], jobs: [] } });
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Choose from gallery' }));
+    const choose = screen.getByRole('button', { name: 'Choose from gallery' });
+    choose.focus();
+    fireEvent.click(choose);
     expect(await screen.findByText('Your gallery is empty.')).toBeTruthy();
+    // The focus moves into the dialog, and back to the button that opened it on close (#30).
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('list', { name: 'Reference images' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(choose));
   });
 
   it('starts from the version asked for', () => {

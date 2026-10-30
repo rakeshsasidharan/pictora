@@ -15,6 +15,7 @@ import { BATCH_POLL_INTERVAL_MS, POLL_INTERVAL_MS, altTextFor } from '../lib/gen
 import type { ActiveJobBody, GalleryImageBody, GalleryPageBody } from '../lib/images';
 import type { JobStatusBody } from '../lib/jobs';
 import { GENERATE_PATH, galleryImagePath } from '../lib/site';
+import { useReturnFocus } from '../lib/use_return_focus';
 import { ImageDetail } from './image_detail';
 
 /** Screens at least this wide open the detail view as a modal; narrower ones go to its page. */
@@ -305,17 +306,45 @@ export function Gallery({
         )}
       </div>
       {open && (
-        <Dialog open onOpenChange={(next) => !next && setOpen(undefined)}>
-          {/* The same height whatever the prompt: it fits the window, centred, and the detail fills it (#145). */}
-          <DialogContent
-            aria-describedby={undefined}
-            className="flex h-[min(calc(100svh-2rem),52rem)] flex-col overflow-y-auto sm:max-w-5xl"
-          >
-            <DialogTitle className="sr-only">Image details</DialogTitle>
-            <ImageDetail imageId={open} modelNames={modelNames} onDeleted={deleted} fill />
-          </DialogContent>
-        </Dialog>
+        <DetailModal
+          imageId={open}
+          modelNames={modelNames}
+          onDeleted={deleted}
+          onClose={() => setOpen(undefined)}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * The detail view as a modal, on wide screens (GAL-2). The focus stays inside while it is open and goes back to
+ * the tile that opened it on close (#30).
+ */
+function DetailModal({
+  imageId,
+  modelNames,
+  onDeleted,
+  onClose,
+}: {
+  imageId: string;
+  modelNames: Readonly<Record<string, string>>;
+  onDeleted: (imageId: string) => void;
+  onClose: () => void;
+}) {
+  const returnFocus = useReturnFocus();
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      {/* The same height whatever the prompt: it fits the window, centred, and the detail fills it (#145). */}
+      <DialogContent
+        aria-describedby={undefined}
+        onCloseAutoFocus={returnFocus}
+        className="flex h-[min(calc(100svh-2rem),52rem)] flex-col overflow-y-auto sm:max-w-5xl"
+      >
+        <DialogTitle className="sr-only">Image details</DialogTitle>
+        <ImageDetail imageId={imageId} modelNames={modelNames} onDeleted={onDeleted} fill />
+      </DialogContent>
+    </Dialog>
   );
 }

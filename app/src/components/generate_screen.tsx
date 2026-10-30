@@ -767,7 +767,7 @@ export function GenerateScreen({
               {notice}
             </p>
           )}
-          <div className="flex flex-col rounded-2xl border bg-card shadow-sm focus-within:border-ring">
+          <div className="flex flex-col rounded-2xl border bg-card shadow-sm focus-within:border-ring has-[textarea:focus-visible]:ring-[3px] has-[textarea:focus-visible]:ring-ring/50">
             {/* The settings row, from 768 px: the settings sit on the composer, with the prompt they apply to. */}
             <div
               role="group"

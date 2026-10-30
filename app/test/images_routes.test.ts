@@ -8,6 +8,7 @@ const images = vi.hoisted(() => ({
   deleteImage: vi.fn(),
   getImageDetail: vi.fn(),
   versionDownloadUrl: vi.fn(),
+  setVersionAltText: vi.fn(),
 }));
 
 vi.mock('../src/lib/images', () => images);
@@ -16,6 +17,7 @@ vi.mock('../src/lib/images_deps', () => ({ imagesDeps: () => ({ tableName: 'pict
 const { GET: list } = await import('../src/app/api/images/route');
 const { GET: detail, DELETE: remove } = await import('../src/app/api/images/[id]/route');
 const { GET: download } = await import('../src/app/api/images/[id]/versions/[n]/download/route');
+const { PATCH: setAltText } = await import('../src/app/api/images/[id]/versions/[n]/route');
 
 const base = 'https://pictora.example.dev/api/images';
 const IMAGE_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
@@ -36,7 +38,19 @@ describe('image routes', () => {
       (await download(new NextRequest(`${base}/${IMAGE_ID}/versions/2/download`), versionParams))
         .status,
     ).toBe(401);
+    expect(
+      (
+        await setAltText(
+          new NextRequest(`${base}/${IMAGE_ID}/versions/2`, {
+            method: 'PATCH',
+            body: JSON.stringify({ altText: 'A fox' }),
+          }),
+          versionParams,
+        )
+      ).status,
+    ).toBe(401);
     expect(images.listImages).not.toHaveBeenCalled();
+    expect(images.setVersionAltText).not.toHaveBeenCalled();
   });
 
   it('GET /api/images passes the cursor and answers the page, uncached', async () => {
@@ -118,5 +132,46 @@ describe('image routes', () => {
     );
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ code: 'not_found' });
+  });
+
+  it('PATCH /api/images/:id/versions/:n passes the body on and answers what the update did', async () => {
+    images.setVersionAltText.mockResolvedValue({
+      status: 200,
+      body: { imageId: IMAGE_ID, version: 2, altText: 'A fox asleep' },
+    });
+    const response = await setAltText(
+      new NextRequest(`${base}/${IMAGE_ID}/versions/2`, {
+        method: 'PATCH',
+        headers: signedIn,
+        body: JSON.stringify({ altText: 'A fox asleep' }),
+      }),
+      versionParams,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      imageId: IMAGE_ID,
+      version: 2,
+      altText: 'A fox asleep',
+    });
+    expect(images.setVersionAltText).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sub: 'user-sub' }),
+      IMAGE_ID,
+      '2',
+      { altText: 'A fox asleep' },
+    );
+  });
+
+  it('PATCH /api/images/:id/versions/:n answers 400 for a body that is not JSON', async () => {
+    const response = await setAltText(
+      new NextRequest(`${base}/${IMAGE_ID}/versions/2`, {
+        method: 'PATCH',
+        headers: signedIn,
+        body: 'not json',
+      }),
+      versionParams,
+    );
+    expect(response.status).toBe(400);
+    expect(images.setVersionAltText).not.toHaveBeenCalled();
   });
 });
