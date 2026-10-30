@@ -65,8 +65,9 @@ describe('VersionCard', () => {
     renderCard(version(1, { prompt: LONG }));
     const text = screen.getByLabelText('Prompt of version 1');
     expect(text.textContent).toBe(LONG);
+    // shadcn's ScrollArea: its viewport is the capped, focusable box.
+    expect(text.getAttribute('data-slot')).toBe('scroll-area-viewport');
     expect(text.className).toMatch(/max-h-20/);
-    expect(text.className).toMatch(/overflow-y-auto/);
     expect(text.getAttribute('tabindex')).toBe('0');
   });
 

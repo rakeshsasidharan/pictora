@@ -213,10 +213,11 @@ function ResultsGrid({ images, prompt }: { images: JobImage[]; prompt: string })
       <ul aria-label="Results" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {images.map((image, index) => (
           <li key={`${image.imageId}-${image.version}`} className="flex flex-col gap-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               aria-label={`View image ${index + 1} full size`}
-              className="cursor-zoom-in overflow-hidden rounded-lg border bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="h-auto cursor-zoom-in overflow-hidden rounded-lg border bg-muted p-0"
               onClick={() => setViewing(image)}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs change on every request, so the image optimiser can't cache them */}
@@ -226,7 +227,7 @@ function ResultsGrid({ images, prompt }: { images: JobImage[]; prompt: string })
                 className="h-auto w-full"
                 onLoad={() => void reportFirstImage()}
               />
-            </button>
+            </Button>
             <div className="flex flex-wrap gap-1">
               <Button asChild variant="outline" size="sm">
                 <a href={downloadPath(image.imageId, image.version)} download>

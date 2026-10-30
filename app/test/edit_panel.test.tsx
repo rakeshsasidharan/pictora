@@ -125,13 +125,19 @@ describe('EditPanel', () => {
     const list = screen.getByRole('list', { name: 'Versions' });
     const items = within(list).getAllByRole('listitem');
     // Each card: the select button (number, parent), then its words in their own scroll box (#125).
-    expect(items.map((item) => item.textContent)).toEqual([
+    // Without the rule shadcn's ScrollArea (Radix) puts in a <style> element to hide the native scrollbar.
+    const text = (item: HTMLElement) =>
+      Array.from(item.querySelectorAll('style')).reduce(
+        (shown, style) => shown.replace(style.textContent ?? '', ''),
+        item.textContent ?? '',
+      );
+    expect(items.map(text)).toEqual([
       'Version 1A lighthouse at dusk',
       'Version 2Edited from version 1Make it night',
       'Version 3Edited from version 2Add stars',
     ]);
-    expect(list.className).toMatch(/overflow-y-auto/);
-    expect(list.className).toMatch(/max-h-/);
+    // The list scrolls inside a capped shadcn ScrollArea.
+    expect(list.closest('[data-slot="scroll-area-viewport"]')?.className).toMatch(/max-h-/);
     expect(versionButton(3).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('heading', { name: 'Version 3' })).toBeTruthy();
     expect(screen.getByRole<HTMLImageElement>('img', { name: 'Add stars' }).src).toBe(STARS.url);

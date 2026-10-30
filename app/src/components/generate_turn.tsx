@@ -2,8 +2,9 @@
 
 import { TERMINAL_JOB_STATUSES, type GenerateJobRequest, type Quality } from '@pictora/core';
 import { PlusIcon } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { BATCH_POLL_TIMEOUT_MS, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { useJobStatus } from '../lib/use_job_status';
@@ -64,7 +65,6 @@ export function GenerateTurnView({
   children,
 }: GenerateTurnViewProps) {
   const item = useRef<HTMLLIElement>(null);
-  const extrasId = useId();
   const [showExtras, setShowExtras] = useState(false);
   const poll = useJobStatus(turn.jobId, {
     intervalMs: turn.batch ? batchPollIntervalMs : pollIntervalMs,
@@ -87,36 +87,35 @@ export function GenerateTurnView({
 
   return (
     <li ref={item} className="flex scroll-mt-16 flex-col gap-3">
-      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
-        <p className="rounded-2xl bg-muted px-4 py-2 wrap-break-word whitespace-pre-wrap">
-          {turn.prompt}
-        </p>
-        <div className="flex flex-wrap items-baseline justify-end gap-x-2 text-xs text-muted-foreground">
-          <p data-slot="turn-summary">{turn.summary.join(' · ')}</p>
+      <Collapsible asChild open={showExtras} onOpenChange={setShowExtras}>
+        <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+          <p className="rounded-2xl bg-muted px-4 py-2 wrap-break-word whitespace-pre-wrap">
+            {turn.prompt}
+          </p>
+          <div className="flex flex-wrap items-baseline justify-end gap-x-2 text-xs text-muted-foreground">
+            <p data-slot="turn-summary">{turn.summary.join(' · ')}</p>
+            {turn.extras.length > 0 && (
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="xs"
+                  className="h-auto p-0 text-xs text-muted-foreground"
+                >
+                  {showExtras ? 'Hide details' : 'Details'}
+                </Button>
+              </CollapsibleTrigger>
+            )}
+          </div>
           {turn.extras.length > 0 && (
-            <Button
-              type="button"
-              variant="link"
-              size="xs"
-              className="h-auto p-0 text-xs text-muted-foreground"
-              aria-expanded={showExtras}
-              aria-controls={extrasId}
-              onClick={() => setShowExtras((shown) => !shown)}
-            >
-              {showExtras ? 'Hide details' : 'Details'}
-            </Button>
+            <CollapsibleContent asChild>
+              <p className="text-right text-xs wrap-break-word text-muted-foreground">
+                {turn.extras.join(' · ')}
+              </p>
+            </CollapsibleContent>
           )}
         </div>
-        {turn.extras.length > 0 && (
-          <p
-            id={extrasId}
-            hidden={!showExtras}
-            className="text-right text-xs wrap-break-word text-muted-foreground"
-          >
-            {turn.extras.join(' · ')}
-          </p>
-        )}
-      </div>
+      </Collapsible>
       {children}
       <JobProgress
         poll={poll}

@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -144,6 +145,15 @@ const EXAMPLES: Record<string, { text: string; element: ReactNode }> = {
       <label>
         <Checkbox defaultChecked /> Enhance prompt
       </label>
+    ),
+  },
+  collapsible: {
+    text: 'Avoid: blur',
+    element: (
+      <Collapsible defaultOpen>
+        <CollapsibleTrigger>Details</CollapsibleTrigger>
+        <CollapsibleContent>Avoid: blur</CollapsibleContent>
+      </Collapsible>
     ),
   },
   dialog: {

@@ -62,9 +62,10 @@ export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
           <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Your images">
             {images.map((image) => (
               <li key={image.imageId}>
-                <button
+                <Button
                   type="button"
-                  className="block aspect-square w-full overflow-hidden rounded-lg border bg-muted outline-none hover:ring-2 hover:ring-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  variant="ghost"
+                  className="aspect-square h-auto w-full overflow-hidden rounded-lg border bg-muted p-0 hover:ring-2 hover:ring-primary"
                   aria-label={`Use ${image.title}`}
                   onClick={() => onPick(image)}
                 >
@@ -75,7 +76,7 @@ export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
                     loading="lazy"
                     className="size-full object-cover"
                   />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
