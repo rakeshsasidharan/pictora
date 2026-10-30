@@ -18,14 +18,15 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 /**
  * The document around every page. The `(site)` group's layout adds the public header and footer, and the `(app)`
- * group's the signed-in sidebar shell.
+ * group's the signed-in sidebar shell. The body is a full-height column, so the public pages' footer stays at the
+ * bottom of a short page.
  */
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
   // next-themes changes the class on <html> before React hydrates, which is expected.
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className="flex min-h-screen flex-col">
         <ThemeProvider nonce={requestHeaders.get('x-nonce') ?? undefined}>
           {children}
           <LandingMarker />
