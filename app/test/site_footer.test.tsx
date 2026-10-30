@@ -21,7 +21,7 @@ describe('SiteFooter', () => {
     ]);
   });
 
-  it('is outside the legacy styles, so its links use the theme colours', () => {
+  it('styles its links with the theme colours', () => {
     render(<SiteFooter />);
     expect(screen.getByRole('contentinfo').getAttribute('data-slot')).toBe('site-footer');
     for (const link of screen.getAllByRole('link')) expect(link.className).toContain('text-');
@@ -39,8 +39,8 @@ describe('LegalLinks', () => {
   afterEach(cleanup);
 
   it('can be reused with its own class, for the onboarding page', () => {
-    const { container } = render(<LegalLinks className="onboarding-links" />);
-    expect(container.querySelector('ul.onboarding-links')).not.toBeNull();
+    const { container } = render(<LegalLinks className="justify-start" />);
+    expect(container.querySelector('ul.justify-start')).not.toBeNull();
     expect(screen.getAllByRole('link')).toHaveLength(3);
   });
 });

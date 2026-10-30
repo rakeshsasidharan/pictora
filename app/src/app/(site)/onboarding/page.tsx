@@ -25,7 +25,7 @@ export default async function OnboardingPage() {
   return (
     <main
       data-slot="onboarding-page"
-      className="flex w-full max-w-none flex-1 items-center justify-center px-4 py-12"
+      className="flex w-full flex-1 items-center justify-center px-4 py-12"
     >
       <Card className="w-full max-w-lg">
         <CardHeader>
