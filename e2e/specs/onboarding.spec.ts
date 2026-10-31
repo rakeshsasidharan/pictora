@@ -23,6 +23,24 @@ test.describe('onboarding', () => {
 
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
 
+    // The legal links and contact email are in their own card, and there is no site footer (#161).
+    await expect(page.getByRole('heading', { name: 'Legal and support' })).toBeVisible();
+    const legal = page.getByRole('main').getByRole('navigation', { name: 'Legal' });
+    for (const [name, href] of [
+      ['Terms of service', '/terms'],
+      ['Content policy', '/content-policy'],
+      ['Privacy policy', '/privacy'],
+    ] as const) {
+      await expect(legal.getByRole('link', { name: new RegExp(`^${name}`) })).toHaveAttribute(
+        'href',
+        href,
+      );
+    }
+    await expect(
+      page.getByRole('link', { name: /with questions, feedback or a problem to report$/ }),
+    ).toHaveAttribute('href', /^mailto:/);
+    await expect(page.getByRole('contentinfo')).toHaveCount(0);
+
     // The confirmation is an alert dialog (#110).
     await page.getByRole('button', { name: 'Delete account' }).click();
     const dialog = page.getByRole('alertdialog', { name: 'Are you sure?' });
@@ -33,5 +51,22 @@ test.describe('onboarding', () => {
     // Cancel: deleting would remove the shared test user.
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
+  });
+
+  test('the account page opens each legal page', async ({ page }) => {
+    for (const [name, path, heading] of [
+      ['Terms of service', '/terms', /Terms of service/],
+      ['Content policy', '/content-policy', /Content policy/],
+      ['Privacy policy', '/privacy', /Privacy policy/],
+    ] as const) {
+      await page.goto('/account');
+      await page
+        .getByRole('main')
+        .getByRole('navigation', { name: 'Legal' })
+        .getByRole('link', { name: new RegExp(`^${name}`) })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    }
   });
 });

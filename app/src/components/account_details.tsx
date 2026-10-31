@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { MeBody } from '../lib/jobs';
 import { DeleteAccount } from './delete_account';
+import { LegalSupportCard } from './legal_support_card';
 
 const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
@@ -9,7 +10,10 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 });
 
-/** The account page's content: profile details and today's points in a card, then account deletion. */
+/**
+ * The account page's content: profile details and today's points in a card, the legal pages and contact email in
+ * another, then account deletion.
+ */
 export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
   const fields = [
     { label: 'Email', value: me.email },
@@ -44,6 +48,7 @@ export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
           </dl>
         </CardContent>
       </Card>
+      <LegalSupportCard />
       <DeleteAccount />
     </div>
   );
