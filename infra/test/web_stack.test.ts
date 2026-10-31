@@ -53,11 +53,16 @@ describe('Web stack: app Lambda', () => {
       PICTORA_ENV: 'dev',
       DAILY_POINTS: '1000',
       SPEND_CAP_CENTS: '2000',
+      BETA_MODE: 'false',
       APP_CONFIG_PARAMETER: '/pictora/dev/app-config',
       COGNITO_USER_POOL_ID: expect.anything(),
       COGNITO_DOMAIN: expect.anything(),
       ORIGIN_VERIFY_SECRET_ARN: { Ref: expect.stringMatching(/^OriginVerifySecret/) },
     });
+  });
+
+  it('turns the beta banner on in prod only', () => {
+    expect(appFunction(prod).Environment.Variables.BETA_MODE).toBe('true');
   });
 
   it('passes the enhancer model and secret names, and reads only the secrets it needs', () => {

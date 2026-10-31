@@ -55,9 +55,10 @@ export interface AuthStackProps extends StackProps {
 
 /**
  * The Cognito user pool (tech design 8): email as the username with verification, Google as a federated
- * provider, the managed login domain (managed login version 2), the `admins` group, and the pre-sign-up trigger that checks new accounts
- * for abuse signals (a disposable email domain, many sign-ups from one IP). The app client lives in the `Web` stack,
- * because its callback URLs need the site URL, which is the CloudFront domain when there is no custom domain.
+ * provider, the managed login domain (managed login version 2), the `admins` group, and the pre-sign-up trigger,
+ * which checks new accounts against the private beta allowlist in beta mode, and for abuse signals (a disposable
+ * email domain, many sign-ups from one IP). The app client lives in the `Web` stack, because its callback URLs
+ * need the site URL, which is the CloudFront domain when there is no custom domain.
  */
 export class AuthStack extends Stack {
   readonly userPool: UserPool;
@@ -119,17 +120,20 @@ export class AuthStack extends Stack {
       architecture: Architecture.ARM_64,
       memorySize: 256,
       timeout: PRE_SIGN_UP_TIMEOUT,
-      environment: { TABLE_NAME: props.table.tableName },
+      environment: {
+        TABLE_NAME: props.table.tableName,
+        BETA_MODE: String(props.config.betaMode),
+      },
       bundling: { format: OutputFormat.ESM, minify: true, sourceMap: false },
       logGroup: new LogGroup(this, 'PreSignUpLogGroup', {
         retention: prod ? RetentionDays.THREE_MONTHS : RetentionDays.ONE_MONTH,
         removalPolicy: prod ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
       }),
     });
-    // Writes the `SIGNUP#` marker and adds to the `SIGNUPIP#` counter; nothing else.
+    // Reads the `BETA#ALLOWLIST` item, writes the `SIGNUP#` marker and adds to the `SIGNUPIP#` counter; nothing else.
     this.preSignUpFunction.addToRolePolicy(
       new PolicyStatement({
-        actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
         resources: [props.table.tableArn],
       }),
     );

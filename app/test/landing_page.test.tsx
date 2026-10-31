@@ -29,6 +29,10 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
+/** The page's props with no query string, and with one. */
+const NO_QUERY = { searchParams: Promise.resolve({}) };
+const query = (params: Record<string, string>) => ({ searchParams: Promise.resolve(params) });
+
 describe('landing page', () => {
   beforeEach(() => {
     requestHeaders.current = new Headers();
@@ -36,7 +40,7 @@ describe('landing page', () => {
   afterEach(cleanup);
 
   it('shows signed-out visitors the pitch and a Start creating button that goes to sign-in', async () => {
-    render(await HomePage());
+    render(await HomePage(NO_QUERY));
 
     expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
     const ctas = screen.getAllByRole('link', { name: 'Start creating' });
@@ -48,7 +52,7 @@ describe('landing page', () => {
   });
 
   it('shows a sample image for every entry in the manifest, with its style and prompt', async () => {
-    render(await HomePage());
+    render(await HomePage(NO_QUERY));
 
     const grid = screen.getByRole('list', { name: 'Sample images by style' });
     const items = within(grid).getAllByRole('listitem');
@@ -63,7 +67,7 @@ describe('landing page', () => {
   });
 
   it('explains how it works in three steps and that it is free with a daily allowance', async () => {
-    render(await HomePage());
+    render(await HomePage(NO_QUERY));
 
     const how = screen.getByRole('heading', { name: 'How it works' }).closest('section');
     expect(how).not.toBeNull();
@@ -82,13 +86,39 @@ describe('landing page', () => {
       [SESSION_HEADERS.email]: 'user@example.com',
     });
 
-    await expect(HomePage()).rejects.toThrow(RedirectSignal);
-    await expect(HomePage()).rejects.toMatchObject({ url: '/generate' });
+    await expect(HomePage(NO_QUERY)).rejects.toThrow(RedirectSignal);
+    await expect(HomePage(NO_QUERY)).rejects.toMatchObject({ url: '/generate' });
   });
 
   it('sends signed-in users who have not been through onboarding there first', async () => {
     onboarded.current = false;
     requestHeaders.current = new Headers({ [SESSION_HEADERS.sub]: 'new-user' });
-    await expect(HomePage()).rejects.toMatchObject({ url: '/onboarding' });
+    await expect(HomePage(NO_QUERY)).rejects.toMatchObject({ url: '/onboarding' });
+  });
+});
+
+describe('landing page after a refused beta sign-up', () => {
+  beforeEach(() => {
+    requestHeaders.current = new Headers();
+  });
+  afterEach(cleanup);
+
+  it('explains that Pictora is in private beta and how to ask for an invite', async () => {
+    render(await HomePage(query({ signin: 'private_beta' })));
+    const notice = screen
+      .getByText('Pictora is in private beta')
+      .closest('[data-slot="beta-rejected"]') as HTMLElement;
+    expect(notice.getAttribute('role')).toBe('alert');
+    within(notice).getByText(/by invitation only/);
+    expect(
+      within(notice).getByRole('link', { name: 'contact@rpillai.dev' }).getAttribute('href'),
+    ).toBe('mailto:contact@rpillai.dev');
+    // The way in stays on the page.
+    expect(screen.getAllByRole('link', { name: 'Start creating' }).length).toBeGreaterThan(0);
+  });
+
+  it('shows no notice otherwise', async () => {
+    render(await HomePage(query({ signin: 'something-else' })));
+    expect(screen.queryByText('Pictora is in private beta')).toBeNull();
   });
 });

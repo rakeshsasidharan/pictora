@@ -55,6 +55,28 @@ aws dynamodb update-item --region us-west-2 --table-name pictora-<env> \
 
 The default allowance applies from the user's next request. To give one user a different allowance instead, set `dailyPoints` on the same item (ADM-5), which wins over the flag. A user who signed up but hasn't used the app yet has no profile; their flag waits in `PK = SIGNUP#<email in lower case>`, `SK = ABUSE` for 30 days, and deleting that item clears it.
 
+### Private beta allowlist
+
+While `betaMode` is on for an environment (`infra/cdk.json`: on in prod for the beta, off in dev), only emails on the allowlist can sign up, with email or Google; anyone else sees a "Pictora is in private beta" message. Existing accounts and admins are not affected. Admins manage the list at `/admin/beta` (add, remove, list). From the CLI, each email is an item with `PK = BETA#ALLOWLIST` and `SK` the email in lower case:
+
+```sh
+# Add
+aws dynamodb put-item --region us-west-2 --table-name pictora-<env> \
+  --item '{"PK":{"S":"BETA#ALLOWLIST"},"SK":{"S":"<email in lower case>"},"email":{"S":"<email in lower case>"},"addedAt":{"S":"<ISO 8601 time>"},"addedBy":{"S":"cli"}}'
+
+# Remove
+aws dynamodb delete-item --region us-west-2 --table-name pictora-<env> \
+  --key '{"PK":{"S":"BETA#ALLOWLIST"},"SK":{"S":"<email in lower case>"}}'
+
+# List
+aws dynamodb query --region us-west-2 --table-name pictora-<env> \
+  --key-condition-expression 'PK = :pk' \
+  --expression-attribute-values '{":pk":{"S":"BETA#ALLOWLIST"}}' \
+  --query 'Items[].SK.S' --output text
+```
+
+The email must be in lower case, since the sign-up check lowers the address before looking it up. A change applies to the next sign-up. Removing an email doesn't touch an account already created. To end the beta, set `betaMode` to false for the environment and deploy; the allowlist items can stay or be deleted.
+
 ### Platform spend cap
 
 Provider spend for the month is counted in `PK = PLATFORM`, `SK = SPEND#<yyyy-mm>` (`spentCents`). Once it reaches the cap (`spendCapUsd` in `infra/cdk.json`: $20 in dev, $100 in prod), only Draft quality can be used until the start of next month (UTC), and the spend alarms email at 80% and 100%. Raising the cap is a config change and a deploy.

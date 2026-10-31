@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LOGIN_PATH } from '../lib/cognito_oauth';
 import { SAMPLE_IMAGE_SIZE, SAMPLE_IMAGES } from '../lib/sample_images';
 import { GENERATE_PATH } from '../lib/site';
+import { BetaRejectedNotice } from './beta_banner';
 
 /** Sign-in, then straight to the generate screen. */
 export const START_CREATING_HREF = `${LOGIN_PATH}?returnTo=${encodeURIComponent(GENERATE_PATH)}`;
@@ -26,14 +27,18 @@ const STEPS = [
 
 const SECTION_HEADING_CLASS = 'mb-4 text-2xl font-semibold tracking-tight';
 
-/** The public landing page for signed-out visitors (AUTH-2). A server component: it ships no client code. */
-export function LandingPage() {
+/**
+ * The public landing page for signed-out visitors (AUTH-2). A server component: it ships no client code.
+ * `betaRejected` shows the private beta notice at the top, after a sign-up the allowlist refused.
+ */
+export function LandingPage({ betaRejected = false }: { betaRejected?: boolean }) {
   return (
     <main
       data-slot="landing-page"
       className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-12 px-4 pt-8 pb-12 sm:gap-16 sm:pt-12"
     >
       <section className="flex flex-col items-center gap-4 text-center">
+        {betaRejected && <BetaRejectedNotice />}
         <h1 className="text-4xl font-bold tracking-tight text-balance sm:text-5xl">
           Turn your ideas into images
         </h1>

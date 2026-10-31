@@ -98,6 +98,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
         },
         "Environment": {
           "Variables": {
+            "BETA_MODE": "false",
             "TABLE_NAME": {
               "Fn::GetStackOutput": {
                 "OutputName": "PublishOutputRefTableCD117FA15A08FEDB",
@@ -141,6 +142,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
           "Statement": [
             {
               "Action": [
+                "dynamodb:GetItem",
                 "dynamodb:PutItem",
                 "dynamodb:UpdateItem",
               ],
@@ -5302,6 +5304,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
                 "StackName": "PictoraDev-Jobs",
               },
             },
+            "BETA_MODE": "false",
             "COGNITO_DOMAIN": {
               "Fn::Join": [
                 "",

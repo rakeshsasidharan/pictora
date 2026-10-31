@@ -60,6 +60,11 @@ export interface EnvironmentSettings {
   readonly geminiBackend: GeminiBackend;
   /** Vertex AI location; the worker defaults to `global`. */
   readonly geminiVertexLocation?: string;
+  /**
+   * Private beta mode (M4): while true, only emails on the beta allowlist can sign up, and the app shows the beta
+   * banner. Turning it off at launch is this setting and a deploy, with no code change. Off when unset.
+   */
+  readonly betaMode: boolean;
 }
 
 /** Values passed with `-c` at deploy time, with placeholders so synth works without them. */
@@ -144,6 +149,7 @@ function environmentSettings(node: Node, envName: EnvName): EnvironmentSettings 
     enhancerModel,
     geminiBackend: geminiBackend as GeminiBackend,
     geminiVertexLocation: optionalString(raw, 'geminiVertexLocation', where),
+    betaMode: optionalBoolean(raw, 'betaMode', where) ?? false,
   };
 }
 
@@ -202,6 +208,13 @@ function optionalString(raw: Record<string, unknown>, key: string, where: string
   if (typeof value !== 'string' || value === '') {
     throw new Error(`${where}.${key} must be a non-empty string`);
   }
+  return value;
+}
+
+function optionalBoolean(raw: Record<string, unknown>, key: string, where: string) {
+  const value = raw[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`${where}.${key} must be true or false`);
   return value;
 }
 

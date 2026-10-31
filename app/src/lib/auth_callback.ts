@@ -1,9 +1,13 @@
+import { isBetaRejection } from '@pictora/core';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { AuthConfig } from './auth_config';
 import { cookieOptions, decodeLoginState, LOGIN_COOKIE, setSessionCookies } from './auth_cookies';
 import { exchangeCode, type FetchFn } from './cognito_oauth';
 import { constantTimeEqual } from './pkce';
 import type { TokenVerifier } from './token_verifier';
+
+/** The query the landing page reads to explain a sign-up the private beta allowlist refused. */
+export const BETA_REJECTED_QUERY = 'signin=private_beta';
 
 /** Collaborators the callback uses; tests pass their own. */
 export interface CallbackDeps {
@@ -30,9 +34,13 @@ export async function handleCallback(request: NextRequest, deps: CallbackDeps): 
   if (!login || !state || !constantTimeEqual(state, login.state)) {
     return failed('Sign-in failed: the request did not match. Try signing in again.');
   }
-  // The user cancelled, or Cognito refused the sign-in.
+  // The user cancelled, or Cognito refused the sign-in. A Google sign-up the beta allowlist refused comes back
+  // with the pre-sign-up trigger's message in `error_description`, so the landing page can explain it.
   if (searchParams.get('error') || !code) {
-    return withLoginCookieCleared(NextResponse.redirect(`${config.siteUrl}/`, 302));
+    const home = isBetaRejection(searchParams.get('error_description'))
+      ? `${config.siteUrl}/?${BETA_REJECTED_QUERY}`
+      : `${config.siteUrl}/`;
+    return withLoginCookieCleared(NextResponse.redirect(home, 302));
   }
 
   try {

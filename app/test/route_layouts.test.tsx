@@ -58,6 +58,19 @@ describe('(app) layout', () => {
     expect((await shellProps()).admin).toBe(true);
   });
 
+  it('shows the beta banner above each page while beta mode is on', async () => {
+    signIn();
+    request.cookies.clear();
+    vi.stubEnv('BETA_MODE', 'true');
+    const html = renderToStaticMarkup((await shellProps()).children);
+    expect(html).toMatch(
+      /^<div data-slot="beta-banner".*Pictora is in private beta.*<p>Page<\/p>$/,
+    );
+    vi.stubEnv('BETA_MODE', 'false');
+    expect(renderToStaticMarkup((await shellProps()).children)).toBe('<p>Page</p>');
+    vi.unstubAllEnvs();
+  });
+
   it('starts the sidebar collapsed when the user has not chosen yet', async () => {
     signIn();
     request.cookies.clear();

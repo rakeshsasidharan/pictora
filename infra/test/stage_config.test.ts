@@ -152,6 +152,21 @@ describe('stageConfig', () => {
     });
   });
 
+  it('turns beta mode on in prod and off in dev, and off when unset', () => {
+    expect(configFor(cdkJsonContext()).betaMode).toBe(false);
+    expect(configFor(cdkJsonContext(), 'prod').betaMode).toBe(true);
+    expect(configFor({ environments: { dev: devSettings } }).betaMode).toBe(false);
+    expect(configFor({ environments: { dev: { ...devSettings, betaMode: true } } }).betaMode).toBe(
+      true,
+    );
+  });
+
+  it('rejects a beta mode that is not true or false', () => {
+    expect(() => configFor({ environments: { dev: { ...devSettings, betaMode: 'on' } } })).toThrow(
+      /betaMode must be true or false/,
+    );
+  });
+
   it('rejects an unknown Gemini backend', () => {
     expect(() =>
       configFor({ environments: { dev: { ...devSettings, geminiBackend: 'vertexai' } } }),

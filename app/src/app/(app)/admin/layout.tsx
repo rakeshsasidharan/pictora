@@ -14,6 +14,7 @@ const ADMIN_LINKS = [
   { href: ADMIN_PATH, label: 'Dashboard' },
   { href: `${ADMIN_PATH}/moderation`, label: 'Moderation review' },
   { href: `${ADMIN_PATH}/users`, label: 'Users' },
+  { href: `${ADMIN_PATH}/beta`, label: 'Beta allowlist' },
 ];
 
 /**

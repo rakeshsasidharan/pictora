@@ -101,7 +101,8 @@
         "spendCapUsd": 20,
         "queueConcurrency": 5,
         "enhancerModel": "mock",
-        "geminiBackend": "api"
+        "geminiBackend": "api",
+        "betaMode": false
       },
       "prod": {
         "authDomainPrefix": "pictora-rpillai-prod",
@@ -110,7 +111,8 @@
         "queueConcurrency": 5,
         "appReservedConcurrency": 20,
         "enhancerModel": "bedrock:us.openai.gpt-5.6-luna",
-        "geminiBackend": "api"
+        "geminiBackend": "api",
+        "betaMode": true
       }
     }
   }
