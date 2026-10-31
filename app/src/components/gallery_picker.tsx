@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton';
 import { altTextFor } from '../lib/generate_options';
 import type { GalleryImageBody, GalleryPageBody } from '../lib/images';
+import { useReturnFocus } from '../lib/use_return_focus';
 
 export interface GalleryPickerProps {
   /** Called with the image the user picked; its latest version is the one used. */
@@ -15,9 +16,10 @@ export interface GalleryPickerProps {
 
 /**
  * Picks a reference image from the gallery for an edit (EDIT-5), in a dialog: the user's images newest first, 24
- * at a time, with a button to load more.
+ * at a time, with a button to load more. The focus goes back to what opened it on close.
  */
 export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
+  const returnFocus = useReturnFocus();
   const [images, setImages] = useState<GalleryImageBody[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -53,6 +55,7 @@ export function GalleryPicker({ onPick, onClose }: GalleryPickerProps) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-describedby={undefined}
+        onCloseAutoFocus={returnFocus}
         className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-3xl"
       >
         <DialogHeader>

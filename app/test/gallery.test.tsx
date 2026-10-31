@@ -301,6 +301,39 @@ describe('Gallery', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('keeps the focus in the modal and returns it to the tile on close (#30)', async () => {
+    setWideScreen(true);
+    stubFetch({
+      '/api/images': [page({ images: [tile(3), tile(2)], jobs: [] })],
+      [`/api/images/${idOf(2)}`]: [json({ error: 'nope' }, 500)],
+    });
+    render(<Gallery modelNames={MODEL_NAMES} />);
+    const link = (await screen.findByRole('img', { name: 'Image 2' })).closest('a')!;
+    link.focus();
+    fireEvent.click(link);
+    const dialog = await screen.findByRole('dialog', { name: 'Image details' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    // The rest of the page is hidden from screen readers while the modal is open.
+    expect(screen.queryByRole('list', { name: 'Your images' })).toBeNull();
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(link));
+  });
+
+  it('uses the image title, trimmed to 150 characters, as each thumbnail’s alt text', async () => {
+    const long = `A lighthouse ${'at dusk '.repeat(30)}`;
+    stubFetch({
+      '/api/images': [page({ images: [{ ...tile(2), title: long }], jobs: [] })],
+    });
+    render(<Gallery modelNames={MODEL_NAMES} />);
+    const alt = (await screen.findByRole('img')).getAttribute('alt')!;
+    expect(alt.length).toBeLessThanOrEqual(150);
+    expect(alt.length).toBeGreaterThan(140);
+    expect(alt.startsWith('A lighthouse at dusk')).toBe(true);
+    expect(alt.endsWith('…')).toBe(true);
+  });
+
   it('follows the link to the detail page on narrow screens', async () => {
     stubFetch({ '/api/images': [page({ images: [tile(2)], jobs: [] })] });
     render(<Gallery modelNames={MODEL_NAMES} />);

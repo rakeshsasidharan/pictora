@@ -278,6 +278,12 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
       ['deletes their image', 'DELETE', '/api/images/:id', {}],
       ['downloads their image', 'GET', '/api/images/:id/versions/:n/download', {}],
       [
+        'sets alt text on their image',
+        'PATCH',
+        '/api/images/:id/versions/:n',
+        { body: { altText: 'Not mine' } },
+      ],
+      [
         'reports their image',
         'POST',
         '/api/reports',

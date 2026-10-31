@@ -24,6 +24,7 @@ import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
 import { notifyImagesChanged } from '../lib/images_changed';
 import { downloadPath, editImagePath, rerunPath } from '../lib/site';
+import { AltTextEditor } from './alt_text_editor';
 import { ReportImage } from './report_image';
 import { VersionCarousel } from './version_carousel';
 
@@ -53,7 +54,7 @@ type Load =
  * The detail view of a gallery image (GAL-2, GAL-3): the selected version with its prompt, enhanced prompt, edit
  * instruction, model, style, size, seed and date; the version history, as a row of thumbnails under the
  * picture (#125); and a toolbar to download the original PNG, rerun, edit, report and delete (after a
- * confirmation in an alert dialog). Presigned URLs that expired are fetched again when an image fails to load
+ * confirmation in an alert dialog); and the version's alt text, which the user can rewrite (#30). Presigned URLs that expired are fetched again when an image fails to load
  * (GAL-4). Long text (the prompt, enhanced prompt, what to avoid, the edit instruction) sits in a capped box that
  * scrolls, so it never pushes the picture or the actions out of view (#145).
  */
@@ -177,6 +178,17 @@ export function ImageDetail({
     } finally {
       setDeleting(false);
     }
+  }
+
+  /** Keeps the version's alt text as saved, so the picture and the editor show it straight away. */
+  function altTextSaved(version: number, altText: string | undefined) {
+    setLoad((state) => {
+      if (state.state !== 'ready') return state;
+      const changed = state.detail.versions.map((item) =>
+        item.version === version ? { ...item, altText } : item,
+      );
+      return { ...state, detail: { ...state.detail, versions: changed } };
+    });
   }
 
   const fields = versionFields(current, modelNames);
@@ -320,6 +332,21 @@ export function ImageDetail({
                 </div>
               ))}
             </dl>
+            <div
+              role="group"
+              aria-labelledby="image-detail-alt-text"
+              className="mt-3 flex flex-col gap-0.5 text-sm"
+            >
+              <p id="image-detail-alt-text" className="text-xs font-medium text-muted-foreground">
+                Alt text
+              </p>
+              <AltTextEditor
+                key={current.version}
+                imageId={imageId}
+                version={current}
+                onSaved={(altText) => altTextSaved(current.version, altText)}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

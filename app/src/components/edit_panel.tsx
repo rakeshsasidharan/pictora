@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { jobAnnouncement } from '../lib/announcements';
 import {
   defaultEditModel,
   editModels,
@@ -352,7 +353,6 @@ export function EditPanel({
               {job && jobActive && (
                 <li
                   data-slot="version-pending"
-                  role="status"
                   className="flex flex-col rounded-lg border border-dashed border-primary p-2 text-sm"
                 >
                   <span className="flex items-center gap-1.5 font-semibold">
@@ -371,6 +371,17 @@ export function EditPanel({
               )}
             </ol>
           </ScrollArea>
+          {/* Read out once per change: "Generating…", then the new version (#30). */}
+          <p data-slot="job-announcement" role="status" className="sr-only">
+            {job && status
+              ? jobAnnouncement({
+                  status,
+                  readyText: 'Your edited version is ready.',
+                  ...(poll.job?.error ? { error: poll.job.error } : {}),
+                  refunded,
+                })
+              : ''}
+          </p>
           {poll.timedOut && (
             <p className="text-sm text-muted-foreground">
               This is taking longer than usual. Refresh the page later to see the new version.

@@ -8,11 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { jobAnnouncement } from '../lib/announcements';
 import { STATUS_LABELS, altTextFor, pointsText } from '../lib/generate_options';
 import type { JobStatusBody } from '../lib/jobs';
 import { reportFirstImage } from '../lib/first_image';
 import { GALLERY_PATH, downloadPath, editImagePath } from '../lib/site';
 import type { JobPoll } from '../lib/use_job_status';
+import { useReturnFocus } from '../lib/use_return_focus';
 import { ReportImage } from './report_image';
 
 type JobImage = NonNullable<JobStatusBody['images']>[number];
@@ -91,9 +93,18 @@ export function JobProgress({
             );
           })}
         </ol>
-        <p role="status" className="flex items-center gap-1.5 font-medium">
+        <p className="flex items-center gap-1.5 font-medium">
           {active && <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />}
           Status: {STATUS_LABELS[status]}
+        </p>
+        {/* Read out once per change: "Generating…", "2 images ready" (#30). */}
+        <p data-slot="job-announcement" role="status" className="sr-only">
+          {jobAnnouncement({
+            status,
+            images: job?.images?.length ?? count,
+            ...(job?.error ? { error: job.error } : {}),
+            refunded,
+          })}
         </p>
         <p className="text-muted-foreground">Model: {modelName}</p>
       </div>
@@ -260,6 +271,7 @@ function FullSizeView({
   onClose: () => void;
 }) {
   const close = useRef<HTMLButtonElement>(null);
+  const returnFocus = useReturnFocus();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -270,6 +282,7 @@ function FullSizeView({
           event.preventDefault();
           close.current?.focus();
         }}
+        onCloseAutoFocus={returnFocus}
         showCloseButton={false}
         className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-3xl"
       >

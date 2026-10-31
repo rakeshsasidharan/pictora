@@ -37,7 +37,12 @@ export function versionDescription(version: ImageVersionBody): string {
   return version.prompt ?? 'Original image';
 }
 
-/** The alt text of a version: what it was made or edited with, trimmed to 150 characters. */
-export function versionAltText(version: ImageVersionBody): string {
+/** A version's default alt text: what it was made or edited with, trimmed to 150 characters. */
+export function defaultAltText(version: ImageVersionBody): string {
   return altTextFor(versionDescription(version));
+}
+
+/** The alt text of a version: the user's own, set in the detail view, or the default. */
+export function versionAltText(version: ImageVersionBody): string {
+  return version.altText ?? defaultAltText(version);
 }

@@ -218,11 +218,13 @@ export {
 } from './routing.js';
 export type { RoutableModel, Route, RouteReason, RouteRequest, RoutingNeeds } from './routing.js';
 export {
+  MAX_ALT_TEXT_OVERRIDE_LENGTH,
   MAX_AVOID_LENGTH,
   MAX_PROMPT_LENGTH,
   MAX_UPLOAD_BYTES,
   UPLOAD_CONTENT_TYPES,
   UPLOAD_POST_EXPIRY_SECONDS,
+  altTextRequestSchema,
   aspectSchema,
   createJobRequestSchema,
   editJobRequestSchema,
@@ -236,6 +238,7 @@ export {
   uploadRequestSchema,
 } from './schemas.js';
 export type {
+  AltTextRequest,
   CreateJobRequest,
   EditJobRequest,
   EnhanceRequest,

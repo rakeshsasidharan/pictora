@@ -114,6 +114,17 @@ export const reportRequestSchema = z.strictObject({
   reason: z.enum(REPORT_REASONS),
 });
 
+/** The most characters of alt text a user may set on a version (WCAG 2.2 AA, #30). */
+export const MAX_ALT_TEXT_OVERRIDE_LENGTH = 300;
+
+/**
+ * `PATCH /api/images/:id/versions/:n`: the user's own alt text for a version, or `null` to go back to the
+ * default (the prompt or edit instruction, trimmed to 150 characters).
+ */
+export const altTextRequestSchema = z.strictObject({
+  altText: z.string().trim().min(1).max(MAX_ALT_TEXT_OVERRIDE_LENGTH).nullable(),
+});
+
 export type GenerateJobRequest = z.infer<typeof generateJobRequestSchema>;
 export type EditJobRequest = z.infer<typeof editJobRequestSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
@@ -121,3 +132,4 @@ export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;
 export type OnboardingRequest = z.infer<typeof onboardingRequestSchema>;
 export type ReportRequest = z.infer<typeof reportRequestSchema>;
+export type AltTextRequest = z.infer<typeof altTextRequestSchema>;

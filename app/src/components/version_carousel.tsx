@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll_area';
 import { cn } from '@/lib/utils';
 import { versionAltText } from '../lib/edit_options';
 import type { ImageVersionBody } from '../lib/images';
+import { scrollBehavior } from '../lib/motion';
 
 export interface VersionCarouselProps {
   versions: readonly ImageVersionBody[];
@@ -39,7 +40,7 @@ export function VersionCarousel({
     selectedButton.current?.scrollIntoView?.({
       block: 'nearest',
       inline: 'nearest',
-      behavior: 'smooth',
+      behavior: scrollBehavior(),
     });
   }, [selected]);
 

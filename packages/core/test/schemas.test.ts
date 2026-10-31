@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ASPECTS,
   QUALITIES,
+  MAX_ALT_TEXT_OVERRIDE_LENGTH,
   STYLE_IDS,
+  altTextRequestSchema,
   createJobRequestSchema,
   editJobRequestSchema,
   enhanceRequestSchema,
@@ -300,6 +302,24 @@ describe('uploadRequestSchema', () => {
   });
 });
 
+describe('altTextRequestSchema', () => {
+  it('trims the alt text and keeps it to 300 characters', () => {
+    expect(altTextRequestSchema.parse({ altText: '  A red fox  ' })).toEqual({
+      altText: 'A red fox',
+    });
+    const longest = 'a'.repeat(MAX_ALT_TEXT_OVERRIDE_LENGTH);
+    expect(altTextRequestSchema.safeParse({ altText: longest }).success).toBe(true);
+    expect(altTextRequestSchema.safeParse({ altText: `${longest}a` }).success).toBe(false);
+  });
+
+  it('takes null to go back to the default, but not blank or missing text', () => {
+    expect(altTextRequestSchema.parse({ altText: null })).toEqual({ altText: null });
+    expect(altTextRequestSchema.safeParse({ altText: '   ' }).success).toBe(false);
+    expect(altTextRequestSchema.safeParse({}).success).toBe(false);
+    expect(altTextRequestSchema.safeParse({ altText: 42 }).success).toBe(false);
+  });
+});
+
 describe('every JSON request body schema (tech design 12)', () => {
   const bodies = [
     ['POST /api/jobs (generate)', createJobRequestSchema, validGenerate],
@@ -317,6 +337,7 @@ describe('every JSON request body schema (tech design 12)', () => {
     ['POST /api/uploads', uploadRequestSchema, { contentType: 'image/png', size: 1024 }],
     ['POST /api/reports', reportRequestSchema, { imageId: IMAGE_ID, version: 1, reason: 'hate' }],
     ['POST /api/admin/moderation/:date/:id/review', reviewRequestSchema, { verdict: 'ok' }],
+    ['PATCH /api/images/:id/versions/:n', altTextRequestSchema, { altText: 'A red fox' }],
   ] as const;
 
   it.each(bodies)('%s accepts a valid body and rejects unknown fields', (_route, schema, body) => {

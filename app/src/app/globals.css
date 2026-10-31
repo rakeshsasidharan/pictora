@@ -8,7 +8,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* shadcn/ui tokens, base colour neutral. */
+/*
+ * shadcn/ui tokens, base colour neutral. The light muted foreground is darker than shadcn's (0.556), so muted
+ * text meets WCAG AA (4.5:1) on the muted and sidebar backgrounds too; test/contrast.test.ts checks every pair.
+ */
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -22,7 +25,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.5 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -122,5 +125,9 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* prefers-reduced-motion (#30): no animations, transitions or smooth scrolling, whatever a utility asks for. */
+  * {
+    @apply motion-reduce:scroll-auto! motion-reduce:transition-none! motion-reduce:animate-none!;
   }
 }
