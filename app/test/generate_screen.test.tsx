@@ -529,6 +529,17 @@ describe('GenerateScreen', () => {
       expect(within(group).getAllByRole('radio')).toHaveLength(styles.length);
     });
 
+    it('keeps the style button text within its accessible name, with None drawn as an icon', () => {
+      renderScreen();
+      const button = screen.getByRole('button', { name: 'Style: None' });
+      expect(button.textContent).toBe('None');
+      expect(button.querySelector('svg.lucide-case-sensitive')).toBeTruthy();
+      chooseStyle('Watercolour');
+      expect(screen.getByRole('button', { name: 'Style: Watercolour' }).textContent).toBe(
+        'Watercolour',
+      );
+    });
+
     it('shows the picked style on its button', () => {
       renderScreen();
       chooseStyle('Watercolour');

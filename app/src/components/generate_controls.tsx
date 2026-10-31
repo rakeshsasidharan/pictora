@@ -11,6 +11,7 @@ import {
   type StyleId,
 } from '@pictora/core';
 import {
+  CaseSensitiveIcon,
   ChevronDownIcon,
   ClockIcon,
   EllipsisIcon,
@@ -54,7 +55,10 @@ export function variationsLabel(count: number): string {
   return count === 1 ? '1 image' : `${count} variations`;
 }
 
-/** A style's sample image, or "Aa" for None, which adds nothing to the prompt. */
+/**
+ * A style's sample image, or an Aa icon for None, which adds nothing to the prompt. The Aa is drawn, not text, so
+ * a button showing it has only the style name as visible text, which its accessible name must contain.
+ */
 function StyleThumbnail({ styleId, className }: { styleId: StyleId; className: string }) {
   const sample = styleId === 'none' ? undefined : SAMPLE_BY_STYLE.get(styleId);
   if (!sample) {
@@ -62,11 +66,11 @@ function StyleThumbnail({ styleId, className }: { styleId: StyleId; className: s
       <span
         aria-hidden="true"
         className={cn(
-          'flex shrink-0 items-center justify-center rounded-md bg-muted font-semibold text-muted-foreground',
+          'flex shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground',
           className,
         )}
       >
-        Aa
+        <CaseSensitiveIcon className="size-3/5" />
       </span>
     );
   }
@@ -97,7 +101,7 @@ export function StylePicker({
     <Popover>
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" size="sm" aria-label={`Style: ${name}`}>
-          <StyleThumbnail styleId={value} className="size-5 rounded-sm text-[0.5rem]" />
+          <StyleThumbnail styleId={value} className="size-5 rounded-sm" />
           {name}
           <ChevronDownIcon aria-hidden="true" className="opacity-50" />
         </Button>
@@ -118,7 +122,7 @@ export function StylePicker({
               value={style.id}
               className="h-auto w-full flex-col gap-1 p-1.5 text-xs whitespace-normal data-[state=on]:ring-2 data-[state=on]:ring-primary"
             >
-              <StyleThumbnail styleId={style.id} className="aspect-square h-auto w-full text-lg" />
+              <StyleThumbnail styleId={style.id} className="aspect-square h-auto w-full" />
               <span>{style.name}</span>
             </ToggleGroupItem>
           ))}
