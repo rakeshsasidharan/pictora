@@ -33,7 +33,7 @@ RUN mkdir -p /task \
   && npm install --omit=dev --no-audit --no-fund --no-package-lock "sharp@${SHARP_VERSION}" \
   && node -e "import('sharp').then((m) => console.log('sharp', m.default.versions))"
 
-FROM public.ecr.aws/lambda/nodejs:22
+FROM public.ecr.aws/lambda/nodejs:24
 ENV NODE_ENV=production \
   NODE_OPTIONS=--enable-source-maps
 COPY --from=build /task/ ${LAMBDA_TASK_ROOT}/
