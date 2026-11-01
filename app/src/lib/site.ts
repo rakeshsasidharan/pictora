@@ -6,8 +6,9 @@ export const SITE_DESCRIPTION =
   'Turn text prompts into images, from watercolour to photorealism. Free, with a daily allowance.';
 
 /**
- * Where people reach us about the service, privacy requests and content reports. Shown in the footer and
- * substituted for `{{CONTACT_EMAIL}}` in the legal pages. It has to be a working mailbox before launch.
+ * Where people reach us about the service, privacy requests and content reports. Shown in the site footer and on
+ * the account page, and substituted for `{{CONTACT_EMAIL}}` in the legal pages. It has to be a working mailbox
+ * before launch.
  */
 export const CONTACT_EMAIL = 'contact@rpillai.dev';
 

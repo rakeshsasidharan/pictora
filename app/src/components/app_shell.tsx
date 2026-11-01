@@ -54,8 +54,6 @@ export interface AppShellProps {
   admin: boolean;
   /** Whether the sidebar starts expanded on desktop: the state the user last left it in, collapsed at first. */
   defaultOpen: boolean;
-  /** Shown under each page, inside the inset. */
-  footer?: ReactNode;
   children: ReactNode;
 }
 
@@ -65,7 +63,7 @@ export interface AppShellProps {
  * right edge. On desktop the sidebar is shadcn's floating variant, an inset rounded panel, and collapses to
  * icons (the trigger, or Ctrl/Cmd+B); on mobile it opens as a sheet.
  */
-export function AppShell({ email, admin, defaultOpen, footer, children }: AppShellProps) {
+export function AppShell({ email, admin, defaultOpen, children }: AppShellProps) {
   const pathname = usePathname();
 
   return (
@@ -90,7 +88,6 @@ export function AppShell({ email, admin, defaultOpen, footer, children }: AppShe
           </div>
         </header>
         <div className="mx-auto w-full max-w-260 flex-1 px-4 pt-6 pb-12">{children}</div>
-        {footer}
       </SidebarInset>
     </SidebarProvider>
   );

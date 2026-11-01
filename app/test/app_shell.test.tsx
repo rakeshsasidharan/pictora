@@ -133,6 +133,14 @@ describe('AppShell', () => {
       await screen.findByText('No images yet');
     });
 
+    it('has no site footer under the page', async () => {
+      stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
+      renderShell();
+      expect(screen.queryByRole('contentinfo')).toBeNull();
+      expect(document.querySelector('[data-slot="site-footer"]')).toBeNull();
+      await screen.findByText('No images yet');
+    });
+
     it('has no New image button: the Generate link opens the generate screen', async () => {
       stubFetch({ [HISTORY_URL]: [json({ images: [] })], '/api/me': [json(ME)] });
       renderShell();

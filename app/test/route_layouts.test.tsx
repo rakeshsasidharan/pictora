@@ -51,8 +51,8 @@ describe('(app) layout', () => {
     const props = await shellProps();
     expect(props).toMatchObject({ email: 'user@example.com', admin: false });
     expect(renderToStaticMarkup(props.children)).toBe('<p>Page</p>');
-    // The legal links stay under each page.
-    expect(renderToStaticMarkup(props.footer)).toContain('href="/terms"');
+    // No site footer under signed-in pages: the account page has the legal links instead (#161).
+    expect(props).not.toHaveProperty('footer');
 
     signIn('admins');
     expect((await shellProps()).admin).toBe(true);

@@ -105,28 +105,56 @@ describe('DeleteAccount', () => {
   });
 });
 
+const ME: MeBody = {
+  sub: 's',
+  email: 'user@example.com',
+  status: 'active',
+  date: '2026-10-15',
+  dailyLimit: 25,
+  pointsUsed: 7,
+  pointsLeft: 18,
+  activeJobs: 0,
+  onboardingRequired: false,
+  memberSince: '2026-09-03T10:00:00.000Z',
+};
+
 describe('AccountDetails', () => {
   afterEach(cleanup);
 
   it('shows the email, sign-in method, member-since date and today’s points', () => {
-    const me: MeBody = {
-      sub: 's',
-      email: 'user@example.com',
-      status: 'active',
-      date: '2026-10-15',
-      dailyLimit: 25,
-      pointsUsed: 7,
-      pointsLeft: 18,
-      activeJobs: 0,
-      onboardingRequired: false,
-      memberSince: '2026-09-03T10:00:00.000Z',
-    };
-    render(<AccountDetails me={me} method="Google" />);
+    render(<AccountDetails me={ME} method="Google" />);
     expect(screen.getByText('user@example.com')).toBeTruthy();
     expect(screen.getByText('Google')).toBeTruthy();
     expect(screen.getByText('3 September 2026')).toBeTruthy();
     expect(screen.getByText(/18 of 25 left \(7 used\)/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Delete account' })).toBeTruthy();
+  });
+
+  it('has a Legal and support card with the legal pages and the contact email (#161)', () => {
+    render(<AccountDetails me={ME} method="Email and password" />);
+    const card = screen
+      .getByRole('heading', { name: 'Legal and support' })
+      .closest('[data-slot="legal-support"]') as HTMLElement;
+    expect(card.getAttribute('data-slot')).toBe('legal-support');
+    const legal = within(card).getByRole('navigation', { name: 'Legal' });
+    expect(
+      within(legal)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['Terms of serviceThe rules for using Pictora', '/terms'],
+      ['Content policyWhat you can and can’t create', '/content-policy'],
+      ['Privacy policyWhat we keep about you, and why', '/privacy'],
+    ]);
+    const contact = within(card).getByRole('link', {
+      name: 'Email contact@rpillai.dev with questions, feedback or a problem to report',
+    });
+    expect(contact.getAttribute('href')).toBe('mailto:contact@rpillai.dev');
+    expect(within(contact).getByText('contact@rpillai.dev')).toBeTruthy();
+    // It sits between the profile and account deletion, and the page has no site footer.
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Profile', 'Legal and support', 'Delete account']);
+    expect(screen.queryByRole('contentinfo')).toBeNull();
   });
 });

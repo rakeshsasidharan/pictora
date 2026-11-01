@@ -16,7 +16,7 @@ export interface LegalPage {
   acceptedAtOnboarding: boolean;
 }
 
-/** The legal pages, in the order the footer and the onboarding page list them. */
+/** The legal pages, in the order the site footer, the account page and the onboarding page list them. */
 export const LEGAL_PAGES: readonly LegalPage[] = [
   {
     slug: 'terms',
