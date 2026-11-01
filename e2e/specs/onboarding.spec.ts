@@ -37,7 +37,7 @@ test.describe('onboarding', () => {
       );
     }
     await expect(
-      page.getByRole('link', { name: /with questions, feedback or a problem to report$/ }),
+      page.getByRole('link', { name: /^Questions, feedback or a problem to report/ }),
     ).toHaveAttribute('href', /^mailto:/);
     await expect(page.getByRole('contentinfo')).toHaveCount(0);
 

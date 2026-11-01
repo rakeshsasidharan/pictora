@@ -28,7 +28,7 @@ function RowText({ title, detail }: { title: string; detail: string }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
       <span className="text-sm font-medium">{title}</span>
-      <span className="text-sm break-words text-muted-foreground">{detail}</span>
+      <span className="text-sm wrap-break-word text-muted-foreground">{detail}</span>
     </span>
   );
 }
@@ -70,11 +70,7 @@ export function LegalSupportCard() {
         </nav>
         <div className="flex flex-col gap-1 border-t pt-4">
           <h3 className="text-sm font-medium text-muted-foreground">Contact</h3>
-          <a
-            href={`mailto:${CONTACT_EMAIL}`}
-            aria-label={`Email ${CONTACT_EMAIL} with questions, feedback or a problem to report`}
-            className={`${ROW_CLASS} -mx-2`}
-          >
+          <a href={`mailto:${CONTACT_EMAIL}`} className={`${ROW_CLASS} -mx-2`}>
             <span className={ICON_TILE_CLASS}>
               <MailIcon aria-hidden="true" className="size-4" />
             </span>

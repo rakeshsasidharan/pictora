@@ -148,9 +148,11 @@ describe('AccountDetails', () => {
       ['Privacy policyWhat we keep about you, and why', '/privacy'],
     ]);
     const contact = within(card).getByRole('link', {
-      name: 'Email contact@rpillai.dev with questions, feedback or a problem to report',
+      name: /^Questions, feedback or a problem to report\s*contact@rpillai\.dev$/,
     });
     expect(contact.getAttribute('href')).toBe('mailto:contact@rpillai.dev');
+    // Its name is its visible text, which axe's label-content-name-mismatch requires.
+    expect(contact.hasAttribute('aria-label')).toBe(false);
     expect(within(contact).getByText('contact@rpillai.dev')).toBeTruthy();
     // It sits between the profile and account deletion, and the page has no site footer.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
