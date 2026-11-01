@@ -144,6 +144,7 @@ export class WebStack extends Stack {
         IMAGES_BUCKET: props.imagesBucket.bucketName,
         DAILY_POINTS: String(config.dailyPoints),
         SPEND_CAP_CENTS: String(config.spendCapUsd * 100),
+        BETA_MODE: String(config.betaMode),
         COGNITO_USER_POOL_ID: props.auth.userPool.userPoolId,
         COGNITO_DOMAIN: props.auth.domainBaseUrl,
         APP_CONFIG_PARAMETER: appConfigParameter,

@@ -31,6 +31,17 @@ export {
   signUpIpPk,
 } from './abuse.js';
 export type { AbuseFlag } from './abuse.js';
+export {
+  BETA_ALLOWLIST_PK,
+  BETA_REJECTION_MESSAGE,
+  MAX_EMAIL_LENGTH,
+  betaAllowlistAddSchema,
+  betaAllowlistSk,
+  betaEmailSchema,
+  betaModeFromEnv,
+  isBetaRejection,
+} from './beta.js';
+export type { BetaAllowlistAdd, BetaAllowlistItem } from './beta.js';
 export { DELETE_CONFIRMATION, parsePurgeMessage, userObjectPrefixes } from './account.js';
 export type { PurgeMessage } from './account.js';
 export {

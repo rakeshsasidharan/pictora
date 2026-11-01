@@ -1,3 +1,4 @@
+import { BETA_REJECTION_MESSAGE } from '@pictora/core';
 import { describe, expect, it } from 'vitest';
 import { handleCallback } from '../src/lib/auth_callback';
 import { encodeLoginState, LOGIN_COOKIE } from '../src/lib/auth_cookies';
@@ -114,6 +115,27 @@ describe('handleCallback', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(`${SITE_URL}/`);
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('explains a Google sign-up the private beta allowlist refused', async () => {
+    const fetchFn = tokenEndpoint(200, goodTokens());
+    const description = encodeURIComponent(
+      `PreSignUp failed with error ${BETA_REJECTION_MESSAGE}. `,
+    );
+    const response = await handleCallback(
+      callback(`error_description=${description}&state=expected-state&error=invalid_request`),
+      { config: TEST_CONFIG, verifier: localVerifier(), fetchFn },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${SITE_URL}/?signin=private_beta`);
+    expect(fetchFn).not.toHaveBeenCalled();
+
+    // Any other refusal still just goes home.
+    const other = await handleCallback(
+      callback('error_description=PreSignUp+failed&state=expected-state&error=invalid_request'),
+      { config: TEST_CONFIG, verifier: localVerifier(), fetchFn },
+    );
+    expect(other.headers.get('location')).toBe(`${SITE_URL}/`);
   });
 
   it('answers 503 when sign-in is not configured', async () => {

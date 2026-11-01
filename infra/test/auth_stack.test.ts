@@ -113,12 +113,21 @@ describe('Auth stack: pre-sign-up trigger', () => {
     });
   });
 
-  it('may only put and update items in the table', () => {
+  it('passes beta mode: on in prod, off in dev', () => {
+    expect(preSignUpFunction(prod).props).toMatchObject({
+      Environment: { Variables: { BETA_MODE: 'true' } },
+    });
+    expect(preSignUpFunction(dev).props).toMatchObject({
+      Environment: { Variables: { BETA_MODE: 'false' } },
+    });
+  });
+
+  it('may only read, put and update items in the table', () => {
     dev.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: {
         Statement: [
           {
-            Action: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+            Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
             Effect: 'Allow',
             Resource: Match.anyValue(),
           },

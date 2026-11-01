@@ -22,6 +22,10 @@
       "types": "./dist/src/abuse_store.d.ts",
       "default": "./dist/src/abuse_store.js"
     },
+    "./beta-store": {
+      "types": "./dist/src/beta_store.d.ts",
+      "default": "./dist/src/beta_store.js"
+    },
     "./block-store": {
       "types": "./dist/src/block_store.d.ts",
       "default": "./dist/src/block_store.js"
