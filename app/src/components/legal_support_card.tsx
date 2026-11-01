@@ -70,10 +70,7 @@ export function LegalSupportCard() {
         </nav>
         <div className="flex flex-col gap-1 border-t pt-4">
           <h3 className="text-sm font-medium text-muted-foreground">Contact</h3>
-          <a
-            href={`mailto:${CONTACT_EMAIL}`}
-            className={`${ROW_CLASS} -mx-2`}
-          >
+          <a href={`mailto:${CONTACT_EMAIL}`} className={`${ROW_CLASS} -mx-2`}>
             <span className={ICON_TILE_CLASS}>
               <MailIcon aria-hidden="true" className="size-4" />
             </span>
