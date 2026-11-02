@@ -3988,6 +3988,16 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Monitoring 1`] = `
             ],
           },
         ],
+        "ResourceTags": [
+          {
+            "Key": "environment",
+            "Value": "dev",
+          },
+          {
+            "Key": "project",
+            "Value": "pictora",
+          },
+        ],
       },
       "Type": "AWS::Budgets::Budget",
     },
