@@ -104,6 +104,7 @@ const radio = (name: string | RegExp) => screen.getByRole('radio', { name });
 const checked = (element: HTMLElement) => element.getAttribute('aria-checked') === 'true';
 const pressed = (element: HTMLElement) => element.getAttribute('aria-pressed') === 'true';
 const toggleButton = (name: string) => screen.getByRole('button', { name });
+const enhanceSwitch = () => screen.getByRole('switch', { name: 'Enhance prompt' });
 const modelButton = () => screen.getByRole('button', { name: /^Model:/ });
 
 /** Opens the model popover and picks a model, or Auto. */
@@ -211,7 +212,7 @@ describe('GenerateScreen', () => {
   });
 
   describe('prompt enhancer', () => {
-    const toggle = () => toggleButton('Enhance prompt');
+    const toggle = enhanceSwitch;
     const panel = () => screen.queryByRole('region', { name: 'Enhanced prompt' });
     const enhancedBox = () => {
       openEnhanced();
@@ -220,16 +221,25 @@ describe('GenerateScreen', () => {
 
     it('is on by default and remembers being turned off', () => {
       renderScreen();
-      expect(pressed(toggle())).toBe(true);
+      expect(checked(toggle())).toBe(true);
       fireEvent.click(toggle());
-      expect(pressed(toggle())).toBe(false);
+      expect(checked(toggle())).toBe(false);
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('off');
       cleanup();
 
       renderScreen();
-      expect(pressed(toggle())).toBe(false);
+      expect(checked(toggle())).toBe(false);
       fireEvent.click(toggle());
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('on');
+    });
+
+    it('is a switch whose visible label also turns it on and off', () => {
+      renderScreen();
+      expect(toggle().getAttribute('role')).toBe('switch');
+      fireEvent.click(screen.getByText('Enhance'));
+      expect(checked(toggle())).toBe(false);
+      fireEvent.click(screen.getByText('Enhance'));
+      expect(checked(toggle())).toBe(true);
     });
 
     it('enhances first, shows the enhanced prompt and generates from it', async () => {
@@ -482,7 +492,7 @@ describe('GenerateScreen', () => {
     it('sends on Enter, but not on Shift+Enter', async () => {
       const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fireEvent.change(prompt(), { target: { value: 'A red fox' } });
       fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true });
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -968,7 +978,7 @@ describe('GenerateScreen', () => {
       const imagesChanged = vi.fn();
       window.addEventListener(IMAGES_CHANGED_EVENT, imagesChanged);
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       chooseModel(/^Mock/);
       chooseOption('Quality', /^Draft/);
       fillAndGenerate('A red fox');
@@ -1025,7 +1035,7 @@ describe('GenerateScreen', () => {
         return json({}, 404);
       });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fillAndGenerate('A red fox');
       await screen.findByText('Status: Generating');
       expect(generate().textContent).toBe('Generating…');
@@ -1044,7 +1054,7 @@ describe('GenerateScreen', () => {
     it('keeps the rarer options behind Details', async () => {
       stubApi({ statuses: [{ status: 'queued' }] });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       chooseModel(/^Mock/);
       fireEvent.change(avoidField(), { target: { value: 'blur' } });
       fillAndGenerate('A red fox');
@@ -1066,7 +1076,7 @@ describe('GenerateScreen', () => {
     it('has no Details when a request used no extras', async () => {
       stubApi({ statuses: [{ status: 'queued' }] });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fillAndGenerate('A red fox');
       await screen.findByText('Status: Queued');
       expect(within(threadTurns()[0]!).queryByRole('button', { name: 'Details' })).toBeNull();
@@ -1093,7 +1103,7 @@ describe('GenerateScreen', () => {
         statuses: [{ status: 'succeeded', pointsCharged: 7, images }],
       });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       chooseStyle('Anime');
       chooseCount(2);
       fillAndGenerate('A red fox');
@@ -1168,7 +1178,7 @@ describe('GenerateScreen', () => {
         return json({}, 404);
       });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fillAndGenerate('A red fox');
       await screen.findByText('Status: Done');
       const more = () =>
@@ -1187,7 +1197,7 @@ describe('GenerateScreen', () => {
         me: { pointsLeft: 1 },
       });
       renderScreen({ left: 3, limit: 25 });
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       chooseModel(/^Mock/);
       fillAndGenerate('A red fox');
       await screen.findByText('Status: Done');
@@ -1239,7 +1249,7 @@ describe('GenerateScreen', () => {
       setMobile(true);
       const fetchMock = stubApi({ statuses: [{ status: 'queued' }] });
       renderScreen();
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fireEvent.click(screen.getByRole('button', { name: /^Image settings:/ }));
       fireEvent.click(within(sheet()).getByRole('button', { name: 'Transparent background' }));
       fireEvent.keyDown(sheet(), { key: 'Escape' });
@@ -1310,7 +1320,7 @@ describe('GenerateScreen', () => {
       });
       renderScreen();
       chooseStyle('Anime');
-      fireEvent.click(toggleButton('Enhance prompt'));
+      fireEvent.click(enhanceSwitch());
       fillAndGenerate();
       await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
       expect(bodiesOf(fetchMock, '/api/jobs')[0]).toMatchObject({
@@ -1374,7 +1384,7 @@ describe('GenerateScreen', () => {
       fireEvent.click(modelButton());
       expect(checked(radio(/^Mock/))).toBe(true);
       // The original used the user's own words, so the rerun does too.
-      expect(pressed(toggleButton('Enhance prompt'))).toBe(false);
+      expect(checked(enhanceSwitch())).toBe(false);
       expect(screen.getByText(/Uses seed 1234 from the original image/)).toBeTruthy();
 
       fireEvent.click(generate());

@@ -34,7 +34,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { Toggle } from '@/components/ui/toggle';
+import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use_mobile';
 import { cn } from '@/lib/utils';
@@ -287,7 +287,7 @@ export const EXAMPLE_PROMPTS = [
  * prompt with a one-line summary of its options and then its job's status and results, above a composer pinned to
  * the bottom. The composer's header row holds the settings (style, aspect ratio, quality, variations, More, model),
  * so they sit with the prompt they apply to; below 768 px the row folds into one button that opens them in a sheet.
- * Under the prompt are the enhancer toggle and the send button, which carries the cost.
+ * Under the prompt are the enhancer switch and the send button, which carries the cost.
  */
 export function GenerateScreen({
   models,
@@ -824,17 +824,28 @@ export function GenerateScreen({
 
               <div className="flex items-center gap-2">
                 <Tooltip>
+                  {/* A switch, so whether the enhancer is on reads at a glance (ENH-1). */}
                   <TooltipTrigger asChild>
-                    <Toggle
-                      variant="outline"
-                      size="sm"
-                      aria-label="Enhance prompt"
-                      pressed={enhanceOn}
-                      onPressedChange={toggleEnhance}
-                    >
-                      <SparklesIcon aria-hidden="true" />
-                      <span className="hidden sm:inline">Enhance</span>
-                    </Toggle>
+                    <Label htmlFor="enhance-prompt" className="h-8 cursor-pointer gap-1.5 px-1">
+                      <Switch
+                        id="enhance-prompt"
+                        aria-label="Enhance prompt"
+                        checked={enhanceOn}
+                        onCheckedChange={toggleEnhance}
+                      />
+                      <SparklesIcon
+                        aria-hidden="true"
+                        className={cn(
+                          'size-4',
+                          enhanceOn ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                      />
+                      <span
+                        className={cn('hidden sm:inline', !enhanceOn && 'text-muted-foreground')}
+                      >
+                        Enhance
+                      </span>
+                    </Label>
                   </TooltipTrigger>
                   <TooltipContent>
                     Adds detail about the subject, composition and lighting. You can edit the
