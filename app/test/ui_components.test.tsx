@@ -60,6 +60,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -257,6 +258,14 @@ const EXAMPLES: Record<string, { text: string; element: ReactNode }> = {
   },
   skeleton: { text: '', element: <Skeleton className="h-4 w-20" /> },
   sonner: { text: '', element: <Toaster /> },
+  switch: {
+    text: 'Enhance',
+    element: (
+      <label>
+        <Switch defaultChecked /> Enhance
+      </label>
+    ),
+  },
   table: {
     text: 'Spend',
     element: (
