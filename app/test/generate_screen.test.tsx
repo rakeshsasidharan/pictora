@@ -233,9 +233,12 @@ describe('GenerateScreen', () => {
       expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('on');
     });
 
-    it('is a switch whose visible label also turns it on and off', () => {
+    it('is a switch, without a tooltip, whose visible label also turns it on and off', () => {
       renderScreen();
       expect(toggle().getAttribute('role')).toBe('switch');
+      expect(toggle().closest('[data-slot="tooltip-trigger"]')).toBeNull();
+      fireEvent.focus(toggle());
+      expect(screen.queryByText(/Adds detail about the subject/)).toBeNull();
       fireEvent.click(screen.getByText('Enhance'));
       expect(checked(toggle())).toBe(false);
       fireEvent.click(screen.getByText('Enhance'));

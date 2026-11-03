@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use_mobile';
 import { cn } from '@/lib/utils';
 import {
@@ -823,35 +823,22 @@ export function GenerateScreen({
               )}
 
               <div className="flex items-center gap-2">
-                <Tooltip>
-                  {/* A switch, so whether the enhancer is on reads at a glance (ENH-1). */}
-                  <TooltipTrigger asChild>
-                    <Label htmlFor="enhance-prompt" className="h-8 cursor-pointer gap-1.5 px-1">
-                      <Switch
-                        id="enhance-prompt"
-                        aria-label="Enhance prompt"
-                        checked={enhanceOn}
-                        onCheckedChange={toggleEnhance}
-                      />
-                      <SparklesIcon
-                        aria-hidden="true"
-                        className={cn(
-                          'size-4',
-                          enhanceOn ? 'text-primary' : 'text-muted-foreground',
-                        )}
-                      />
-                      <span
-                        className={cn('hidden sm:inline', !enhanceOn && 'text-muted-foreground')}
-                      >
-                        Enhance
-                      </span>
-                    </Label>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Adds detail about the subject, composition and lighting. You can edit the
-                    result.
-                  </TooltipContent>
-                </Tooltip>
+                {/* A switch, so whether the enhancer is on reads at a glance (ENH-1). */}
+                <Label htmlFor="enhance-prompt" className="h-8 cursor-pointer gap-1.5 px-1">
+                  <Switch
+                    id="enhance-prompt"
+                    aria-label="Enhance prompt"
+                    checked={enhanceOn}
+                    onCheckedChange={toggleEnhance}
+                  />
+                  <SparklesIcon
+                    aria-hidden="true"
+                    className={cn('size-4', enhanceOn ? 'text-primary' : 'text-muted-foreground')}
+                  />
+                  <span className={cn('hidden sm:inline', !enhanceOn && 'text-muted-foreground')}>
+                    Enhance
+                  </span>
+                </Label>
 
                 {/* Below 768 px the settings row folds into this button, which opens them in a sheet. */}
                 <Sheet open={sheetOpen && isMobile} onOpenChange={setSheetOpen}>
