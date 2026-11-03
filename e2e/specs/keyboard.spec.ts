@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { arrowTo, pressUntilFocused, tabTo } from '../src/accessibility.js';
-import { uniquePrompt } from '../src/generate.js';
+import { enhanceSwitch, uniquePrompt } from '../src/generate.js';
 
 /** The first bytes of every PNG file. */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -39,13 +39,13 @@ test.describe('keyboard only', () => {
     test.setTimeout(180_000);
     const prompt = uniquePrompt('A lantern on a jetty');
     await page.goto('/generate');
-    // The Enhance toggle's stored setting applies once the page hydrates (#151).
+    // The Enhance switch's stored setting applies once the page hydrates (#151).
     await page.waitForLoadState('networkidle');
 
-    const enhance = page.getByRole('button', { name: 'Enhance prompt' });
+    const enhance = enhanceSwitch(page);
     await tabTo(page, enhance);
-    if ((await enhance.getAttribute('aria-pressed')) === 'true') await page.keyboard.press('Space');
-    await expect(enhance).toHaveAttribute('aria-pressed', 'false');
+    if (await enhance.isChecked()) await page.keyboard.press('Space');
+    await expect(enhance).not.toBeChecked();
 
     // The model picker: a popover with the models as a toggle group.
     await tabTo(page, page.getByRole('button', { name: /^Model:/ }));

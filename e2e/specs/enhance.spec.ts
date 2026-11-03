@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { chooseMock, generateButton, threadTurns, useEnhancer } from '../src/generate.js';
+import {
+  chooseMock,
+  enhanceSwitch,
+  generateButton,
+  threadTurns,
+  useEnhancer,
+} from '../src/generate.js';
 
 /** What the dev enhancer (`ENHANCER_MODEL=mock`) adds to every prompt. */
 const MOCK_DETAIL = 'detailed composition, balanced framing, soft natural lighting, rich colour';
@@ -63,10 +69,7 @@ test.describe('prompt enhancer', () => {
     await expect(page.getByRole('textbox', { name: 'Enhanced prompt' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Use my words' }).click();
-    await expect(page.getByRole('button', { name: 'Enhance prompt' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    await expect(enhanceSwitch(page)).not.toBeChecked();
     const job = page.waitForRequest(
       (request) => request.url().endsWith('/api/jobs') && request.method() === 'POST',
     );

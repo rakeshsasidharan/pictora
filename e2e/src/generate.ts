@@ -14,18 +14,22 @@ export async function useEnhancer(page: Page): Promise<void> {
 }
 
 /**
- * Sets the Enhance toggle, clicking until it stays as wanted. The server render shows it on, and hydration then
- * applies the setting stored by an earlier visit, so a single click can land as the toggle flips and undo it (#151).
+ * Sets the Enhance switch, clicking until it stays as wanted. The server render shows it on, and hydration then
+ * applies the setting stored by an earlier visit, so a single click can land as the switch flips and undo it (#151).
  */
 async function setEnhancer(page: Page, on: boolean): Promise<void> {
-  // The server render already shows the toggle on, so wait for hydration before trusting it.
+  // The server render already shows the switch on, so wait for hydration before trusting it.
   await page.waitForLoadState('networkidle');
-  const enhance = page.getByRole('button', { name: 'Enhance prompt' });
-  const wanted = String(on);
+  const enhance = enhanceSwitch(page);
   await expect(async () => {
-    if ((await enhance.getAttribute('aria-pressed')) !== wanted) await enhance.click();
-    await expect(enhance).toHaveAttribute('aria-pressed', wanted, { timeout: 1_000 });
+    if ((await enhance.isChecked()) !== on) await enhance.click();
+    await expect(enhance).toBeChecked({ checked: on, timeout: 1_000 });
   }).toPass({ timeout: 15_000 });
+}
+
+/** The composer's Enhance prompt switch (ENH-1). */
+export function enhanceSwitch(page: Page): Locator {
+  return page.getByRole('switch', { name: 'Enhance prompt' });
 }
 
 /** The composer's send button, which carries the cost (for example `Generate · 2 points`). */
