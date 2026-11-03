@@ -1,6 +1,9 @@
 import {
+  APP_GENERATE_DEFAULTS,
+  AUTO_MODEL_ID,
   QUALITIES,
   type Aspect,
+  type GenerateDefaults,
   type JobStatus,
   type Quality,
   type RoutableModel,
@@ -21,11 +24,11 @@ export const POLL_TIMEOUT_MS = 3 * 60_000;
 export const BATCH_POLL_INTERVAL_MS = 60_000;
 export const BATCH_POLL_TIMEOUT_MS = 24 * 60 * 60_000;
 
-/** The style a new form starts with: the prompt as typed, with the model the registry picks for it. */
-export const DEFAULT_STYLE: StyleId = 'none';
+/** The app's default style, for a rerun of an image saved without one: the prompt as typed. */
+export const DEFAULT_STYLE: StyleId = APP_GENERATE_DEFAULTS.style;
 
 /** Quality preferred when the chosen model offers it. */
-export const DEFAULT_QUALITY: Quality = 'standard';
+export const DEFAULT_QUALITY: Quality = APP_GENERATE_DEFAULTS.quality;
 
 export const QUALITY_LABELS: Record<Quality, string> = {
   draft: 'Draft',
@@ -187,47 +190,126 @@ export function routeReasonText(
   }
 }
 
-/** How the generate form starts: empty, or with a gallery image's settings for a rerun (GAL-3). */
+/**
+ * The quality Auto starts with: the wanted one while any model offers it unpaused, else Standard, else the first
+ * quality any model offers unpaused (Draft during a premium pause); undefined when every quality is paused.
+ */
+function autoQuality(models: readonly PublicModel[], wanted: Quality): Quality | undefined {
+  const usable = new Set(
+    models.flatMap((model) =>
+      model.qualities.filter((option) => !option.paused).map((option) => option.quality),
+    ),
+  );
+  if (usable.has(wanted)) return wanted;
+  if (usable.has(DEFAULT_QUALITY)) return DEFAULT_QUALITY;
+  return QUALITIES.find((quality) => usable.has(quality));
+}
+
+/**
+ * How the generate form starts: from the user's defaults (GEN-11), or with a gallery image's settings for a rerun
+ * (GAL-3).
+ */
 export interface InitialForm {
   prompt: string;
   avoid: string;
   styleId: StyleId;
   choices?: ModelChoices;
+  /** Smart routing picks the model. */
+  auto: boolean;
+  count: number;
   transparent: boolean;
+  /** "Save points: deliver later". */
+  later: boolean;
+  /** Whether the prompt enhancer starts on (ENH-1). */
+  enhance: boolean;
   /** The original seed, kept only when the model is the original one and it takes a seed. */
   seed?: number;
   /** The enhanced prompt the original used, reused as is; undefined when it used the user's own words. */
   enhancedPrompt?: string;
   /** True when a rerun's model is no longer available, so another was picked. */
   modelReplaced: boolean;
+  /** True when the user's default model is no longer available, so Auto is on instead. */
+  defaultModelMissing: boolean;
 }
 
 /**
- * The generate form's first state. A rerun keeps the original prompt, avoid text, style, model, aspect, quality,
- * transparency and seed where the model is still available and supports them; otherwise the style's model.
+ * The generate form's first state. A new form takes the user's defaults (GEN-11): their model when it is still
+ * available, otherwise Auto; options the model (or, with Auto, every model) doesn't offer fall back as they do
+ * when the model changes. A rerun keeps the original prompt, avoid text, style, model, aspect, quality,
+ * transparency, seed and enhancer where the model is still available and supports them; otherwise the style's
+ * model. The image count and "Save points" aren't stored with an image, so a rerun takes them from the defaults.
  */
 export function initialForm(
   styles: readonly PublicStyle[],
   models: readonly PublicModel[],
   rerun?: RerunSettings,
+  defaults: GenerateDefaults = APP_GENERATE_DEFAULTS,
 ): InitialForm {
-  const styleId = rerun?.style ?? DEFAULT_STYLE;
-  const original = rerun && models.find((model) => model.id === rerun.modelId);
-  const model = original ?? modelForStyle(styleId, styles, models);
+  const count = defaults.count;
+  if (rerun) {
+    const styleId = rerun.style ?? DEFAULT_STYLE;
+    const original = models.find((model) => model.id === rerun.modelId);
+    const model = original ?? modelForStyle(styleId, styles, models);
+    return {
+      prompt: rerun.prompt,
+      avoid: model?.capabilities.negativePrompt ? (rerun.avoid ?? '') : '',
+      styleId,
+      choices:
+        model &&
+        choicesForModel(model, {
+          quality: rerun.quality ?? DEFAULT_QUALITY,
+          aspect: rerun.aspect ?? '1:1',
+        }),
+      auto: !original,
+      count,
+      transparent: Boolean(
+        model?.capabilities.transparentBackground && rerun.transparentBackground,
+      ),
+      later: Boolean(defaults.deliverLater && model?.capabilities.batch),
+      enhance: rerun.enhancedPrompt !== undefined,
+      ...(original?.capabilities.seed && rerun.seed !== undefined ? { seed: rerun.seed } : {}),
+      ...(rerun.enhancedPrompt ? { enhancedPrompt: rerun.enhancedPrompt } : {}),
+      modelReplaced: !original,
+      defaultModelMissing: false,
+    };
+  }
+
+  const styleId = defaults.style;
+  const chosen =
+    defaults.modelId === AUTO_MODEL_ID
+      ? undefined
+      : models.find((model) => model.id === defaults.modelId);
+  const auto = !chosen;
+  // With Auto, an option counts as offered when any model offers it, as on the screen.
+  const offering = chosen ? [chosen] : models;
+  const offers = (has: (model: PublicModel) => boolean | undefined) => offering.some(has);
+  const model = chosen ?? modelForStyle(styleId, styles, models);
+  const fitted =
+    model && choicesForModel(model, { quality: defaults.quality, aspect: defaults.aspect });
   const choices =
-    model &&
-    choicesForModel(model, {
-      quality: rerun?.quality ?? DEFAULT_QUALITY,
-      aspect: rerun?.aspect ?? '1:1',
-    });
+    fitted &&
+    (auto
+      ? {
+          ...fitted,
+          quality: autoQuality(models, defaults.quality) ?? fitted.quality,
+          aspect: offers((candidate) => candidate.capabilities.aspects.includes(defaults.aspect))
+            ? defaults.aspect
+            : fitted.aspect,
+        }
+      : fitted);
   return {
-    prompt: rerun?.prompt ?? '',
-    avoid: model?.capabilities.negativePrompt ? (rerun?.avoid ?? '') : '',
+    prompt: '',
+    avoid: offers((candidate) => candidate.capabilities.negativePrompt) ? defaults.avoid : '',
     styleId,
     choices,
-    transparent: Boolean(model?.capabilities.transparentBackground && rerun?.transparentBackground),
-    ...(original?.capabilities.seed && rerun?.seed !== undefined ? { seed: rerun.seed } : {}),
-    ...(rerun?.enhancedPrompt ? { enhancedPrompt: rerun.enhancedPrompt } : {}),
-    modelReplaced: rerun !== undefined && !original,
+    auto,
+    count,
+    transparent:
+      defaults.transparentBackground &&
+      offers((candidate) => candidate.capabilities.transparentBackground),
+    later: defaults.deliverLater && offers((candidate) => candidate.capabilities.batch),
+    enhance: defaults.enhance,
+    modelReplaced: false,
+    defaultModelMissing: defaults.modelId !== AUTO_MODEL_ID && !chosen,
   };
 }

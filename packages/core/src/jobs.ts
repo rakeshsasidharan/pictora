@@ -144,6 +144,8 @@ export function isBatchJob(job: Pick<JobItem, 'request'>): boolean {
 
 /** Keys of the single table (tech design 4). */
 export const PROFILE_SK = 'PROFILE';
+/** The user's saved defaults (GEN-11), beside the profile under `USER#<sub>`. */
+export const DEFAULTS_SK = 'DEFAULTS';
 export const JOB_SK = 'META';
 
 export function userPk(sub: string): string {

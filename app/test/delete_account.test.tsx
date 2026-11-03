@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { APP_GENERATE_DEFAULTS, loadSeedRegistry, modelsForEnvironment } from '@pictora/core';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AccountDetails } from '../src/components/account_details';
 import { DeleteAccount } from '../src/components/delete_account';
 import type { MeBody } from '../src/lib/jobs';
+import { modelsResponse } from '../src/lib/models_response';
 
 function openDialog(onDeleted = vi.fn()) {
   render(<DeleteAccount onDeleted={onDeleted} />);
@@ -118,11 +120,14 @@ const ME: MeBody = {
   memberSince: '2026-09-03T10:00:00.000Z',
 };
 
+const { models, styles } = modelsResponse(modelsForEnvironment(loadSeedRegistry(), 'prod'));
+const DEFAULTS = { models, styles, defaults: APP_GENERATE_DEFAULTS, saved: false };
+
 describe('AccountDetails', () => {
   afterEach(cleanup);
 
   it('shows the email, sign-in method, member-since date and today’s points', () => {
-    render(<AccountDetails me={ME} method="Google" />);
+    render(<AccountDetails me={ME} method="Google" generateDefaults={DEFAULTS} />);
     expect(screen.getByText('user@example.com')).toBeTruthy();
     expect(screen.getByText('Google')).toBeTruthy();
     expect(screen.getByText('3 September 2026')).toBeTruthy();
@@ -131,8 +136,24 @@ describe('AccountDetails', () => {
     expect(screen.getByRole('heading', { name: 'Delete account' })).toBeTruthy();
   });
 
+  it('has the Defaults card with the user’s saved defaults (GEN-11)', () => {
+    render(
+      <AccountDetails
+        me={ME}
+        method="Google"
+        generateDefaults={{
+          ...DEFAULTS,
+          defaults: { ...APP_GENERATE_DEFAULTS, style: 'anime' },
+          saved: true,
+        }}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Defaults' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Style' }).textContent).toBe('Anime');
+  });
+
   it('has a Legal and support card with the legal pages and the contact email (#161)', () => {
-    render(<AccountDetails me={ME} method="Email and password" />);
+    render(<AccountDetails me={ME} method="Email and password" generateDefaults={DEFAULTS} />);
     const card = screen
       .getByRole('heading', { name: 'Legal and support' })
       .closest('[data-slot="legal-support"]') as HTMLElement;
@@ -156,7 +177,7 @@ describe('AccountDetails', () => {
     expect(within(contact).getByText('contact@rpillai.dev')).toBeTruthy();
     // It sits between the profile and account deletion, and the page has no site footer.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Profile', 'Legal and support', 'Delete account']);
+    expect(headings).toEqual(['Profile', 'Defaults', 'Legal and support', 'Delete account']);
     expect(screen.queryByRole('contentinfo')).toBeNull();
   });
 });

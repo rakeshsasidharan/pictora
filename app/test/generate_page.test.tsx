@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-import { loadSeedRegistry, TESTERS_GROUP } from '@pictora/core';
+import {
+  APP_GENERATE_DEFAULTS,
+  loadSeedRegistry,
+  TESTERS_GROUP,
+  type GenerateDefaults,
+} from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +13,10 @@ import { SESSION_HEADERS } from '../src/lib/session';
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
 const onboarded = vi.hoisted(() => ({ current: true }));
 const pause = vi.hoisted(() => ({ current: undefined as { until: Date } | undefined }));
+const defaults = vi.hoisted(() => ({
+  current: undefined as unknown as GenerateDefaults,
+  reads: [] as string[],
+}));
 const rerun = vi.hoisted(() => ({
   settings: vi.fn<(deps: unknown, session: unknown, imageId: string) => Promise<unknown>>(),
 }));
@@ -57,6 +66,13 @@ vi.mock('../src/lib/jobs', () => ({
 
 vi.mock('../src/lib/images', () => ({ rerunSettings: rerun.settings }));
 
+vi.mock('../src/lib/generate_defaults', () => ({
+  readGenerateDefaults: async (_client: unknown, _table: string, sub: string) => {
+    defaults.reads.push(sub);
+    return defaults.current;
+  },
+}));
+
 const { default: GeneratePage } = await import('../src/app/(app)/generate/page');
 
 const page = (query: { rerun?: string } = {}) =>
@@ -76,6 +92,8 @@ describe('generate page', () => {
     requestHeaders.current = new Headers();
     onboarded.current = true;
     pause.current = undefined;
+    defaults.current = APP_GENERATE_DEFAULTS;
+    defaults.reads = [];
     rerun.settings.mockReset();
     // The generate screen follows the window width (useIsMobile); jsdom has no matchMedia.
     vi.stubGlobal(
@@ -104,6 +122,29 @@ describe('generate page', () => {
     expect(screen.getByRole('radio', { name: /^Mock/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /^GPT Image 2/ })).toBeTruthy();
     expect(screen.queryByRole('radio', { name: /^Stable Image Core/ })).toBeNull();
+  });
+
+  it("starts the form from the user's saved defaults (GEN-11)", async () => {
+    signIn();
+    defaults.current = {
+      ...APP_GENERATE_DEFAULTS,
+      style: 'watercolour',
+      modelId: 'mock',
+      aspect: '9:16',
+      count: 2,
+      enhance: false,
+    };
+    render(await page());
+    expect(defaults.reads).toEqual(['user-sub']);
+    expect(screen.getByRole('button', { name: 'Style: Watercolour' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Model:/ }).getAttribute('aria-label')).toBe(
+      'Model: Mock (dev only)',
+    );
+    expect(screen.getByRole('combobox', { name: 'Aspect ratio' }).textContent).toBe('9:16');
+    expect(screen.getByRole('combobox', { name: 'Variations' }).textContent).toBe('2 variations');
+    expect(
+      screen.getByRole('switch', { name: 'Enhance prompt' }).getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('never offers the Mock model to a user outside the testers group', async () => {

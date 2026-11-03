@@ -1,4 +1,9 @@
-import { ASPECTS, loadSeedRegistry, modelsForEnvironment } from '@pictora/core';
+import {
+  ASPECTS,
+  loadSeedRegistry,
+  modelsForEnvironment,
+  type GenerateDefaults,
+} from '@pictora/core';
 import { describe, expect, it } from 'vitest';
 import {
   ASPECT_SHAPES,
@@ -106,7 +111,7 @@ describe('attachment', () => {
 describe('initialForm', () => {
   const available = generateModels(models);
 
-  it('starts empty, with the default style and its model', () => {
+  it('starts empty, from the app defaults: None, Auto, the enhancer on', () => {
     expect(initialForm(styles, available)).toEqual({
       prompt: '',
       avoid: '',
@@ -115,8 +120,111 @@ describe('initialForm', () => {
         quality: 'standard',
         aspect: '1:1',
       }),
+      auto: true,
+      count: 1,
       transparent: false,
+      later: false,
+      enhance: true,
       modelReplaced: false,
+      defaultModelMissing: false,
+    });
+  });
+
+  const saved: GenerateDefaults = {
+    style: 'anime',
+    modelId: 'mock',
+    aspect: '16:9',
+    quality: 'high',
+    count: 3,
+    transparentBackground: true,
+    deliverLater: true,
+    avoid: 'blur',
+    enhance: false,
+  };
+
+  it("starts from the user's saved defaults (GEN-11)", () => {
+    expect(initialForm(styles, available, undefined, saved)).toEqual({
+      prompt: '',
+      avoid: 'blur',
+      styleId: 'anime',
+      choices: { modelId: 'mock', quality: 'high', aspect: '16:9' },
+      auto: false,
+      count: 3,
+      transparent: true,
+      later: true,
+      enhance: false,
+      modelReplaced: false,
+      defaultModelMissing: false,
+    });
+  });
+
+  it('falls back to what the saved model offers', () => {
+    // GPT Image 1 Mini has only draft, no negative prompt; Gemini has no transparency.
+    const mini = initialForm(styles, available, undefined, {
+      ...saved,
+      modelId: 'gpt-image-1-mini',
+    });
+    expect(mini.choices).toEqual({ modelId: 'gpt-image-1-mini', quality: 'draft', aspect: '16:9' });
+    expect(mini.avoid).toBe('');
+    expect(mini.transparent).toBe(true);
+    const gemini = initialForm(styles, available, undefined, {
+      ...saved,
+      modelId: 'gemini-3.1-flash-image',
+    });
+    expect(gemini.transparent).toBe(false);
+    expect(gemini.later).toBe(true);
+    const stability = initialForm(styles, available, undefined, {
+      ...saved,
+      modelId: 'sd3.5-large',
+    });
+    expect(stability.later).toBe(false);
+    expect(stability.avoid).toBe('blur');
+  });
+
+  it('keeps the saved options any model offers with Auto', () => {
+    const form = initialForm(styles, available, undefined, { ...saved, modelId: 'auto' });
+    expect(form.auto).toBe(true);
+    expect(form.choices).toMatchObject({ quality: 'high', aspect: '16:9' });
+    expect(form).toMatchObject({ avoid: 'blur', transparent: true, later: true });
+    expect(form.defaultModelMissing).toBe(false);
+  });
+
+  it('drops a saved quality that is paused by the spend cap', () => {
+    const paused = available.map((candidate) => ({
+      ...candidate,
+      qualities: candidate.qualities.map((option) =>
+        option.quality === 'draft' ? option : { ...option, paused: true as const },
+      ),
+    }));
+    expect(
+      initialForm(styles, paused, undefined, { ...saved, modelId: 'auto' }).choices?.quality,
+    ).toBe('draft');
+    expect(initialForm(styles, paused, undefined, saved).choices?.quality).toBe('draft');
+  });
+
+  it('goes to Auto, and says so, when the saved model is gone', () => {
+    const form = initialForm(styles, available, undefined, { ...saved, modelId: 'retired' });
+    expect(form.auto).toBe(true);
+    expect(form.defaultModelMissing).toBe(true);
+    expect(form.styleId).toBe('anime');
+    expect(form.count).toBe(3);
+  });
+
+  it("takes a rerun's own settings, and only the count and Save points from the defaults", () => {
+    const form = initialForm(
+      styles,
+      available,
+      { prompt: 'A fox', style: 'none', modelId: 'gpt-image-2', quality: 'draft', aspect: '1:1' },
+      saved,
+    );
+    expect(form).toMatchObject({
+      styleId: 'none',
+      choices: { modelId: 'gpt-image-2', quality: 'draft', aspect: '1:1' },
+      auto: false,
+      count: 3,
+      later: true,
+      transparent: false,
+      enhance: false,
     });
   });
 
@@ -138,10 +246,15 @@ describe('initialForm', () => {
       avoid: 'blur',
       styleId: 'anime',
       choices: { modelId: 'mock', quality: 'draft', aspect: '9:16' },
+      auto: false,
+      count: 1,
       transparent: true,
+      later: false,
+      enhance: true,
       seed: 5,
       enhancedPrompt: 'A red fox',
       modelReplaced: false,
+      defaultModelMissing: false,
     });
   });
 

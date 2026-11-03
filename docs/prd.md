@@ -108,6 +108,7 @@ Each requirement has an ID for tickets and test cases; all are P0 unless marked.
 - GEN-8: Jobs run in the background. The UI shows queued, generating and done states, and the user can leave the page and find results in the gallery.
 - GEN-9: Optional transparent background on models that support it (OpenAI P0), hidden on others.
 - GEN-10: Failures show a plain-language reason (blocked, timeout, provider error) and refund the allowance.
+- GEN-11: Users can set their own defaults on the account page: style, model (Auto or a specific model), aspect ratio, quality, number of images, transparent background, "Save points", avoid text and the prompt enhancer. The generate screen starts with them on every sign-in and device; changes made there apply to that visit only. Until a user saves defaults, the app defaults apply (None, Auto, 1:1, Standard, 1 image, enhancer on), and Reset goes back to them. A saved model that is no longer available falls back to Auto.
 
 **Edit with prompt (EDIT)**
 
@@ -119,7 +120,7 @@ Each requirement has an ID for tickets and test cases; all are P0 unless marked.
 
 **Prompt enhancer (ENH)**
 
-- ENH-1: On by default. A low-cost LLM rewrites the prompt with subject, composition, lighting and style detail suited to the chosen model.
+- ENH-1: On by default, unless the user's defaults turn it off (GEN-11). A low-cost LLM rewrites the prompt with subject, composition, lighting and style detail suited to the chosen model.
 - ENH-2: The enhanced prompt is shown and can be edited before or after generating. Toggling it off sends the user's words unchanged.
 - ENH-3: The enhancer must keep the user's intent and must not add people, brands or content the user did not ask for.
 - ENH-4: The enhancer's input and output both pass moderation.

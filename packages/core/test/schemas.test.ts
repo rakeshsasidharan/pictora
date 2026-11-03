@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  APP_GENERATE_DEFAULTS,
   ASPECTS,
   QUALITIES,
   MAX_ALT_TEXT_OVERRIDE_LENGTH,
+  MAX_AVOID_LENGTH,
   STYLE_IDS,
   altTextRequestSchema,
   createJobRequestSchema,
   editJobRequestSchema,
   enhanceRequestSchema,
+  generateDefaultsSchema,
   generateJobRequestSchema,
   onboardingRequestSchema,
   parseReferenceKey,
@@ -320,6 +323,50 @@ describe('altTextRequestSchema', () => {
   });
 });
 
+describe('generateDefaultsSchema (GEN-11)', () => {
+  const saved = {
+    style: 'watercolour',
+    modelId: 'gpt-image-2',
+    aspect: '16:9',
+    quality: 'high',
+    count: 3,
+    transparentBackground: true,
+    deliverLater: true,
+    avoid: '  blur, text  ',
+    enhance: false,
+  } as const;
+
+  it('accepts the app defaults, which start on Auto with the enhancer on', () => {
+    expect(generateDefaultsSchema.parse(APP_GENERATE_DEFAULTS)).toEqual(APP_GENERATE_DEFAULTS);
+    expect(APP_GENERATE_DEFAULTS).toMatchObject({ modelId: 'auto', enhance: true, count: 1 });
+    expect(Object.isFrozen(APP_GENERATE_DEFAULTS)).toBe(true);
+  });
+
+  it('accepts every option set, trimming the avoid text', () => {
+    expect(generateDefaultsSchema.parse(saved)).toEqual({ ...saved, avoid: 'blur, text' });
+  });
+
+  it.each([
+    ['an unknown style', { style: 'pastel' }],
+    ['a malformed model id', { modelId: 'GPT Image' }],
+    ['an unknown aspect', { aspect: '5:4' }],
+    ['an unknown quality', { quality: 'ultra' }],
+    ['no images', { count: 0 }],
+    ['too many images', { count: 5 }],
+    ['a fractional count', { count: 1.5 }],
+    ['avoid text that is too long', { avoid: 'x'.repeat(MAX_AVOID_LENGTH + 1) }],
+    ['a non-boolean switch', { enhance: 'yes' }],
+  ])('rejects %s', (_case, change) => {
+    expect(generateDefaultsSchema.safeParse({ ...saved, ...change }).success).toBe(false);
+  });
+
+  it.each(Object.keys(saved))('needs %s', (field) => {
+    const partial: Record<string, unknown> = { ...saved };
+    delete partial[field];
+    expect(generateDefaultsSchema.safeParse(partial).success).toBe(false);
+  });
+});
+
 describe('every JSON request body schema (tech design 12)', () => {
   const bodies = [
     ['POST /api/jobs (generate)', createJobRequestSchema, validGenerate],
@@ -338,6 +385,7 @@ describe('every JSON request body schema (tech design 12)', () => {
     ['POST /api/reports', reportRequestSchema, { imageId: IMAGE_ID, version: 1, reason: 'hate' }],
     ['POST /api/admin/moderation/:date/:id/review', reviewRequestSchema, { verdict: 'ok' }],
     ['PATCH /api/images/:id/versions/:n', altTextRequestSchema, { altText: 'A red fox' }],
+    ['PUT /api/me/defaults', generateDefaultsSchema, APP_GENERATE_DEFAULTS],
   ] as const;
 
   it.each(bodies)('%s accepts a valid body and rejects unknown fields', (_route, schema, body) => {

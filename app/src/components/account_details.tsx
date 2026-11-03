@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { MeBody } from '../lib/jobs';
 import { DeleteAccount } from './delete_account';
+import { GenerateDefaultsCard, type GenerateDefaultsCardProps } from './generate_defaults_card';
 import { LegalSupportCard } from './legal_support_card';
 
 const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
@@ -11,10 +12,18 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
 });
 
 /**
- * The account page's content: profile details and today's points in a card, the legal pages and contact email in
- * another, then account deletion.
+ * The account page's content: profile details and today's points in a card, the user's defaults
+ * (GEN-11), the legal pages and contact email, then account deletion.
  */
-export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
+export function AccountDetails({
+  me,
+  method,
+  generateDefaults,
+}: {
+  me: MeBody;
+  method: string;
+  generateDefaults: GenerateDefaultsCardProps;
+}) {
   const fields = [
     { label: 'Email', value: me.email },
     { label: 'Sign-in method', value: method },
@@ -48,6 +57,7 @@ export function AccountDetails({ me, method }: { me: MeBody; method: string }) {
           </dl>
         </CardContent>
       </Card>
+      <GenerateDefaultsCard {...generateDefaults} />
       <LegalSupportCard />
       <DeleteAccount />
     </div>
