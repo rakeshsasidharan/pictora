@@ -2,7 +2,7 @@
 
 Playwright end-to-end suite for Pictora (tech design 13). The deploy pipeline runs it against dev after every dev deploy, and prod is deployed only when it passes (CI/CD design 4.3). It runs Chromium only, retries a failed test twice and keeps traces and screenshots of failures.
 
-It never runs against prod: `src/config.ts` refuses the prod domain from `infra/cdk.json`, and any host other than the dev domain or `localhost`, because prod is served on its CloudFront domain until it has a domain of its own.
+It never runs against prod: `src/config.ts` refuses the prod domain from `infra/cdk.json`, and any host other than the dev domain or `localhost`, so it can never reach prod at `pictora.rpillai.dev` or on its CloudFront domain.
 
 ## Layout
 
@@ -71,7 +71,7 @@ The suite signs in as a dedicated email and password user in the dev user pool, 
    gh secret set E2E_USER_PASSWORD --env dev --body "$E2E_USER_PASSWORD"
    ```
 
-3. Sign in once at https://pictora.rpillai.dev with it to check that it works.
+3. Sign in once at https://dev.pictora.rpillai.dev with it to check that it works.
 
 To rotate the password, run step 1's `admin-set-user-password` with a new one and update the secret.
 

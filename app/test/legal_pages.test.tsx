@@ -8,7 +8,6 @@ import PrivacyPage from '../src/app/(site)/privacy/page';
 import TermsPage from '../src/app/(site)/terms/page';
 import {
   LEGAL_CONTENT_DIR,
-  LEGAL_DRAFT_NOTICE,
   LEGAL_PAGES,
   legalMarkdown,
   renderLegalMarkdown,
@@ -63,10 +62,10 @@ describe('legal Markdown files', () => {
   });
 
   it.each(LEGAL_PAGES.map((page) => [page.slug, page.file] as const))(
-    '%s is marked as a draft pending legal review',
+    '%s is the approved text, with no draft notice (#33)',
     (_slug, file) => {
       const source = readFileSync(join(process.cwd(), LEGAL_CONTENT_DIR, file), 'utf8');
-      expect(source).toContain(LEGAL_DRAFT_NOTICE);
+      expect(source).not.toMatch(/draft|pending legal review|approved by a lawyer/i);
     },
   );
 
@@ -119,16 +118,17 @@ describe('legal pages', () => {
     ['terms', TermsPage, 'Terms of service', true],
     ['content-policy', ContentPolicyPage, 'Content policy', true],
     ['privacy', PrivacyPage, 'Privacy policy', false],
-  ] as const)('%s renders its Markdown with the draft notice', (_slug, Page, title, versioned) => {
-    const html = renderToStaticMarkup(<Page />);
-    expect(html).toContain(`<h1>${title}</h1>`);
-    // The draft notice is a shadcn Alert, as a standing note rather than a live alert.
-    expect(html).toMatch(
-      new RegExp(`<div data-slot="alert" role="note"[^>]*>.*?${LEGAL_DRAFT_NOTICE}</div></div>`),
-    );
-    expect(html).not.toContain('role="alert"');
-    // The Markdown is set with Tailwind Typography, inverted for the dark theme.
-    expect(html).toMatch(/<article class="prose [^"]*dark:prose-invert[^"]*"><h1>/);
-    expect(html.includes(`Version ${TOS_VERSION}`)).toBe(versioned);
-  });
+  ] as const)(
+    '%s renders its Markdown with no notice above it',
+    (_slug, Page, title, versioned) => {
+      const html = renderToStaticMarkup(<Page />);
+      expect(html).toContain(`<h1>${title}</h1>`);
+      expect(html).not.toContain('data-slot="alert"');
+      expect(html).not.toMatch(/role="(note|alert)"/);
+      expect(html).not.toMatch(/draft/i);
+      // The Markdown is set with Tailwind Typography, inverted for the dark theme.
+      expect(html).toMatch(/<article class="prose [^"]*dark:prose-invert[^"]*"><h1>/);
+      expect(html.includes(`Version ${TOS_VERSION}`)).toBe(versioned);
+    },
+  );
 });

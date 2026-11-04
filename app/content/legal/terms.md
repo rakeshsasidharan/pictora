@@ -1,7 +1,5 @@
 # Terms of service
 
-> **Draft, pending legal review.** This text has not been approved by a lawyer yet. It will be replaced by the reviewed version before Pictora launches.
-
 These terms are an agreement between you and Pictora, the free web app that turns text prompts into images. By creating an account or using Pictora, you agree to these terms and to our [content policy](/content-policy). Our [privacy policy](/privacy) explains how we handle your data.
 
 ## Eligibility

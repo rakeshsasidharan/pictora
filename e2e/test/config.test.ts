@@ -30,9 +30,15 @@ describe('environmentDomains', () => {
     expect(environmentDomains(null)).toEqual({ dev: undefined, prod: undefined });
   });
 
-  it('reads the real infra/cdk.json, which has a dev domain', () => {
+  it('reads the real infra/cdk.json, with dev and prod on their own domains (#33)', () => {
     const cdkJson = fileURLToPath(new URL('../../infra/cdk.json', import.meta.url));
-    expect(readEnvironmentDomains(cdkJson).dev).toBe('pictora.rpillai.dev');
+    const domains = readEnvironmentDomains(cdkJson);
+    expect(domains).toEqual({ dev: 'dev.pictora.rpillai.dev', prod: 'pictora.rpillai.dev' });
+    // The suite runs against dev and refuses prod, whose domain is dev's parent.
+    expect(assertNotProd('https://dev.pictora.rpillai.dev', domains)).toBe(
+      'https://dev.pictora.rpillai.dev',
+    );
+    expect(() => assertNotProd('https://pictora.rpillai.dev', domains)).toThrow(/against prod/);
   });
 });
 

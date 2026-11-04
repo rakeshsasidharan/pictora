@@ -158,7 +158,7 @@ Run **Deploy → Run workflow**, pick `environment` and `sha`.
 
 | Environment | Protection | Deployment branches | Variables | Secrets |
 | --- | --- | --- | --- | --- |
-| `dev` | None | `main` only | `SITE_URL` (`https://pictora.rpillai.dev`) | `E2E_USER_PASSWORD` (Cognito test user) |
+| `dev` | None | `main` only | None (`e2e-dev` reads the site URL, `https://dev.pictora.rpillai.dev`, from the dev stack's outputs; an optional `SITE_URL` overrides it) | `E2E_USER_PASSWORD` (Cognito test user) |
 | `production` | Required reviewer: `rakeshsasidharan` (self-review allowed) | `main` only | None (the smoke test reads the site URL from the stack outputs) | None |
 
 Repository variables (not secrets; kept out of code so the public repo holds no account details): `AWS_ACCOUNT_ID`, `AWS_REGION` (`us-west-2`), `AWS_BUILD_ROLE_ARN`, `AWS_DEPLOY_ROLE_ARN`, `AWS_DIFF_ROLE_ARN`, `HOSTED_ZONE_ID` (Route 53 zone of `rpillai.dev`), `ALERT_EMAIL` (SNS alarm and budget alerts), `E2E_USER_EMAIL`.

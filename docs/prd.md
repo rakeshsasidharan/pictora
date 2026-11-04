@@ -278,7 +278,7 @@ Every request passes our own prompt check before any paid call, then the provide
 - Keep provider watermarks and C2PA metadata intact; never strip them on download.
 - Store model, prompt and timestamp for every image to answer takedown or abuse reports.
 
-Legal review of the terms of service, content policy and privacy policy is a launch blocker.
+Legal review of the terms of service, content policy and privacy policy is a launch blocker. The pages as published were approved for launch (#33).
 
 ## Non-functional requirements
 

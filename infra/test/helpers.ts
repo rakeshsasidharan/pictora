@@ -26,6 +26,19 @@ export function testApp(context: Record<string, unknown> = {}): App {
   });
 }
 
+/**
+ * Context with one environment's domain taken out, for the path where it is served on its CloudFront domain
+ * with no `Certificate` stack (how prod ran before it had a domain).
+ */
+export function contextWithoutDomain(envName: 'dev' | 'prod'): Record<string, unknown> {
+  const environments = structuredClone(cdkJsonContext().environments) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  delete environments[envName]?.domain;
+  return { environments };
+}
+
 export function testStage(name: 'PictoraDev' | 'PictoraProd', context?: Record<string, unknown>) {
   return testApp(context).node.findChild(name) as PictoraStage;
 }

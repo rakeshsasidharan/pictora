@@ -68,7 +68,7 @@ export function resolveBaseUrl(env: Env, domains: EnvironmentDomains): string {
 /**
  * Refuses to run against anything but dev or a local server (tech design 13). The suite signs in and creates
  * images, so it must never touch prod: the prod domain is refused outright, and any other unknown host is
- * refused too, because prod is served on its CloudFront domain until it has a domain of its own.
+ * refused too, so neither prod's domain nor its CloudFront domain can be reached.
  */
 export function assertNotProd(baseUrl: string, domains: EnvironmentDomains): string {
   let url: URL;

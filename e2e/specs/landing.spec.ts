@@ -28,7 +28,9 @@ test.describe('landing', () => {
       await legal.getByRole('link', { name }).click();
       await expect(page).toHaveURL(path);
       await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
-      await expect(page.getByRole('note')).toContainText('Draft, pending legal review');
+      // The approved text, with no draft notice above it (#33).
+      await expect(page.getByRole('note')).toHaveCount(0);
+      await expect(page.getByText(/pending legal review/i)).toHaveCount(0);
     }
   });
 

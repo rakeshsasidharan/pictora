@@ -378,10 +378,10 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Certificate 1`] = 
   "Resources": {
     "Certificate4E7ABB08": {
       "Properties": {
-        "DomainName": "pictora.rpillai.dev",
+        "DomainName": "dev.pictora.rpillai.dev",
         "DomainValidationOptions": [
           {
-            "DomainName": "pictora.rpillai.dev",
+            "DomainName": "dev.pictora.rpillai.dev",
             "HostedZoneId": "Z0000000000PLACEHOLDER",
           },
         ],
@@ -565,7 +565,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
                 "POST",
               ],
               "AllowedOrigins": [
-                "https://pictora.rpillai.dev",
+                "https://dev.pictora.rpillai.dev",
                 "http://localhost:3000",
               ],
               "MaxAge": 3000,
@@ -4720,7 +4720,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
     },
     "SiteUrl": {
       "Description": "Site URL: the custom domain, or the CloudFront domain when there is none",
-      "Value": "https://pictora.rpillai.dev",
+      "Value": "https://dev.pictora.rpillai.dev",
     },
   },
   "Parameters": {
@@ -4744,7 +4744,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
           "profile",
         ],
         "CallbackURLs": [
-          "https://pictora.rpillai.dev/auth/callback",
+          "https://dev.pictora.rpillai.dev/auth/callback",
           "http://localhost:3000/auth/callback",
         ],
         "ClientName": "pictora-dev-web",
@@ -4752,7 +4752,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
         "GenerateSecret": false,
         "IdTokenValidity": 60,
         "LogoutURLs": [
-          "https://pictora.rpillai.dev/",
+          "https://dev.pictora.rpillai.dev/",
           "http://localhost:3000/",
         ],
         "PreventUserExistenceErrors": "ENABLED",
@@ -5267,7 +5267,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
           "Fn::Join": [
             "",
             [
-              "{"siteUrl":"https://pictora.rpillai.dev","cognitoClientId":"",
+              "{"siteUrl":"https://dev.pictora.rpillai.dev","cognitoClientId":"",
               {
                 "Ref": "AppClient4AE61178",
               },
@@ -6268,7 +6268,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
       "Properties": {
         "DistributionConfig": {
           "Aliases": [
-            "pictora.rpillai.dev",
+            "dev.pictora.rpillai.dev",
           ],
           "CacheBehaviors": [
             {
@@ -6456,7 +6456,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
           },
         },
         "HostedZoneId": "Z0000000000PLACEHOLDER",
-        "Name": "pictora.rpillai.dev.",
+        "Name": "dev.pictora.rpillai.dev.",
         "Type": "A",
       },
       "Type": "AWS::Route53::RecordSet",
@@ -6481,7 +6481,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Web 1`] = `
           },
         },
         "HostedZoneId": "Z0000000000PLACEHOLDER",
-        "Name": "pictora.rpillai.dev.",
+        "Name": "dev.pictora.rpillai.dev.",
         "Type": "AAAA",
       },
       "Type": "AWS::Route53::RecordSet",

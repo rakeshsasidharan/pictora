@@ -1,7 +1,5 @@
 # Content policy
 
-> **Draft, pending legal review.** This text has not been approved by a lawyer yet. It will be replaced by the reviewed version before Pictora launches.
-
 Pictora is for creative, personal images. This policy says what you can't make or upload, how we check, and what happens when something breaks the rules. It is part of our [terms of service](/terms).
 
 ## Not allowed
