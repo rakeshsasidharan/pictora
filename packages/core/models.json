@@ -4,18 +4,13 @@
     "provider": "openai",
     "providerModelId": "gpt-image-2",
     "displayName": "GPT Image 2",
-    "strengths": [
-      "Follows prompts closely",
-      "Readable text in images",
-      "Transparent backgrounds",
-      "Precise edits"
-    ],
+    "strengths": ["Follows prompts closely", "Readable text in images", "Precise edits"],
     "enabled": true,
     "environments": ["dev", "prod"],
     "capabilities": {
       "generate": true,
       "edit": true,
-      "transparentBackground": true,
+      "transparentBackground": false,
       "negativePrompt": false,
       "seed": false,
       "referenceImages": 3,

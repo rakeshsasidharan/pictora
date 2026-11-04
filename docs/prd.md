@@ -106,7 +106,7 @@ Each requirement has an ID for tickets and test cases; all are P0 unless marked.
 - GEN-6: 1 to 4 images per request; every image is counted against the allowance.
 - GEN-7: Results come back as PNG at the model's native resolution. Download keeps the original PNG with no recompression.
 - GEN-8: Jobs run in the background. The UI shows queued, generating and done states, and the user can leave the page and find results in the gallery.
-- GEN-9: Optional transparent background on models that support it (OpenAI P0), hidden on others.
+- GEN-9: Optional transparent background on models that support it (GPT Image 1 Mini in P0; GPT Image 2 refuses it, #177), hidden on others.
 - GEN-10: Failures show a plain-language reason (blocked, timeout, provider error) and refund the allowance.
 - GEN-11: Users can set their own defaults on the account page: style, model (Auto or a specific model), aspect ratio, quality, number of images, transparent background, "Save points", avoid text and the prompt enhancer. The generate screen starts with them on every sign-in and device; changes made there apply to that visit only. Until a user saves defaults, the app defaults apply (None, Auto, 1:1, Standard, 1 image, enhancer on), and Reset goes back to them. A saved model that is no longer available falls back to Auto.
 
@@ -152,8 +152,8 @@ P0 launches with five image models across OpenAI and Gemini, costing about $0.00
 
 | Priority | Provider | Model (ID) | Strengths | Approx. cost / image | Role in Pictora |
 | --- | --- | --- | --- | --- | --- |
-| P0 | OpenAI | [GPT Image 2](https://developers.openai.com/api/docs/guides/image-generation) (`gpt-image-2`) | Prompt adherence, text in images, transparent PNG, edits | $0.006 low · $0.053 medium · $0.21 high (1024²) | Default for text-heavy and Standard or High quality |
-| P0 | OpenAI | GPT Image 1 Mini (`gpt-image-1-mini`) | Very cheap drafts | ~$0.005 | Draft quality and previews |
+| P0 | OpenAI | [GPT Image 2](https://developers.openai.com/api/docs/guides/image-generation) (`gpt-image-2`) | Prompt adherence, text in images, edits (no transparent background) | $0.006 low · $0.053 medium · $0.21 high (1024²) | Default for text-heavy and Standard or High quality |
+| P0 | OpenAI | GPT Image 1 Mini (`gpt-image-1-mini`) | Very cheap drafts, transparent PNG | ~$0.005 | Draft quality, previews and transparent backgrounds |
 | P0 | Google | [Gemini 3.1 Flash Image](https://ai.google.dev/gemini-api/docs/pricing) (`gemini-3.1-flash-image`) | Fast, conversational editing, character consistency, up to 4K | $0.067 at 1K · $0.101 at 2K | Default for editing and artistic styles |
 | P0 | Google | Gemini 3.1 Flash Lite Image (`gemini-3.1-flash-lite-image`) | Cheapest Gemini option | ~$0.034 at 1K | Budget generation |
 | P0 | Google | Gemini 3 Pro Image (`gemini-3-pro-image`) | Highest-fidelity Gemini, complex scenes | $0.134 at 1–2K · $0.24 at 4K | High quality, photorealism |

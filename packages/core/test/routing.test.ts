@@ -68,7 +68,12 @@ describe('routeModel', () => {
     {
       name: 'needs a transparent background',
       request: { style: 'watercolour', needs: { transparentBackground: true } },
-      expected: { modelId: 'gpt-image-2', quality: 'standard', reason: 'fallback' },
+      expected: { modelId: 'gpt-image-1-mini', quality: 'draft', reason: 'fallback' },
+    },
+    {
+      name: 'never routes a transparent request to GPT Image 2, even for text (#177)',
+      request: { style: '3d-render', needs: { transparentBackground: true, text: true } },
+      expected: { modelId: 'gpt-image-1-mini', quality: 'draft', reason: 'fallback' },
     },
     {
       name: 'prefers a text model when the prompt asks for words',

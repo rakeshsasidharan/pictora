@@ -1422,7 +1422,16 @@ describe('GenerateScreen', () => {
       renderScreen();
       chooseStyle('Watercolour');
       fireEvent.click(extraToggle('Transparent background'));
-      expect(autoLine()).toMatch(/^Auto picks GPT Image 2/);
+      // GPT Image 2 can't make one (#177). Among dev's models only the mock makes one at Standard; prod, without
+      // the mock, routes to GPT Image 1 Mini at Draft (core routing tests).
+      expect(autoLine()).toMatch(/^Auto picks Mock \(dev only\)/);
+      expect(autoLine()).not.toMatch(/GPT Image 2/);
+    });
+
+    it('hides the transparent background with GPT Image 2 picked by hand (#177)', () => {
+      renderScreen();
+      chooseModel(/^GPT Image 2/);
+      expect(offersExtra('Transparent background')).toBe(false);
     });
 
     it('goes back to Auto after a model was picked by hand', () => {
