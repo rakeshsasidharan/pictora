@@ -78,9 +78,13 @@ describe('GenerateDefaultsCard (GEN-11)', () => {
 
   it('shows only what the chosen model offers, keeping the quality it has', () => {
     renderCard();
-    choose('Model', 'GPT Image 2');
+    choose('Model', 'GPT Image 1 Mini');
     expect(switchFor('Transparent background')).toBeTruthy();
     expect(queryControl('textbox', 'Avoid (optional)')).toBeNull();
+
+    // GPT Image 2 can't make a transparent background (#177).
+    choose('Model', 'GPT Image 2');
+    expect(queryControl('switch', 'Transparent background')).toBeNull();
 
     choose('Model', 'SD 3.5 Large');
     expect(queryControl('switch', 'Transparent background')).toBeNull();
@@ -97,7 +101,7 @@ describe('GenerateDefaultsCard (GEN-11)', () => {
     const fetchMock = stubApi();
     renderCard();
     choose('Style', 'Watercolour');
-    choose('Model', 'GPT Image 2');
+    choose('Model', 'Mock (dev only)');
     choose('Aspect ratio', /16:9/);
     choose('Quality', /^High/);
     choose('Variations', /^3 variations/);
@@ -115,7 +119,7 @@ describe('GenerateDefaultsCard (GEN-11)', () => {
     const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as GenerateDefaults;
     expect(body).toEqual({
       style: 'watercolour',
-      modelId: 'gpt-image-2',
+      modelId: 'mock',
       aspect: '16:9',
       quality: 'high',
       count: 3,

@@ -68,11 +68,12 @@ describe('models.json', () => {
     }
   });
 
-  it('offers transparent backgrounds only on OpenAI and the mock (GEN-9)', () => {
+  it('offers transparent backgrounds only on GPT Image 1 Mini and the mock (GEN-9)', () => {
     const transparent = loadSeedRegistry()
       .filter((model) => model.capabilities.transparentBackground)
       .map((model) => model.id);
-    expect(transparent).toEqual(['gpt-image-2', 'gpt-image-1-mini', 'mock']);
+    // GPT Image 2 answers 400 to background=transparent (live check, #177).
+    expect(transparent).toEqual(['gpt-image-1-mini', 'mock']);
   });
 
   it('keeps a draft-quality model in prod for when the platform cap is reached', () => {

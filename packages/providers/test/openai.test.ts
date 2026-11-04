@@ -148,15 +148,21 @@ describe('OpenAiProvider.generate', () => {
   });
 
   it('asks for a transparent background when requested and keeps the alpha channel', async () => {
-    const seen = onGenerate('generate_gpt_image_2', await transparentPng(1536, 1024));
+    const seen = onGenerate('generate_gpt_image_1_mini', await transparentPng(1536, 1024));
     const result = await provider().generate(
-      gptImage2,
+      gptMini,
       request({ aspect: '16:9', transparentBackground: true }),
     );
     expect(seen[0]?.body.background).toBe('transparent');
     const meta = await sharp(result.images[0]?.png).metadata();
     expect(meta.hasAlpha).toBe(true);
     expect(meta).toMatchObject({ width: 1536, height: 864 });
+  });
+
+  it('never asks GPT Image 2 for a transparent background, which it refuses (#177)', async () => {
+    const seen = onGenerate('generate_gpt_image_2', await solidImage('png', 1024, 1024));
+    await provider().generate(gptImage2, request({ transparentBackground: true }));
+    expect(seen[0]?.body).not.toHaveProperty('background');
   });
 
   it('leaves the background unset when no transparency is asked for', async () => {
