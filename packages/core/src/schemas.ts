@@ -3,6 +3,7 @@ import { REPORT_REASONS } from './moderation.js';
 import { DELIVERIES } from './jobs.js';
 import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT } from './points.js';
 import { ASPECTS, MAX_REFERENCE_IMAGES, MODEL_ID_PATTERN, QUALITIES } from './registry.js';
+import { AUTO_MODEL_ID } from './routing.js';
 import { STYLE_IDS } from './styles.js';
 
 /** Input limits (GEN-1, tech design section 12). */
@@ -123,6 +124,39 @@ export const MAX_ALT_TEXT_OVERRIDE_LENGTH = 300;
  */
 export const altTextRequestSchema = z.strictObject({
   altText: z.string().trim().min(1).max(MAX_ALT_TEXT_OVERRIDE_LENGTH).nullable(),
+});
+
+/**
+ * `PUT /api/me/defaults` (GEN-11): the settings the generate screen starts with. `modelId` is a model id or
+ * `auto`; a model that is no longer available, and options the chosen model doesn't offer, fall back when the
+ * screen applies them, so a saved model never stops the screen working.
+ */
+export const generateDefaultsSchema = z.strictObject({
+  style: styleIdSchema,
+  modelId: modelIdSchema,
+  aspect: aspectSchema,
+  quality: qualitySchema,
+  count: z.int().min(MIN_IMAGE_COUNT).max(MAX_IMAGE_COUNT),
+  transparentBackground: z.boolean(),
+  /** "Save points: deliver later", a batch job at half the points (tech design 5.4). */
+  deliverLater: z.boolean(),
+  avoid: z.string().trim().max(MAX_AVOID_LENGTH),
+  enhance: z.boolean(),
+});
+
+export type GenerateDefaults = z.infer<typeof generateDefaultsSchema>;
+
+/** What the generate screen starts with until a user saves their own defaults (GEN-11, ENH-1). */
+export const APP_GENERATE_DEFAULTS: Readonly<GenerateDefaults> = Object.freeze({
+  style: 'none',
+  modelId: AUTO_MODEL_ID,
+  aspect: '1:1',
+  quality: 'standard',
+  count: MIN_IMAGE_COUNT,
+  transparentBackground: false,
+  deliverLater: false,
+  avoid: '',
+  enhance: true,
 });
 
 export type GenerateJobRequest = z.infer<typeof generateJobRequestSchema>;

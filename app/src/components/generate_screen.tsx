@@ -4,24 +4,16 @@ import {
   ASPECTS,
   AUTO_MODEL_ID,
   MAX_PROMPT_LENGTH,
-  MIN_IMAGE_COUNT,
   batchPoints,
   promptAsksForText,
   routeModel,
+  type GenerateDefaults,
   type GenerateJobRequest,
   type Quality,
   type StyleId,
 } from '@pictora/core';
 import { ArrowUpIcon, ChevronDownIcon, SlidersHorizontalIcon, SparklesIcon } from 'lucide-react';
-import {
-  useCallback,
-  useId,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
+import { useCallback, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
@@ -89,6 +81,8 @@ export interface GenerateScreenProps {
   premiumPausedUntil?: string;
   /** A gallery image's settings to start from, for "Rerun" (GAL-3). */
   rerun?: RerunSettings;
+  /** The user's defaults (GEN-11), which a new form starts from; the app defaults when absent. */
+  defaults?: GenerateDefaults;
   /** Polling settings; tests shorten them. */
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
@@ -101,38 +95,6 @@ interface EnhancedPrompt {
   /** The prompt, style and model it was made for; a change to any of them enhances again. */
   source: string;
   text: string;
-}
-
-/** Where the "Enhance prompt" toggle is remembered, per browser (ENH-1). */
-export const ENHANCE_STORAGE_KEY = 'pictora.enhancePrompt';
-
-const enhanceListeners = new Set<() => void>();
-
-function storedEnhanceSetting(): boolean {
-  try {
-    return window.localStorage.getItem(ENHANCE_STORAGE_KEY) !== 'off';
-  } catch {
-    return true;
-  }
-}
-
-function storeEnhanceSetting(on: boolean): void {
-  try {
-    window.localStorage.setItem(ENHANCE_STORAGE_KEY, on ? 'on' : 'off');
-  } catch {
-    // Private windows may refuse storage; the toggle still works for this visit.
-  }
-  for (const listener of enhanceListeners) listener();
-}
-
-/** Follows the stored setting, including changes made in other tabs. */
-function subscribeEnhanceSetting(listener: () => void): () => void {
-  enhanceListeners.add(listener);
-  window.addEventListener('storage', listener);
-  return () => {
-    enhanceListeners.delete(listener);
-    window.removeEventListener('storage', listener);
-  };
 }
 
 type Enhancement =
@@ -295,25 +257,26 @@ export function GenerateScreen({
   points: initialPoints,
   premiumPausedUntil,
   rerun,
+  defaults,
   pollIntervalMs,
   pollTimeoutMs,
   batchPollIntervalMs = BATCH_POLL_INTERVAL_MS,
 }: GenerateScreenProps) {
   const available = generateModels(models);
-  const [initial] = useState(() => initialForm(styles, available, rerun));
+  const [initial] = useState(() => initialForm(styles, available, rerun, defaults));
   const [prompt, setPrompt] = useState(initial.prompt);
   const [avoid, setAvoid] = useState(initial.avoid);
   const [styleId, setStyleId] = useState<StyleId>(initial.styleId);
   const [choices, setChoices] = useState<ModelChoices | undefined>(initial.choices);
-  const [count, setCount] = useState(MIN_IMAGE_COUNT);
+  const [count, setCount] = useState(initial.count);
   const [transparent, setTransparent] = useState(initial.transparent);
   /** "Save points: deliver later": a batch job at half the points, delivered within 24 hours. */
-  const [later, setLater] = useState(false);
+  const [later, setLater] = useState(initial.later);
   /**
-   * Smart routing: the app picks the model from the style, quality, prompt and points left. A rerun starts on
-   * the original model instead, unless it isn't available any more.
+   * Smart routing: the app picks the model from the style, quality, prompt and points left. A new form follows
+   * the user's default; a rerun starts on the original model, unless it isn't available any more.
    */
-  const [auto, setAuto] = useState(!rerun || initial.modelReplaced);
+  const [auto, setAuto] = useState(initial.auto);
   /** A rerun's original seed (GAL-3), sent while the original model is chosen by hand and takes one. */
   const [seed, setSeed] = useState(initial.seed);
   const [points, setPoints] = useState(initialPoints);
@@ -328,20 +291,11 @@ export function GenerateScreen({
   const [sheetOpen, setSheetOpen] = useState(false);
   const isMobile = useIsMobile();
   const sheetIds = { aspect: useId(), quality: useId(), variations: useId() };
-  // The server render, and so hydration, assumes the default: on.
-  const storedEnhanceOn = useSyncExternalStore(
-    subscribeEnhanceSetting,
-    storedEnhanceSetting,
-    () => true,
-  );
   /**
-   * Set by "Use my words" for this visit only, without changing the remembered setting. A rerun uses what the
-   * original used: its enhanced prompt, or the user's own words.
+   * The enhancer starts as the user's default (ENH-1, GEN-11), or for a rerun as the original used it; turning it
+   * on or off here, or "Use my words", lasts for this visit. Defaults change on the account page.
    */
-  const [enhanceOverride, setEnhanceOverride] = useState<boolean | undefined>(
-    rerun ? initial.enhancedPrompt !== undefined : undefined,
-  );
-  const enhanceOn = enhanceOverride ?? storedEnhanceOn;
+  const [enhanceOn, setEnhanceOn] = useState(initial.enhance);
   const [enhanced, setEnhanced] = useState<EnhancedPrompt | undefined>(() =>
     initial.enhancedPrompt && initial.choices
       ? {
@@ -351,6 +305,9 @@ export function GenerateScreen({
       : undefined,
   );
   const [notice, setNotice] = useState<string | undefined>(() => {
+    if (initial.defaultModelMissing) {
+      return "Your default model isn't available any more, so Auto picks one. You can change your defaults on the Account page.";
+    }
     if (!initial.modelReplaced) return undefined;
     const name = available.find((model) => model.id === initial.choices?.modelId)?.displayName;
     return `The model this image was made with isn't available any more${name ? `, so we picked ${name}` : ''}.`;
@@ -496,15 +453,14 @@ export function GenerateScreen({
   }
 
   function toggleEnhance(on: boolean) {
-    setEnhanceOverride(undefined);
-    storeEnhanceSetting(on);
+    setEnhanceOn(on);
     if (!on) setEnhanced(undefined);
   }
 
   /** "Use my words": drops the enhanced prompt, so the next images use exactly what the user typed (ENH-2). */
   function useMyWords() {
     setEnhanced(undefined);
-    setEnhanceOverride(false);
+    setEnhanceOn(false);
     setNotice(undefined);
   }
 

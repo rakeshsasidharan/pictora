@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-import { loadSeedRegistry, modelsForEnvironment, MAX_PROMPT_LENGTH } from '@pictora/core';
+import {
+  APP_GENERATE_DEFAULTS,
+  loadSeedRegistry,
+  modelsForEnvironment,
+  MAX_PROMPT_LENGTH,
+  type GenerateDefaults,
+} from '@pictora/core';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ENHANCE_STORAGE_KEY,
   EXAMPLE_PROMPTS,
   GenerateScreen,
   PROMPT_COUNT_MARGIN,
@@ -17,12 +22,17 @@ import { SAMPLE_IMAGES } from '../src/lib/sample_images';
 const { models, styles } = modelsResponse(modelsForEnvironment(loadSeedRegistry(), 'dev'));
 const JOB_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
 
-function renderScreen(points: PointsLeft = { left: 25, limit: 25 }, pollTimeoutMs = 2_000) {
+function renderScreen(
+  points: PointsLeft = { left: 25, limit: 25 },
+  pollTimeoutMs = 2_000,
+  defaults?: GenerateDefaults,
+) {
   return render(
     <GenerateScreen
       models={models}
       styles={styles}
       points={points}
+      defaults={defaults}
       pollIntervalMs={5}
       pollTimeoutMs={pollTimeoutMs}
       batchPollIntervalMs={5}
@@ -211,6 +221,80 @@ describe('GenerateScreen', () => {
     window.localStorage.clear();
   });
 
+  describe('user defaults (GEN-11)', () => {
+    const saved: GenerateDefaults = {
+      style: 'anime',
+      modelId: 'mock',
+      aspect: '16:9',
+      quality: 'high',
+      count: 3,
+      transparentBackground: true,
+      deliverLater: true,
+      avoid: 'blur',
+      enhance: false,
+    };
+
+    it('starts with every saved option selected and sends them', async () => {
+      const fetchMock = stubApi({ statuses: [{ status: 'scheduled' }] });
+      renderScreen({ left: 25, limit: 25 }, undefined, saved);
+
+      expect(screen.getByRole('button', { name: 'Style: Anime' })).toBeTruthy();
+      expect(modelButton().getAttribute('aria-label')).toBe('Model: Mock (dev only)');
+      expect(screen.getByRole('combobox', { name: 'Aspect ratio' }).textContent).toContain('16:9');
+      expect(screen.getByRole('combobox', { name: 'Quality' }).textContent).toBe('High');
+      expect(screen.getByRole('combobox', { name: 'Variations' }).textContent).toBe('3 variations');
+      expect(checked(enhanceSwitch())).toBe(false);
+      expect(pressed(extraToggle('Transparent background'))).toBe(true);
+      expect(pressed(extraToggle('Save points: deliver later'))).toBe(true);
+      expect(avoidField().value).toBe('blur');
+
+      fireEvent.change(prompt(), { target: { value: 'A red fox' } });
+      fireEvent.click(schedule());
+      await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(1));
+      expect(bodiesOf(fetchMock, '/api/enhance')).toHaveLength(0);
+      expect(bodiesOf(fetchMock, '/api/jobs')[0]).toEqual({
+        type: 'generate',
+        prompt: 'A red fox',
+        avoid: 'blur',
+        style: 'anime',
+        modelId: 'mock',
+        aspect: '16:9',
+        quality: 'high',
+        count: 3,
+        transparentBackground: true,
+        delivery: 'batch',
+      });
+    });
+
+    it('starts on Auto with a notice when the saved model is gone', () => {
+      renderScreen(undefined, undefined, { ...saved, modelId: 'retired-model' });
+      expect(modelButton().getAttribute('aria-label')).toMatch(/^Model: Auto · /);
+      expect(
+        screen.getByText(/Your default model isn't available any more, so Auto picks one/),
+      ).toBeTruthy();
+      // The rest of the defaults still apply.
+      expect(screen.getByRole('button', { name: 'Style: Anime' })).toBeTruthy();
+      expect(screen.getByRole('combobox', { name: 'Variations' }).textContent).toBe('3 variations');
+    });
+
+    it('leaves out options the saved model does not offer', () => {
+      renderScreen(undefined, undefined, { ...saved, modelId: 'gemini-3.1-flash-image' });
+      expect(offersExtra('Transparent background')).toBe(false);
+      expect(screen.queryByRole('textbox', { name: 'Avoid (optional)' })).toBeNull();
+      expect(pressed(extraToggle('Save points: deliver later'))).toBe(true);
+    });
+
+    it('changes made here last for this visit only', () => {
+      renderScreen(undefined, undefined, saved);
+      chooseStyle('Watercolour');
+      chooseCount(1);
+      cleanup();
+      renderScreen(undefined, undefined, saved);
+      expect(screen.getByRole('button', { name: 'Style: Anime' })).toBeTruthy();
+      expect(screen.getByRole('combobox', { name: 'Variations' }).textContent).toBe('3 variations');
+    });
+  });
+
   describe('prompt enhancer', () => {
     const toggle = enhanceSwitch;
     const panel = () => screen.queryByRole('region', { name: 'Enhanced prompt' });
@@ -219,18 +303,20 @@ describe('GenerateScreen', () => {
       return screen.getByRole('textbox', { name: 'Enhanced prompt' }) as HTMLTextAreaElement;
     };
 
-    it('is on by default and remembers being turned off', () => {
+    it('starts as the user’s default, and turning it off lasts for this visit only', () => {
       renderScreen();
       expect(checked(toggle())).toBe(true);
       fireEvent.click(toggle());
       expect(checked(toggle())).toBe(false);
-      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('off');
+      expect(window.localStorage.length).toBe(0);
       cleanup();
 
       renderScreen();
+      expect(checked(toggle())).toBe(true);
+      cleanup();
+
+      renderScreen(undefined, undefined, { ...APP_GENERATE_DEFAULTS, enhance: false });
       expect(checked(toggle())).toBe(false);
-      fireEvent.click(toggle());
-      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBe('on');
     });
 
     it('is a switch, without a tooltip, whose visible label also turns it on and off', () => {
@@ -352,9 +438,7 @@ describe('GenerateScreen', () => {
       openEnhanced();
       fireEvent.click(screen.getByRole('button', { name: 'Use my words' }));
       expect(panel()).toBeNull();
-      expect(pressed(toggle())).toBe(false);
-      // Only for this visit: the remembered setting stays on.
-      expect(window.localStorage.getItem(ENHANCE_STORAGE_KEY)).toBeNull();
+      expect(checked(toggle())).toBe(false);
       fireEvent.click(generate());
       await waitFor(() => expect(bodiesOf(fetchMock, '/api/jobs')).toHaveLength(2));
       expect(bodiesOf(fetchMock, '/api/jobs')[1]).not.toHaveProperty('enhancedPrompt');
