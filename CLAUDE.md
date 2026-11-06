@@ -17,7 +17,7 @@ These apply to every session, local or cloud.
 - One branch per issue, created from the latest `main` before writing any code: `<issue-number>-<short-slug>`, for example `16-job-api`. Never combine issues on one branch.
 - Implement the full scope of the issue. No minimal implementations and no placeholder `TODO`s in committed code.
 - A sub-feature that is out of scope shows a toast saying "<Feature> coming soon", and must have an open GitHub issue.
-- Write the tests the issue lists, plus any others the change needs (unit, component, CDK assertions). All checks must pass before work is called done: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx cdk synth` in `infra/` (it synthesises every stack; the CLI ignores `--all` for synth) (run whichever exist at the time).
+- Write the tests the issue lists, plus any others the change needs (unit, component, CDK assertions). All checks must pass before work is called done: `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx cdk synth` in `infra/` (it synthesises every stack; the CLI ignores `--all` for synth) (run whichever exist at the time).
 - Leave no lint, type or build warnings.
 - New UI uses shadcn/ui components (`app/src/components/ui/`) and Tailwind utilities only: no other CSS and no `style=` props (tech design 3.3).
 - Naming: `snake_case` file names and `PascalCase` classes and React components. Framework-mandated file names (`page.tsx`, `layout.tsx`, `route.ts`, `middleware.ts`, config files) are the exception.
