@@ -9,7 +9,7 @@ import {
   LOGIN_RADIUS,
 } from '../lib/login_branding.js';
 import { US_INFERENCE_REGIONS, enhancerModelArns } from '../lib/web_stack.js';
-import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
+import { contextWithoutDomain, testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
 /** AWS managed CloudFront policy IDs. */
 const CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
@@ -23,6 +23,8 @@ const devStage = testStage('PictoraDev', {
 });
 const dev = Template.fromStack(devStage.web);
 const prod = Template.fromStack(testStage('PictoraProd').web);
+/** An environment served on its CloudFront domain, as prod was before it had pictora.rpillai.dev. */
+const noDomain = Template.fromStack(testStage('PictoraProd', contextWithoutDomain('prod')).web);
 
 function distributionConfig(template: Template) {
   const [distribution] = Object.values(template.findResources('AWS::CloudFront::Distribution'));
@@ -220,16 +222,23 @@ describe('Web stack: Cognito app client', () => {
   it('calls back to the dev domain, and to local next dev', () => {
     expect(appClient(dev)).toMatchObject({
       CallbackURLs: [
-        'https://pictora.rpillai.dev/auth/callback',
+        'https://dev.pictora.rpillai.dev/auth/callback',
         'http://localhost:3000/auth/callback',
       ],
-      LogoutURLs: ['https://pictora.rpillai.dev/', 'http://localhost:3000/'],
+      LogoutURLs: ['https://dev.pictora.rpillai.dev/', 'http://localhost:3000/'],
     });
   });
 
-  it('calls back to the CloudFront domain in prod, which has no custom domain yet', () => {
-    const domain = { 'Fn::GetAtt': [expect.stringMatching(/^Distribution/), 'DomainName'] };
+  it('calls back to the prod domain alone in prod (#33)', () => {
     expect(appClient(prod)).toMatchObject({
+      CallbackURLs: ['https://pictora.rpillai.dev/auth/callback'],
+      LogoutURLs: ['https://pictora.rpillai.dev/'],
+    });
+  });
+
+  it('calls back to the CloudFront domain for an environment without a custom domain', () => {
+    const domain = { 'Fn::GetAtt': [expect.stringMatching(/^Distribution/), 'DomainName'] };
+    expect(appClient(noDomain)).toMatchObject({
       CallbackURLs: [{ 'Fn::Join': ['', ['https://', domain, '/auth/callback']] }],
       LogoutURLs: [{ 'Fn::Join': ['', ['https://', domain, '/']] }],
     });
@@ -246,7 +255,7 @@ describe('Web stack: Cognito app client', () => {
         'Fn::Join': [
           '',
           [
-            '{"siteUrl":"https://pictora.rpillai.dev","cognitoClientId":"',
+            '{"siteUrl":"https://dev.pictora.rpillai.dev","cognitoClientId":"',
             { Ref: Match.stringLikeRegexp('^AppClient') },
             '"}',
           ],
@@ -367,8 +376,9 @@ describe('Web stack: managed login branding', () => {
 
 describe('Web stack: outputs', () => {
   it('outputs the site URL for the deploy pipeline', () => {
-    dev.hasOutput('SiteUrl', { Value: 'https://pictora.rpillai.dev' });
-    prod.hasOutput('SiteUrl', {
+    dev.hasOutput('SiteUrl', { Value: 'https://dev.pictora.rpillai.dev' });
+    prod.hasOutput('SiteUrl', { Value: 'https://pictora.rpillai.dev' });
+    noDomain.hasOutput('SiteUrl', {
       Value: {
         'Fn::Join': [
           '',
@@ -432,7 +442,7 @@ describe('Web stack: CloudFront', () => {
 
   it('serves the dev domain with the us-east-1 certificate', () => {
     const config = distributionConfig(dev);
-    expect(config.Aliases).toEqual(['pictora.rpillai.dev']);
+    expect(config.Aliases).toEqual(['dev.pictora.rpillai.dev']);
     expect(config.ViewerCertificate).toMatchObject({
       SslSupportMethod: 'sni-only',
       MinimumProtocolVersion: 'TLSv1.2_2021',
@@ -443,14 +453,27 @@ describe('Web stack: CloudFront', () => {
   });
 
   it('points A and AAAA alias records at the distribution in the rpillai.dev zone', () => {
-    for (const Type of ['A', 'AAAA']) {
-      dev.hasResourceProperties('AWS::Route53::RecordSet', {
-        Name: 'pictora.rpillai.dev.',
-        Type,
-        HostedZoneId: 'Z0000000000PLACEHOLDER',
-        AliasTarget: Match.objectLike({ HostedZoneId: Match.anyValue() }),
-      });
+    for (const [template, Name] of [
+      [dev, 'dev.pictora.rpillai.dev.'],
+      [prod, 'pictora.rpillai.dev.'],
+    ] as const) {
+      for (const Type of ['A', 'AAAA']) {
+        template.hasResourceProperties('AWS::Route53::RecordSet', {
+          Name,
+          Type,
+          HostedZoneId: 'Z0000000000PLACEHOLDER',
+          AliasTarget: Match.objectLike({ HostedZoneId: Match.anyValue() }),
+        });
+      }
     }
+  });
+
+  it('serves prod on pictora.rpillai.dev with its own us-east-1 certificate (#33)', () => {
+    const config = distributionConfig(prod);
+    expect(config.Aliases).toEqual(['pictora.rpillai.dev']);
+    expect(JSON.stringify(config.ViewerCertificate.AcmCertificateArn)).toContain(
+      CERTIFICATE_REGION,
+    );
   });
 
   it('uses the hosted zone ID from context', () => {
@@ -458,10 +481,10 @@ describe('Web stack: CloudFront', () => {
     template.hasResourceProperties('AWS::Route53::RecordSet', { HostedZoneId: 'ZREALZONE' });
   });
 
-  it('serves prod on the CloudFront domain until it has one of its own', () => {
-    const config = distributionConfig(prod);
+  it('serves an environment without a domain on its CloudFront domain', () => {
+    const config = distributionConfig(noDomain);
     expect(config.Aliases).toBeUndefined();
-    prod.resourceCountIs('AWS::Route53::RecordSet', 0);
+    noDomain.resourceCountIs('AWS::Route53::RecordSet', 0);
   });
 });
 

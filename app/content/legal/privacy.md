@@ -1,7 +1,5 @@
 # Privacy policy
 
-> **Draft, pending legal review.** This text has not been approved by a lawyer yet. It will be replaced by the reviewed version before Pictora launches.
-
 This policy explains what Pictora collects, why, who processes it and how long we keep it. Your images and prompts belong to you, and we don't sell your data or show you ads.
 
 ## Data we collect

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { MODELS_JSON_PATH } from '../lib/data_stack.js';
-import { cdkJsonContext, testStage } from './helpers.js';
+import { contextWithoutDomain, testStage } from './helpers.js';
 
 const dev = Template.fromStack(testStage('PictoraDev').data);
 const prod = Template.fromStack(testStage('PictoraProd').data);
@@ -96,7 +96,7 @@ describe('Data stack per environment', () => {
       CorsConfiguration: {
         CorsRules: [
           {
-            AllowedOrigins: ['https://pictora.rpillai.dev', 'http://localhost:3000'],
+            AllowedOrigins: ['https://dev.pictora.rpillai.dev', 'http://localhost:3000'],
             AllowedMethods: ['GET', 'HEAD', 'POST'],
             AllowedHeaders: ['*'],
             MaxAge: 3000,
@@ -106,12 +106,12 @@ describe('Data stack per environment', () => {
     });
   });
 
-  it('allows presigned POST and GET from the CloudFront site in prod, which has no custom domain', () => {
+  it('allows presigned POST and GET from the prod domain alone (#33)', () => {
     prod.hasResourceProperties('AWS::S3::Bucket', {
       CorsConfiguration: {
         CorsRules: [
           {
-            AllowedOrigins: ['https://*.cloudfront.net'],
+            AllowedOrigins: ['https://pictora.rpillai.dev'],
             AllowedMethods: ['GET', 'HEAD', 'POST'],
             AllowedHeaders: ['*'],
             MaxAge: 3000,
@@ -121,19 +121,13 @@ describe('Data stack per environment', () => {
     });
   });
 
-  it('allows the custom domain alone once prod has one', () => {
-    const environments = cdkJsonContext().environments as Record<string, object>;
+  it('allows the CloudFront site for an environment without a custom domain', () => {
     const template = Template.fromStack(
-      testStage('PictoraProd', {
-        environments: {
-          ...environments,
-          prod: { ...environments.prod, domain: 'pictora.rpillai.dev' },
-        },
-      }).data,
+      testStage('PictoraProd', contextWithoutDomain('prod')).data,
     );
     const [bucket] = Object.values(template.findResources('AWS::S3::Bucket'));
     expect(bucket?.Properties.CorsConfiguration.CorsRules[0].AllowedOrigins).toEqual([
-      'https://pictora.rpillai.dev',
+      'https://*.cloudfront.net',
     ]);
   });
 });

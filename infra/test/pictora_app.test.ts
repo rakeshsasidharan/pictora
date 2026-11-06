@@ -29,9 +29,10 @@ describe('Pictora CDK app', () => {
       'PictoraDev-Monitoring',
       'PictoraDev-Web',
     ]);
-    // Prod has no domain yet, so it has no certificate.
+    // Prod serves pictora.rpillai.dev, so it has its own certificate (#33).
     expect(stackNames('assembly-PictoraProd')).toEqual([
       'PictoraProd-Auth',
+      'PictoraProd-Certificate',
       'PictoraProd-Data',
       'PictoraProd-Jobs',
       'PictoraProd-Monitoring',
@@ -49,12 +50,17 @@ describe('Pictora CDK app', () => {
   it('reads the per-environment settings from cdk.json', () => {
     const [dev, prod] = pictoraStages();
     expect(dev?.config).toMatchObject({
-      domain: 'pictora.rpillai.dev',
+      domain: 'dev.pictora.rpillai.dev',
       dailyPoints: 1000,
       spendCapUsd: 20,
       queueConcurrency: 5,
     });
-    expect(prod?.config).toMatchObject({ dailyPoints: 25, spendCapUsd: 100, queueConcurrency: 5 });
-    expect(prod?.config.domain).toBeUndefined();
+    expect(prod?.config).toMatchObject({
+      domain: 'pictora.rpillai.dev',
+      dailyPoints: 25,
+      spendCapUsd: 100,
+      queueConcurrency: 5,
+      betaMode: true,
+    });
   });
 });

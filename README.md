@@ -6,6 +6,8 @@ See the [product requirements](docs/prd.md) for details.
 
 ## Operations
 
+The [runbook](docs/runbook.md) covers deploys and rollback, incidents (spend, provider outages, the dead-letter queue, abuse reports), key rotation and the launch drills. The commands below are the everyday ones it links to.
+
 ### Admin access
 
 The admin pages (`/admin`: dashboard, moderation review, user suspension) are for members of the Cognito `admins` group. To add someone, find their username (the `sub` for email users, `google_<id>` for Google users) in the Cognito console, then:

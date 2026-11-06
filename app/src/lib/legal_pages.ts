@@ -41,9 +41,6 @@ export const LEGAL_PAGES: readonly LegalPage[] = [
   },
 ];
 
-/** Shown on every legal page, and written at the top of each Markdown file, until legal review signs off. */
-export const LEGAL_DRAFT_NOTICE = 'Draft, pending legal review';
-
 /** The Markdown files' directory, relative to the app root (the server's working directory). */
 export const LEGAL_CONTENT_DIR = join('content', 'legal');
 
