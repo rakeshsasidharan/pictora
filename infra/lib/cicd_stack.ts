@@ -9,6 +9,7 @@ import {
   type IOpenIdConnectProvider,
 } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
+import { CERTIFICATE_PROJECT_TAG, CERTIFICATE_REGION } from './certificate_stack.js';
 
 /**
  * The repo uses GitHub's immutable OIDC subjects, which name the owner and repository with their
@@ -111,6 +112,9 @@ export class CicdStack extends Stack {
     this.deployRole.addToPolicy(
       new PolicyStatement({ actions: ECR_READ_ACTIONS, resources: repositoryArns }),
     );
+    for (const statement of this.certificateCleanupStatements()) {
+      this.deployRole.addToPolicy(statement);
+    }
 
     new CfnOutput(this, 'DiffRoleArn', { value: this.diffRole.roleArn });
     new CfnOutput(this, 'BuildRoleArn', { value: this.buildRole.roleArn });
@@ -138,6 +142,38 @@ export class CicdStack extends Stack {
         },
       }),
     });
+  }
+
+  /**
+   * What the post-deploy certificate cleanup needs (CI/CD design 4.3): list Pictora's certificates in the
+   * CloudFront region, read their tags and `InUseBy`, and delete only certificates tagged `Project=pictora`.
+   * ACM supports `aws:ResourceTag` on certificates, so IAM enforces the project scope; the script's own tag
+   * and in-use checks narrow it further to the stage's unused certificates.
+   */
+  private certificateCleanupStatements(): PolicyStatement[] {
+    const certificates = this.formatArn({
+      service: 'acm',
+      region: CERTIFICATE_REGION,
+      resource: 'certificate',
+      resourceName: '*',
+    });
+    return [
+      // ListCertificates has no resource type, so IAM only grants it on `*`; it reveals no certificate contents.
+      new PolicyStatement({ actions: ['acm:ListCertificates'], resources: ['*'] }),
+      new PolicyStatement({
+        actions: ['acm:DescribeCertificate', 'acm:ListTagsForCertificate'],
+        resources: [certificates],
+      }),
+      new PolicyStatement({
+        actions: ['acm:DeleteCertificate'],
+        resources: [certificates],
+        conditions: {
+          StringEquals: {
+            [`aws:ResourceTag/${CERTIFICATE_PROJECT_TAG.key}`]: CERTIFICATE_PROJECT_TAG.value,
+          },
+        },
+      }),
+    ];
   }
 
   /** Permission to assume the given CDK bootstrap roles in every bootstrapped region. */

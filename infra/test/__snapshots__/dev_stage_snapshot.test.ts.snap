@@ -362,6 +362,11 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Auth 1`] = `
 exports[`PictoraDev stage > matches the snapshot > PictoraDev-Certificate 1`] = `
 {
   "Outputs": {
+    "CertificateArn": {
+      "Value": {
+        "Ref": "Certificate4E7ABB08",
+      },
+    },
     "PublishOutputRefCertificate4E7ABB08FF286F7F": {
       "Value": {
         "Ref": "Certificate4E7ABB08",
@@ -377,6 +382,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Certificate 1`] = 
   },
   "Resources": {
     "Certificate4E7ABB08": {
+      "DeletionPolicy": "Retain",
       "Properties": {
         "DomainName": "dev.pictora.rpillai.dev",
         "DomainValidationOptions": [
@@ -398,10 +404,19 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Certificate 1`] = 
             "Key": "project",
             "Value": "pictora",
           },
+          {
+            "Key": "Project",
+            "Value": "pictora",
+          },
+          {
+            "Key": "Stage",
+            "Value": "dev",
+          },
         ],
         "ValidationMethod": "DNS",
       },
       "Type": "AWS::CertificateManager::Certificate",
+      "UpdateReplacePolicy": "Retain",
     },
   },
   "Rules": {
