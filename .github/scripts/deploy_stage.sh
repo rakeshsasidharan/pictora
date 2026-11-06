@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Deploys one stage with the given image digests (CI/CD design 4.3): extracts the Next.js static files from
-# the app image, runs cdk deploy, and writes the site URL from the stack outputs to $GITHUB_OUTPUT.
+# the app image, runs cdk deploy, writes the site URL from the stack outputs to $GITHUB_OUTPUT, and prunes the
+# stage's unused retained certificates.
 # Run from the repository root of the commit being deployed, with AWS credentials for the deploy role.
 # Usage: deploy_stage.sh <PictoraDev|PictoraProd> <commit sha> <app digest> [worker digest]
 # Environment: REGISTRY (ECR registry host), HOSTED_ZONE_ID, ALERT_EMAIL (optional), AWS_REGION.
 set -euo pipefail
 
 stage="$1"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 sha="$2"
 app_digest="$3"
 worker_digest="${4:-}"
@@ -38,3 +40,15 @@ if [ -z "$site_url" ]; then
 fi
 echo "Deployed $stage at $site_url"
 echo "site_url=$site_url" >>"$GITHUB_OUTPUT"
+
+# CloudFront is on the stage's current certificate now, so replaced certificates can go (tech design 14).
+certificate_arn="$(jq -r '[.[] | .CertificateArn? // empty] | first // empty' "$outputs")"
+if [ -n "$certificate_arn" ]; then
+  case "$stage" in
+    PictoraDev) env_name=dev ;;
+    PictoraProd) env_name=prod ;;
+    *) env_name="" ;;
+  esac
+  "$script_dir/prune_certificates.sh" "$env_name" "$certificate_arn" ||
+    echo "::warning::Certificate cleanup failed for $stage"
+fi

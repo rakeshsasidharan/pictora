@@ -587,12 +587,22 @@ Gaps fixed in this audit: `GET /api/models` checks the session itself instead of
 
 | Stack | Region | Resources |
 | --- | --- | --- |
-| `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference) |
+| `Certificate` | us-east-1 | ACM certificate for CloudFront (cross-region reference), tagged `Project=pictora` and `Stage=<dev\|prod>`, retained on replacement, with a `CertificateArn` output |
 | `Data` | us-west-2 | DynamoDB table, images bucket, registry seed custom resource |
 | `Auth` | us-west-2 | Cognito user pool, Google IdP, managed login domain, `admins` and `testers` groups, pre-sign-up Lambda |
 | `Jobs` | us-west-2 | SQS queues (`openai`, `gemini`, `bedrock`, `purge`) + dead-letter queue, worker Lambda, sweeper, model health, account purge Lambda (`cognito-idp:AdminDeleteUser` on the user pool), read access to the OpenAI and Gemini secrets (created by hand, section 10), and `bedrock:InvokeModel` on the Bedrock models in `models.json` |
 | `Web` | us-west-2 | App Lambda + Function URL, assets bucket, CloudFront, DNS record, Cognito app client and its managed login branding style, app config parameter |
 | `Monitoring` | us-west-2 | Dashboard, alarms, SNS topic, budget |
+
+**Certificate lifecycle**
+
+Changing a stage's domain replaces its certificate. CloudFront keeps using the old certificate until the `Web` stack switches it, and `Web` can't start until `Certificate` finishes, so deleting the old certificate during the `Certificate` stack's cleanup deadlocks (`Certificate ... is in use`) until it times out. To avoid that:
+
+1. The certificate has `RemovalPolicy.RETAIN` (`DeletionPolicy` and `UpdateReplacePolicy` `Retain`): a replacement creates the new certificate and leaves the old one in place, so the `Certificate` stack completes and `Web` moves CloudFront to the new one.
+2. Every Pictora certificate is tagged `Project=pictora` and `Stage=<dev|prod>`.
+3. After `cdk deploy`, the deploy pipeline deletes the stage's unused certificates (CI/CD design 4.3): tagged for that stage, empty `InUseBy`, and not the stage's current certificate. Untagged certificates and other projects' certificates are never touched, and a failed delete is a warning.
+
+Certificates are retained in every environment, including dev, because only the pipeline cleanup can delete them safely.
 
 ## 15. Rough monthly infrastructure cost (excluding provider spend)
 

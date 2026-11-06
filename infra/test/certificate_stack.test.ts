@@ -1,4 +1,4 @@
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { contextWithoutDomain, testStage } from './helpers.js';
 
@@ -29,6 +29,38 @@ describe('Certificate stack', () => {
       DomainName: 'pictora.rpillai.dev',
       DomainValidationOptions: [{ DomainName: 'pictora.rpillai.dev', HostedZoneId: 'ZREALZONE' }],
     });
+  });
+
+  it.each([
+    ['PictoraDev', 'dev'],
+    ['PictoraProd', 'prod'],
+  ] as const)(
+    'retains the %s certificate on replacement and tags it Project=pictora, Stage=%s (#180)',
+    (stageName, envName) => {
+      const certificate = testStage(stageName, { hostedZoneId: 'ZREALZONE' }).certificate;
+      if (!certificate) throw new Error(`${stageName} has no certificate stack`);
+      const template = Template.fromStack(certificate);
+      template.resourceCountIs('AWS::CertificateManager::Certificate', 1);
+      template.hasResource('AWS::CertificateManager::Certificate', {
+        DeletionPolicy: 'Retain',
+        UpdateReplacePolicy: 'Retain',
+        Properties: {
+          Tags: Match.arrayWith([
+            { Key: 'Project', Value: 'pictora' },
+            { Key: 'Stage', Value: envName },
+          ]),
+        },
+      });
+    },
+  );
+
+  it('outputs the certificate ARN for the post-deploy cleanup', () => {
+    if (!stack) throw new Error('dev has no certificate stack');
+    const outputs = Template.fromStack(stack).findOutputs('CertificateArn');
+    const certificateId = Object.keys(
+      Template.fromStack(stack).findResources('AWS::CertificateManager::Certificate'),
+    )[0];
+    expect(outputs.CertificateArn?.Value).toEqual({ Ref: certificateId });
   });
 
   it('is not created for an environment without a domain', () => {
