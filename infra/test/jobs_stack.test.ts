@@ -1,6 +1,6 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { bedrockModelIds, geminiEnvironment } from '../lib/jobs_stack.js';
+import { US_INFERENCE_REGIONS, bedrockModelIds, geminiEnvironment } from '../lib/jobs_stack.js';
 import { PLACEHOLDER_IMAGE_DIGEST } from '../lib/stage_config.js';
 import { testStage, TEST_IMAGE_DIGEST } from './helpers.js';
 
@@ -266,16 +266,35 @@ describe('Jobs stack: worker IAM', () => {
     expect([statement?.Resource].flat()).toHaveLength(3);
   });
 
-  it('may invoke only the Bedrock models in models.json, in us-west-2', () => {
+  it('may invoke only the Bedrock models in models.json: generate models on demand in us-west-2', () => {
     const bedrockStatements = statements.filter((s) =>
       actionsOf(s).some((a) => a.startsWith('bedrock:')),
     );
     expect(bedrockStatements).toHaveLength(1);
     const [statement] = bedrockStatements;
     expect(actionsOf(statement ?? {})).toEqual(['bedrock:InvokeModel']);
-    expect([statement?.Resource].flat()).toEqual(
-      bedrockModelIds().map((modelId) => `arn:aws:bedrock:us-west-2::foundation-model/${modelId}`),
-    );
+    const resources = [statement?.Resource].flat();
+    for (const modelId of bedrockModelIds().filter((id) => !id.startsWith('us.'))) {
+      expect(resources).toContain(`arn:aws:bedrock:us-west-2::foundation-model/${modelId}`);
+    }
+  });
+
+  it('may invoke each image tool through its us. inference profile and the models it routes to (#35)', () => {
+    const [statement] = statements.filter((s) => actionsOf(s).includes('bedrock:InvokeModel'));
+    const resources = [statement?.Resource].flat();
+    const text = JSON.stringify(resources);
+    const profiles = bedrockModelIds().filter((id) => id.startsWith('us.'));
+    expect(profiles).toHaveLength(6);
+    for (const profile of profiles) {
+      expect(text).toContain(`:inference-profile/${profile}`);
+      for (const region of US_INFERENCE_REGIONS) {
+        expect(resources).toContain(
+          `arn:aws:bedrock:${region}::foundation-model/${profile.slice('us.'.length)}`,
+        );
+      }
+    }
+    // Three generate models, plus six tools with a profile and three regions each.
+    expect(resources).toHaveLength(3 + 6 * 4);
   });
 
   it('has no wildcard actions or resources', () => {
@@ -449,11 +468,17 @@ describe('Jobs stack: account purge', () => {
 });
 
 describe('bedrockModelIds', () => {
-  it('lists the Stability models on Bedrock from models.json', () => {
+  it('lists the Stability models on Bedrock from models.json, the tools by inference profile', () => {
     expect(bedrockModelIds()).toEqual([
       'stability.sd3-5-large-v1:0',
       'stability.stable-image-core-v1:1',
       'stability.stable-image-ultra-v1:1',
+      'us.stability.stable-conservative-upscale-v1:0',
+      'us.stability.stable-creative-upscale-v1:0',
+      'us.stability.stable-fast-upscale-v1:0',
+      'us.stability.stable-image-erase-object-v1:0',
+      'us.stability.stable-image-remove-background-v1:0',
+      'us.stability.stable-outpaint-v1:0',
     ]);
   });
 });

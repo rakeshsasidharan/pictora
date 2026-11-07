@@ -91,11 +91,15 @@ describe('checkModelHealth', () => {
 
   it("uses the provider's own end-of-life date and legacy status", async () => {
     const catalogues = healthyCatalogues();
+    // The image tools' Stability models are listed too, and healthy.
+    const healthy = seed
+      .filter((model) => model.provider === 'bedrock')
+      .map((model) => [model.providerModelId, { legacy: false }] as const);
     catalogues.bedrock = async () =>
-      new Map([
+      new Map<string, { legacy: boolean; endOfLife?: string }>([
+        ...healthy,
         ['stability.stable-image-core-v1:1', { legacy: true, endOfLife: '2026-12-01' }],
         ['stability.sd3-5-large-v1:0', { legacy: true }],
-        ['stability.stable-image-ultra-v1:1', { legacy: false }],
       ]);
     const report = await checkModelHealth(seed, catalogues, NOW);
     expect(report.problems).toEqual([

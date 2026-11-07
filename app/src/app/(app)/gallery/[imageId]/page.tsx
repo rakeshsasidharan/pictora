@@ -5,8 +5,10 @@ import { ImageDetailPage } from '../../../../components/image_detail_page';
 import { modelNames } from '../../../../lib/gallery_models';
 import { getImageDetail, type ImageDetailBody } from '../../../../lib/images';
 import { imagesDeps } from '../../../../lib/images_deps';
+import { jobsDeps } from '../../../../lib/jobs_deps';
 import { requireOnboarding } from '../../../../lib/onboarding';
 import { sessionFromHeaders } from '../../../../lib/session';
+import { toolCatalog } from '../../../../lib/tool_catalog';
 
 export const metadata: Metadata = { title: 'Image · Pictora' };
 export const dynamic = 'force-dynamic';
@@ -29,10 +31,12 @@ export default async function GalleryImagePage({
   const detail = await getImageDetail(imagesDeps(), session, imageId);
   if (detail.status !== 200) notFound();
 
+  const [names, tools] = await Promise.all([modelNames(), toolCatalog(jobsDeps(), session)]);
   return (
     <ImageDetailPage
       detail={detail.body as unknown as ImageDetailBody}
-      modelNames={await modelNames()}
+      modelNames={names}
+      tools={tools}
     />
   );
 }

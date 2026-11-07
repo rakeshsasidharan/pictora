@@ -47,8 +47,11 @@ describe('points constants', () => {
 });
 
 describe('estimatePoints', () => {
-  it('covers every seed model', () => {
-    expect(models.map((entry) => entry.id).sort()).toEqual(
+  it('covers every seed model that generates or edits', () => {
+    const imageModels = models.filter(
+      (entry) => entry.capabilities.generate || entry.capabilities.edit,
+    );
+    expect(imageModels.map((entry) => entry.id).sort()).toEqual(
       Object.keys(EXPECTED_COST_POINTS).sort(),
     );
   });

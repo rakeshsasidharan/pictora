@@ -3,10 +3,12 @@ import {
   mapAspect,
   MAX_IMAGE_COUNT,
   MIN_IMAGE_COUNT,
+  TOOL_NAMES,
+  toolCostPoints,
   type ModelConfig,
   type Size,
 } from '@pictora/core';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { ProviderError, ProviderSafetyError, ProviderTimeoutError } from './errors.js';
 import { sleep } from './retry.js';
 import {
@@ -19,6 +21,7 @@ import {
   type ImageProvider,
   type ImageRequest,
   type ImageResult,
+  type ToolRequest,
 } from './types.js';
 
 /** Prompt keywords that make the mock fail on purpose, for tests. */
@@ -28,6 +31,9 @@ export const MOCK_TIMEOUT_KEYWORD = '__timeout__';
 
 /** Batch IDs the mock hands out start with this. */
 export const MOCK_BATCH_PREFIX = 'mock-batch-';
+
+/** The mock upscales double each side, up to this many pixels, so test images stay small. */
+export const MOCK_UPSCALE_MAX_PX = 4096;
 
 /** Default delay before the mock answers; `MOCK_PROVIDER_DELAY_MS` overrides it. */
 export const MOCK_DEFAULT_DELAY_MS = 1_000;
@@ -61,6 +67,27 @@ export class MockProvider implements ImageProvider, BatchImageProvider {
       return Promise.reject(new ProviderError(`Model ${model.id}: an edit needs an input image`));
     }
     return this.run(model, req, 'edit');
+  }
+
+  /**
+   * Runs an image tool without a provider (P1 Image tools), after the delay: an upscale doubles each side,
+   * remove background keeps an ellipse in the middle and makes the rest transparent, erase greys out the white
+   * of the mask, and outpaint extends the canvas by the sides asked for. The tool's name is written on the
+   * result. A prompt with `__fail__`, `__block__` or `__timeout__` raises the matching error.
+   */
+  async tool(model: ModelConfig, req: ToolRequest): Promise<ImageResult> {
+    const costPoints = toolCostPoints(model, req.tool);
+    if (costPoints === undefined)
+      throw new ProviderError(`Model ${model.id} does not run ${req.tool}`);
+    await sleep(this.delayMs, req.signal);
+    raiseForKeywords(req.prompt ?? '');
+    const png = await mockToolImage(req);
+    const meta = await sharp(png).metadata();
+    return {
+      images: [{ png, width: meta.width, height: meta.height }],
+      providerRequestId: `mock-tool-${createHash('sha256').update(png).digest('hex').slice(0, 16)}`,
+      providerCostCents: costPoints,
+    };
   }
 
   /**
@@ -131,15 +158,7 @@ export class MockProvider implements ImageProvider, BatchImageProvider {
     const size = mapAspect(model, req.aspect, req.quality).output;
 
     await sleep(delayMs, req.signal);
-    if (req.prompt.includes(MOCK_BLOCK_KEYWORD)) {
-      throw new ProviderSafetyError(`Mock safety refusal (${MOCK_BLOCK_KEYWORD})`);
-    }
-    if (req.prompt.includes(MOCK_TIMEOUT_KEYWORD)) {
-      throw new ProviderTimeoutError(`Mock timeout (${MOCK_TIMEOUT_KEYWORD})`);
-    }
-    if (req.prompt.includes(MOCK_FAIL_KEYWORD)) {
-      throw new ProviderError(`Mock failure (${MOCK_FAIL_KEYWORD})`);
-    }
+    raiseForKeywords(req.prompt);
 
     const baseSeed = req.seed ?? seedFromPrompt(req.prompt);
     const images: GeneratedImage[] = [];
@@ -160,6 +179,87 @@ export class MockProvider implements ImageProvider, BatchImageProvider {
       providerCostCents: quality.costPoints * req.count,
     };
   }
+}
+
+/** Raises the typed error a test prompt asks for. */
+function raiseForKeywords(prompt: string): void {
+  if (prompt.includes(MOCK_BLOCK_KEYWORD)) {
+    throw new ProviderSafetyError(`Mock safety refusal (${MOCK_BLOCK_KEYWORD})`);
+  }
+  if (prompt.includes(MOCK_TIMEOUT_KEYWORD)) {
+    throw new ProviderTimeoutError(`Mock timeout (${MOCK_TIMEOUT_KEYWORD})`);
+  }
+  if (prompt.includes(MOCK_FAIL_KEYWORD)) {
+    throw new ProviderError(`Mock failure (${MOCK_FAIL_KEYWORD})`);
+  }
+}
+
+/** What the mock makes for a tool, as a PNG. */
+async function mockToolImage(req: ToolRequest): Promise<Uint8Array> {
+  const meta = await sharp(req.image).metadata();
+  const width = meta.width;
+  const height = meta.height;
+  const label = (w: number, h: number) =>
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><text x="${Math.round(w * 0.05)}" y="${Math.round(h * 0.1)}" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="${Math.max(12, Math.round(Math.min(w, h) / 20))}" font-weight="bold" fill="white">${escapeXml(`Mock ${TOOL_NAMES[req.tool]}`)}</text></svg>`,
+    );
+  let image: Sharp;
+  switch (req.tool) {
+    case 'upscale-fast':
+    case 'upscale-conservative':
+    case 'upscale-creative': {
+      const scale = Math.min(2, MOCK_UPSCALE_MAX_PX / Math.max(width, height));
+      const w = Math.max(1, Math.round(width * scale));
+      const h = Math.max(1, Math.round(height * scale));
+      const resized = await sharp(req.image).resize(w, h, { fit: 'fill' }).png().toBuffer();
+      image = sharp(resized).composite([{ input: label(w, h) }]);
+      break;
+    }
+    case 'remove-background': {
+      const ellipse = Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><ellipse cx="${width / 2}" cy="${height / 2}" rx="${width / 3}" ry="${height / 3}" fill="white"/></svg>`,
+      );
+      image = sharp(req.image)
+        .ensureAlpha()
+        .composite([{ input: ellipse, blend: 'dest-in' }]);
+      break;
+    }
+    case 'erase': {
+      if (!req.mask) throw new ProviderError('Erase needs a mask');
+      // The mask's white becomes a grey patch: grey where the mask is white, transparent elsewhere.
+      const alpha = await sharp(req.mask)
+        .resize(width, height, { fit: 'fill' })
+        .greyscale()
+        .raw()
+        .toBuffer();
+      const patch = await sharp({
+        create: { width, height, channels: 3, background: '#808080' },
+      })
+        .joinChannel(alpha, { raw: { width, height, channels: 1 } })
+        .png()
+        .toBuffer();
+      image = sharp(req.image).composite([{ input: patch }, { input: label(width, height) }]);
+      break;
+    }
+    case 'outpaint': {
+      const sides = req.outpaint ?? { left: 0, right: 0, up: 0, down: 0 };
+      const extended = await sharp(req.image)
+        .extend({
+          left: sides.left,
+          right: sides.right,
+          top: sides.up,
+          bottom: sides.down,
+          background: '#4b5563',
+        })
+        .png()
+        .toBuffer();
+      const w = width + sides.left + sides.right;
+      const h = height + sides.up + sides.down;
+      image = sharp(extended).composite([{ input: label(w, h) }]);
+      break;
+    }
+  }
+  return new Uint8Array(await image.png().toBuffer());
 }
 
 function delayFromEnv(): number | undefined {

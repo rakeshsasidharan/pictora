@@ -239,6 +239,162 @@
     "defaultFor": []
   },
   {
+    "id": "stable-fast-upscale",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-fast-upscale-v1:0",
+    "inferenceProfileId": "us.stability.stable-fast-upscale-v1:0",
+    "displayName": "Stable Fast Upscale",
+    "strengths": ["Fast", "4x upscale"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "upscale-fast": {
+        "costPoints": 3
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-conservative-upscale",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-conservative-upscale-v1:0",
+    "inferenceProfileId": "us.stability.stable-conservative-upscale-v1:0",
+    "displayName": "Stable Conservative Upscale",
+    "strengths": ["Up to 4K", "Keeps details"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "upscale-conservative": {
+        "costPoints": 40
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-creative-upscale",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-creative-upscale-v1:0",
+    "inferenceProfileId": "us.stability.stable-creative-upscale-v1:0",
+    "displayName": "Stable Creative Upscale",
+    "strengths": ["Up to 4K", "Adds detail"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "upscale-creative": {
+        "costPoints": 60
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-image-remove-background",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-image-remove-background-v1:0",
+    "inferenceProfileId": "us.stability.stable-image-remove-background-v1:0",
+    "displayName": "Stable Image Remove Background",
+    "strengths": ["Transparent PNG"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "remove-background": {
+        "costPoints": 7
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-image-erase-object",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-image-erase-object-v1:0",
+    "inferenceProfileId": "us.stability.stable-image-erase-object-v1:0",
+    "displayName": "Stable Image Erase Object",
+    "strengths": ["Removes masked objects"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "erase": {
+        "costPoints": 7
+      }
+    },
+    "defaultFor": []
+  },
+  {
+    "id": "stable-outpaint",
+    "provider": "bedrock",
+    "providerModelId": "stability.stable-outpaint-v1:0",
+    "inferenceProfileId": "us.stability.stable-outpaint-v1:0",
+    "displayName": "Stable Outpaint",
+    "strengths": ["Extends the canvas"],
+    "enabled": true,
+    "environments": ["dev", "prod"],
+    "capabilities": {
+      "generate": false,
+      "edit": false,
+      "transparentBackground": false,
+      "negativePrompt": false,
+      "seed": false,
+      "referenceImages": 0,
+      "aspects": []
+    },
+    "qualities": {},
+    "tools": {
+      "outpaint": {
+        "costPoints": 6
+      }
+    },
+    "defaultFor": []
+  },
+  {
     "id": "mock",
     "provider": "mock",
     "providerModelId": "mock",
@@ -268,6 +424,26 @@
       "high": {
         "providerParams": {},
         "costPoints": 3
+      }
+    },
+    "tools": {
+      "upscale-fast": {
+        "costPoints": 1
+      },
+      "upscale-conservative": {
+        "costPoints": 1
+      },
+      "upscale-creative": {
+        "costPoints": 1
+      },
+      "remove-background": {
+        "costPoints": 1
+      },
+      "erase": {
+        "costPoints": 1
+      },
+      "outpaint": {
+        "costPoints": 1
       }
     },
     "defaultFor": []

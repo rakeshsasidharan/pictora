@@ -1,4 +1,9 @@
-import { DEFAULT_EDIT_MODEL_ID, MAX_REFERENCE_IMAGES, type Quality } from '@pictora/core';
+import {
+  DEFAULT_EDIT_MODEL_ID,
+  MAX_REFERENCE_IMAGES,
+  TOOL_NAMES,
+  type Quality,
+} from '@pictora/core';
 import { DEFAULT_QUALITY, altTextFor } from './generate_options';
 import type { ImageVersionBody } from './images';
 import type { PublicModel } from './models_response';
@@ -30,9 +35,13 @@ export function maxReferences(model: PublicModel): number {
   return Math.min(MAX_REFERENCE_IMAGES, model.capabilities.referenceImages);
 }
 
-/** What a version is, in the version list: the edit instruction, or how the original was made. */
+/** What a version is, in the version list: the edit instruction, the tool, or how the original was made. */
 export function versionDescription(version: ImageVersionBody): string {
   if (version.editInstruction) return version.editInstruction;
+  if (version.tool) {
+    const made = `${TOOL_NAMES[version.tool]} of version ${version.parentVersion ?? 1}`;
+    return version.toolPrompt ? `${made}: ${version.toolPrompt}` : made;
+  }
   if (version.source === 'upload') return 'Uploaded image';
   return version.prompt ?? 'Original image';
 }

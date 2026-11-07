@@ -1,4 +1,11 @@
-import { ASPECT_RATIOS, centreCropSize, type Aspect, type Size } from '@pictora/core';
+import {
+  ASPECT_RATIOS,
+  centreCropSize,
+  fitToolInput,
+  type Aspect,
+  type Size,
+  type ToolId,
+} from '@pictora/core';
 import sharp, { type OutputInfo } from 'sharp';
 
 /** Gallery thumbnails: 512 px on the longest side, WebP (tech design 9). */
@@ -140,4 +147,48 @@ export async function moderationCopy(bytes: Uint8Array): Promise<Uint8Array> {
     .jpeg({ quality: MODERATION_COPY_JPEG_QUALITY })
     .toBuffer();
   return new Uint8Array(copy);
+}
+
+/** The version can't be used with the tool: too small, or too narrow. The message is for the user. */
+export class ToolInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolInputError';
+  }
+}
+
+/**
+ * The image a tool is sent (P1 Image tools): the version's PNG, scaled down (never up) to fit the tool's
+ * largest side and pixel count (`fitToolInput`). An image already within the limits is passed through as is.
+ * Throws `ToolInputError` for an image the tool can't take.
+ */
+export async function prepareToolImage(
+  toolId: ToolId,
+  bytes: Uint8Array,
+): Promise<NormalisedImage> {
+  const size = await dimensions(bytes);
+  const fit = fitToolInput(toolId, size);
+  if (!fit.ok) throw new ToolInputError(fit.problem);
+  if (fit.size.width === size.width && fit.size.height === size.height) return normalisePng(bytes);
+  const { data, info } = await sharp(bytes)
+    .resize(fit.size.width, fit.size.height, { fit: 'fill' })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+  return { png: new Uint8Array(data), width: info.width, height: info.height };
+}
+
+/**
+ * An erase mask as Stability takes it: a black and white PNG at the image's size, where white is erased and
+ * black kept. The user's drawing is resized to the image, flattened onto black (transparent is kept), turned
+ * to greyscale and thresholded at half brightness, so soft brush edges become a clean mask.
+ */
+export async function prepareMask(mask: Uint8Array, size: Size): Promise<Uint8Array> {
+  const data = await sharp(mask, { limitInputPixels: UPLOAD_MAX_INPUT_PIXELS })
+    .resize(size.width, size.height, { fit: 'fill' })
+    .flatten({ background: '#000000' })
+    .greyscale()
+    .threshold(128)
+    .png()
+    .toBuffer();
+  return new Uint8Array(data);
 }

@@ -1,4 +1,4 @@
-import type { Aspect, ModelConfig, Quality } from '@pictora/core';
+import type { Aspect, ModelConfig, Quality, ToolId } from '@pictora/core';
 
 /** One generate or edit call to a provider (tech design 6.2). */
 export interface ImageRequest {
@@ -32,12 +32,39 @@ export interface ImageResult {
   providerCostCents: number;
 }
 
+/** How far an outpaint extends the image on each side, in pixels. */
+export interface OutpaintSides {
+  left: number;
+  right: number;
+  up: number;
+  down: number;
+}
+
+/** One image tool call (P1 Image tools, tech design 5.5): one image in, one image out. */
+export interface ToolRequest {
+  tool: ToolId;
+  /** The source version as PNG, already scaled down to fit the tool's limits (`prepareToolImage`). */
+  image: Uint8Array;
+  /** What the image shows, for the upscales and outpaint that take one; empty when the user wrote none. */
+  prompt?: string;
+  /** Erase: a black and white PNG at the image's size; white is erased, black kept (`prepareMask`). */
+  mask?: Uint8Array;
+  /** Erase: how far the mask grows at its edges, 0 to 20 px. */
+  growMask?: number;
+  /** Outpaint: how far to extend each side. */
+  outpaint?: OutpaintSides;
+  /** Aborts the call; the worker gives each call 120 s. */
+  signal: AbortSignal;
+}
+
 /**
- * A provider adapter. Adapters return PNGs only, and throw only the typed errors in `errors.ts`.
+ * A provider adapter. Adapters return PNGs only, and throw only the typed errors in `errors.ts`. Adapters that
+ * run image tools (Bedrock, Mock) also implement `tool`.
  */
 export interface ImageProvider {
   generate(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
   edit(model: ModelConfig, req: ImageRequest): Promise<ImageResult>;
+  tool?(model: ModelConfig, req: ToolRequest): Promise<ImageResult>;
 }
 
 /** What a provider batch request carries for one job: a generate request without its abort signal. */

@@ -220,6 +220,7 @@ export type {
   Quality,
   QualityConfig,
   RegistryValidation,
+  ToolConfig,
 } from './registry.js';
 export {
   AUTO_MODEL_ID,
@@ -249,6 +250,7 @@ export {
   qualitySchema,
   reportRequestSchema,
   styleIdSchema,
+  toolJobRequestSchema,
   uploadRequestSchema,
 } from './schemas.js';
 export type {
@@ -261,6 +263,7 @@ export type {
   OnboardingRequest,
   ReferenceKey,
   ReportRequest,
+  ToolJobRequest,
   UploadRequest,
 } from './schemas.js';
 export {
@@ -284,3 +287,24 @@ export {
   suggestedModelId,
 } from './styles.js';
 export type { StyleId, StylePreset } from './styles.js';
+export {
+  DEFAULT_GROW_MASK,
+  IMAGE_TOOLS,
+  MAX_GROW_MASK,
+  MAX_OUTPAINT_PIXELS,
+  MAX_TOOL_PROMPT_LENGTH,
+  TOOL_IDS,
+  TOOL_INPUT_LIMITS,
+  TOOL_NAMES,
+  TOOL_OF,
+  TOOL_PROVIDERS,
+  UPSCALE_MODES,
+  fitToolInput,
+  isToolOnlyModel,
+  pickToolModel,
+  toolCostPoints,
+  toolIdFor,
+  toolTakesPrompt,
+  upscaleToolId,
+} from './tools.js';
+export type { ImageTool, ToolId, ToolInputFit, ToolInputLimits, UpscaleMode } from './tools.js';

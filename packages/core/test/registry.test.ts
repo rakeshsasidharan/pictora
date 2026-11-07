@@ -33,7 +33,7 @@ describe('models.json', () => {
     expect(validateRegistry(seed).errors).toEqual([]);
   });
 
-  it('holds the five P0 models, the three P1 Bedrock models and the dev-only mock', () => {
+  it('holds the five P0 models, the P1 Bedrock models and tools, and the dev-only mock', () => {
     const models = loadSeedRegistry();
     expect(models.map((model) => [model.id, model.provider, model.environments])).toEqual([
       ['gpt-image-2', 'openai', ['dev', 'prod']],
@@ -44,12 +44,74 @@ describe('models.json', () => {
       ['stable-image-core', 'bedrock', ['dev', 'prod']],
       ['sd3.5-large', 'bedrock', ['dev', 'prod']],
       ['stable-image-ultra', 'bedrock', ['dev', 'prod']],
+      ['stable-fast-upscale', 'bedrock', ['dev', 'prod']],
+      ['stable-conservative-upscale', 'bedrock', ['dev', 'prod']],
+      ['stable-creative-upscale', 'bedrock', ['dev', 'prod']],
+      ['stable-image-remove-background', 'bedrock', ['dev', 'prod']],
+      ['stable-image-erase-object', 'bedrock', ['dev', 'prod']],
+      ['stable-outpaint', 'bedrock', ['dev', 'prod']],
       ['mock', 'mock', ['dev']],
     ]);
   });
 
+  it('lists the Stability edit tools by model ID, each through its us. inference profile (#35)', () => {
+    const tools = loadSeedRegistry().filter((model) => model.tools);
+    expect(
+      tools.map((model) => [
+        model.id,
+        model.providerModelId,
+        model.inferenceProfileId,
+        model.tools,
+      ]),
+    ).toEqual([
+      [
+        'stable-fast-upscale',
+        'stability.stable-fast-upscale-v1:0',
+        'us.stability.stable-fast-upscale-v1:0',
+        { 'upscale-fast': { costPoints: 3 } },
+      ],
+      [
+        'stable-conservative-upscale',
+        'stability.stable-conservative-upscale-v1:0',
+        'us.stability.stable-conservative-upscale-v1:0',
+        { 'upscale-conservative': { costPoints: 40 } },
+      ],
+      [
+        'stable-creative-upscale',
+        'stability.stable-creative-upscale-v1:0',
+        'us.stability.stable-creative-upscale-v1:0',
+        { 'upscale-creative': { costPoints: 60 } },
+      ],
+      [
+        'stable-image-remove-background',
+        'stability.stable-image-remove-background-v1:0',
+        'us.stability.stable-image-remove-background-v1:0',
+        { 'remove-background': { costPoints: 7 } },
+      ],
+      [
+        'stable-image-erase-object',
+        'stability.stable-image-erase-object-v1:0',
+        'us.stability.stable-image-erase-object-v1:0',
+        { erase: { costPoints: 7 } },
+      ],
+      [
+        'stable-outpaint',
+        'stability.stable-outpaint-v1:0',
+        'us.stability.stable-outpaint-v1:0',
+        { outpaint: { costPoints: 6 } },
+      ],
+      ['mock', 'mock', undefined, expect.objectContaining({ erase: { costPoints: 1 } })],
+    ]);
+    for (const model of tools.filter((tool) => tool.provider === 'bedrock')) {
+      expect(model.capabilities).toMatchObject({ generate: false, edit: false, aspects: [] });
+      expect(model.qualities).toEqual({});
+    }
+  });
+
   it('lists the Stability models on Bedrock by their Bedrock model IDs, for generating only', () => {
-    const bedrock = loadSeedRegistry().filter((model) => model.provider === 'bedrock');
+    const bedrock = loadSeedRegistry().filter(
+      (model) => model.provider === 'bedrock' && !model.tools,
+    );
     expect(bedrock.map((model) => model.providerModelId)).toEqual([
       'stability.stable-image-core-v1:1',
       'stability.sd3-5-large-v1:0',
@@ -174,9 +236,55 @@ describe('validateRegistry', () => {
     const models = seedCopy();
     const mock = entry(models, 'mock');
     mock.capabilities = { ...(mock.capabilities as object), aspects: [] };
+    expect(validateRegistry(models).errors).toEqual(['Model mock: lists no aspects']);
+  });
+
+  it('accepts a model that only runs tools, with no aspects or qualities', () => {
+    const models = seedCopy();
+    expect(entry(models, 'stable-outpaint').qualities).toEqual({});
+    expect(validateRegistry(models).errors).toEqual([]);
+  });
+
+  it('reports a model that neither makes images nor runs a tool', () => {
+    const models = seedCopy();
+    delete entry(models, 'stable-outpaint').tools;
     expect(validateRegistry(models).errors).toEqual([
-      expect.stringMatching(/^Model mock: capabilities\.aspects: /),
+      'Model stable-outpaint: supports neither generate, edit nor any tool',
     ]);
+  });
+
+  it('reports a tool-only model with qualities or style defaults', () => {
+    const models = seedCopy();
+    entry(models, 'stable-outpaint').defaultFor = ['anime'];
+    expect(validateRegistry(models).errors).toEqual(
+      expect.arrayContaining([
+        'Model stable-outpaint: only runs tools, so it takes no qualities or style defaults',
+      ]),
+    );
+  });
+
+  it('reports tools on a provider that runs none, and an unknown tool', () => {
+    const models = seedCopy();
+    entry(models, 'gpt-image-2').tools = { erase: { costPoints: 7 } };
+    entry(models, 'stable-outpaint').tools = { blur: { costPoints: 1 } };
+    expect(validateRegistry(models).errors).toEqual(
+      expect.arrayContaining([
+        'Model gpt-image-2: openai runs no image tools',
+        expect.stringMatching(/^Model stable-outpaint: tools/),
+      ]),
+    );
+  });
+
+  it('reports an inference profile on a model outside Bedrock, or one outside the us. profiles', () => {
+    const models = seedCopy();
+    entry(models, 'gpt-image-2').inferenceProfileId = 'us.openai.gpt-image-2';
+    entry(models, 'stable-outpaint').inferenceProfileId = 'eu.stability.stable-outpaint-v1:0';
+    expect(validateRegistry(models).errors).toEqual(
+      expect.arrayContaining([
+        'Model gpt-image-2: only Bedrock models have inference profiles',
+        expect.stringMatching(/^Model stable-outpaint: inferenceProfileId: /),
+      ]),
+    );
   });
 
   it('reports an aspect listed twice', () => {
@@ -245,7 +353,7 @@ describe('validateRegistry', () => {
   it('labels entries without an id by their index', () => {
     const models = seedCopy();
     models.push({ provider: 'openai' });
-    expect(validateRegistry(models).errors[0]).toMatch(/^Model at index 9: /);
+    expect(validateRegistry(models).errors[0]).toMatch(/^Model at index 15: /);
   });
 });
 

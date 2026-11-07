@@ -152,6 +152,11 @@ export function premiumPausedText(until: string): string {
   return `Premium models are paused until ${PAUSE_END_FORMAT.format(new Date(until))} because this month's budget is used up. Draft quality still works.`;
 }
 
+/** Why the image tools are paused, while the platform spend cap pauses premium qualities (tech design 5.5). */
+export function toolsPausedText(until: string): string {
+  return `Image tools are paused until ${PAUSE_END_FORMAT.format(new Date(until))} because this month's budget is used up.`;
+}
+
 /** The public models as `routeModel` reads them: costs by quality instead of a list. */
 export function routableModels(models: readonly PublicModel[]): RoutableModel[] {
   return models.map((model) => ({

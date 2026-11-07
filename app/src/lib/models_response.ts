@@ -1,6 +1,7 @@
 import {
   QUALITIES,
   STYLE_PRESETS,
+  isToolOnlyModel,
   pausedQuality,
   suggestedModelId,
   type ModelConfig,
@@ -39,33 +40,38 @@ export interface ModelsResponse {
   premiumPausedUntil?: string;
 }
 
-/** The models as the UI sees them; during a premium pause, every quality but draft is marked paused. */
+/**
+ * The models as the UI sees them; during a premium pause, every quality but draft is marked paused. Models that
+ * only run image tools are left out: the image view offers the tools on their own (`toolCatalog`).
+ */
 export function modelsResponse(
   enabled: readonly ModelConfig[],
   pause?: PremiumPause,
 ): ModelsResponse {
   return {
     ...(pause ? { premiumPausedUntil: pause.until.toISOString() } : {}),
-    models: enabled.map((model) => ({
-      id: model.id,
-      provider: model.provider,
-      displayName: model.displayName,
-      strengths: model.strengths,
-      capabilities: model.capabilities,
-      qualities: QUALITIES.flatMap((quality) => {
-        const config = model.qualities[quality];
-        if (!config) return [];
-        return [
-          {
-            quality,
-            costPoints: config.costPoints,
-            ...(pause && pausedQuality(quality) ? { paused: true as const } : {}),
-          },
-        ];
-      }),
-      defaultFor: model.defaultFor,
-      ...(model.eolDate ? { eolDate: model.eolDate } : {}),
-    })),
+    models: enabled
+      .filter((model) => !isToolOnlyModel(model))
+      .map((model) => ({
+        id: model.id,
+        provider: model.provider,
+        displayName: model.displayName,
+        strengths: model.strengths,
+        capabilities: model.capabilities,
+        qualities: QUALITIES.flatMap((quality) => {
+          const config = model.qualities[quality];
+          if (!config) return [];
+          return [
+            {
+              quality,
+              costPoints: config.costPoints,
+              ...(pause && pausedQuality(quality) ? { paused: true as const } : {}),
+            },
+          ];
+        }),
+        defaultFor: model.defaultFor,
+        ...(model.eolDate ? { eolDate: model.eolDate } : {}),
+      })),
     styles: STYLE_PRESETS.map((preset) => ({
       id: preset.id,
       name: preset.name,

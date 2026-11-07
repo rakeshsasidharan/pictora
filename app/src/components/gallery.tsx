@@ -15,6 +15,7 @@ import { BATCH_POLL_INTERVAL_MS, POLL_INTERVAL_MS, altTextFor } from '../lib/gen
 import type { ActiveJobBody, GalleryImageBody, GalleryPageBody } from '../lib/images';
 import type { JobStatusBody } from '../lib/jobs';
 import { GENERATE_PATH, galleryImagePath } from '../lib/site';
+import type { ToolCatalog } from '../lib/tool_catalog';
 import { useReturnFocus } from '../lib/use_return_focus';
 import { ImageDetail } from './image_detail';
 
@@ -30,6 +31,8 @@ const SKELETON_TILES = 8;
 export interface GalleryProps {
   /** Display names of every model in the registry, for the detail view. */
   modelNames: Readonly<Record<string, string>>;
+  /** The image tools the detail view offers (tech design 5.5). */
+  tools?: ToolCatalog;
   /** How often running jobs are checked; tests shorten it. */
   pollIntervalMs?: number;
   /** How often scheduled batch jobs are checked when nothing else is running; tests shorten it. */
@@ -68,6 +71,7 @@ function merge(current: Tile[], fresh: GalleryImageBody[]): Tile[] {
  */
 export function Gallery({
   modelNames,
+  tools,
   pollIntervalMs = POLL_INTERVAL_MS,
   batchPollIntervalMs = BATCH_POLL_INTERVAL_MS,
 }: GalleryProps) {
@@ -309,6 +313,7 @@ export function Gallery({
         <DetailModal
           imageId={open}
           modelNames={modelNames}
+          tools={tools}
           onDeleted={deleted}
           onClose={() => setOpen(undefined)}
         />
@@ -324,11 +329,13 @@ export function Gallery({
 function DetailModal({
   imageId,
   modelNames,
+  tools,
   onDeleted,
   onClose,
 }: {
   imageId: string;
   modelNames: Readonly<Record<string, string>>;
+  tools?: ToolCatalog;
   onDeleted: (imageId: string) => void;
   onClose: () => void;
 }) {
@@ -343,7 +350,13 @@ function DetailModal({
         className="flex h-[min(calc(100svh-2rem),52rem)] flex-col overflow-y-auto sm:max-w-5xl"
       >
         <DialogTitle className="sr-only">Image details</DialogTitle>
-        <ImageDetail imageId={imageId} modelNames={modelNames} onDeleted={onDeleted} fill />
+        <ImageDetail
+          imageId={imageId}
+          modelNames={modelNames}
+          tools={tools}
+          onDeleted={onDeleted}
+          fill
+        />
       </DialogContent>
     </Dialog>
   );

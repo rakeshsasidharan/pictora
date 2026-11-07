@@ -88,3 +88,70 @@ describe('MockProvider', () => {
     expect(isPng(result.images[0]!.png)).toBe(true);
   });
 });
+
+describe('MockProvider.tool', () => {
+  const signal = new AbortController().signal;
+
+  it('upscales by doubling each side, at the tool price', async () => {
+    const image = await solidImage('png', 300, 200);
+    const result = await provider.tool(mock, { tool: 'upscale-fast', image, signal });
+    expect(result.images[0]).toMatchObject({ width: 600, height: 400 });
+    expect(result.providerCostCents).toBe(mock.tools?.['upscale-fast']?.costPoints);
+  });
+
+  it('removes the background into a PNG with transparency', async () => {
+    const image = await solidImage('png', 200, 200);
+    const result = await provider.tool(mock, { tool: 'remove-background', image, signal });
+    const { data, info } = await sharp(result.images[0]!.png)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect(info.channels).toBe(4);
+    expect(data[3]).toBe(0);
+    const centre = (100 * 200 + 100) * 4;
+    expect(data[centre + 3]).toBe(255);
+  });
+
+  it('extends the canvas for an outpaint', async () => {
+    const image = await solidImage('png', 200, 100);
+    const result = await provider.tool(mock, {
+      tool: 'outpaint',
+      image,
+      outpaint: { left: 50, right: 0, up: 0, down: 25 },
+      signal,
+    });
+    expect(result.images[0]).toMatchObject({ width: 250, height: 125 });
+  });
+
+  it('greys out the masked area for an erase, at the same size', async () => {
+    const image = await solidImage('png', 100, 100);
+    const mask = new Uint8Array(
+      await sharp({ create: { width: 100, height: 100, channels: 3, background: '#ffffff' } })
+        .png()
+        .toBuffer(),
+    );
+    const result = await provider.tool(mock, { tool: 'erase', image, mask, signal });
+    expect(result.images[0]).toMatchObject({ width: 100, height: 100 });
+    const { data } = await sharp(result.images[0]!.png).raw().toBuffer({ resolveWithObject: true });
+    expect([data[0], data[1], data[2]]).toEqual([128, 128, 128]);
+    await expect(provider.tool(mock, { tool: 'erase', image, signal })).rejects.toThrow(
+      ProviderError,
+    );
+  });
+
+  it('raises the error a test prompt asks for', async () => {
+    const image = await solidImage('png', 100, 100);
+    await expect(
+      provider.tool(mock, { tool: 'upscale-creative', image, prompt: 'x __block__', signal }),
+    ).rejects.toBeInstanceOf(ProviderSafetyError);
+    await expect(
+      provider.tool(mock, { tool: 'upscale-creative', image, prompt: '__fail__', signal }),
+    ).rejects.toBeInstanceOf(ProviderError);
+  });
+
+  it('refuses a tool on a model that runs none', async () => {
+    const image = await solidImage('png', 100, 100);
+    await expect(
+      provider.tool(seedModel('gpt-image-2'), { tool: 'upscale-fast', image, signal }),
+    ).rejects.toThrow(/does not run upscale-fast/);
+  });
+});

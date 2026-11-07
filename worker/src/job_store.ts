@@ -27,6 +27,7 @@ import {
   spendSk,
   statsModelSk,
   statsPk,
+  toolIdFor,
   ttlAfter,
   usageRankSk,
   usageSk,
@@ -45,6 +46,7 @@ import {
   type JobItem,
   type ModlogItem,
   type PointsSettlement,
+  type ToolJobRequest,
 } from '@pictora/core';
 import { metricsCountsUpdate } from '@pictora/core/metrics-store';
 import { log } from './log.js';
@@ -318,7 +320,8 @@ export async function claimVersion(
 export interface CompleteEditInput {
   /** The running job, as `claimJob` returned it. */
   job: JobItem;
-  request: EditJobRequest;
+  /** An edit, or an image tool (tech design 5.5), whose result is recorded the same way. */
+  request: EditJobRequest | ToolJobRequest;
   /** The new version, stored in S3 under the number `claimVersion` gave it. */
   image: StoredImage & { version: number };
   /** The aspect the provider was asked for, nearest the parent's shape. */
@@ -326,6 +329,29 @@ export interface CompleteEditInput {
   settlement: PointsSettlement;
   providerCostCents: number;
   now: Date;
+}
+
+/**
+ * What a new version records about how it was made: an edit's parent, instruction, quality and reference count,
+ * or a tool's parent, tool id and prompt (a removed background is marked transparent).
+ */
+function versionSource(request: EditJobRequest | ToolJobRequest): Record<string, unknown> {
+  if (request.type === 'edit') {
+    return {
+      parentVersion: request.parentVersion,
+      editInstruction: request.instruction,
+      quality: request.quality,
+      ...(request.referenceKeys?.length ? { referenceCount: request.referenceKeys.length } : {}),
+    };
+  }
+  const tool = toolIdFor(request);
+  const prompt = 'prompt' in request.params ? request.params.prompt?.trim() : undefined;
+  return {
+    parentVersion: request.version,
+    tool,
+    ...(prompt ? { toolPrompt: prompt } : {}),
+    ...(tool === 'remove-background' ? { transparentBackground: true } : {}),
+  };
 }
 
 /** How recording an edit ended: recorded, the job swept first, or the image deleted while the job ran. */
@@ -396,14 +422,9 @@ export async function completeEditJob(
           thumbKey: image.thumbKey,
           width: image.width,
           height: image.height,
-          parentVersion: request.parentVersion,
-          editInstruction: request.instruction,
+          ...versionSource(request),
           modelId: job.modelId,
-          quality: request.quality,
           aspect: input.aspect,
-          ...(request.referenceKeys?.length
-            ? { referenceCount: request.referenceKeys.length }
-            : {}),
           jobId: job.jobId,
           costPoints: image.costPoints,
           createdAt: at,

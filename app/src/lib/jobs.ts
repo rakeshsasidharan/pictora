@@ -8,17 +8,22 @@ import {
   SECONDS_PER_DAY,
   activeJobsGsiPk,
   createJobRequestSchema,
+  TOOL_NAMES,
   deliveryPoints,
   estimatePoints,
+  fitToolInput,
   jobError,
   jobPk,
   modelsForGroups,
   nearestAspect,
   parseReferenceKey,
   pausedQuality,
+  pickToolModel,
   promptAsksForText,
   rateLimitPerMinute,
   routeModel,
+  toolCostPoints,
+  toolIdFor,
   ttlAfter,
   userPk,
   utcDate,
@@ -29,9 +34,12 @@ import {
   type JobItem,
   type JobStatus,
   type ModelConfig,
+  type PremiumPause,
   type Provider,
+  type ToolJobRequest,
 } from '@pictora/core';
 import type { EmitMetrics } from '@pictora/core/observability';
+import { toolsPausedText } from './generate_options';
 import { failQueuedJob, readJob, readUsedPoints, reserveJob } from './job_store';
 import { premiumPausedMessage, readPremiumPause } from './platform_spend';
 import {
@@ -123,9 +131,10 @@ const COOLDOWN_END_FORMAT = new Intl.DateTimeFormat('en-GB', {
 });
 
 /**
- * `POST /api/jobs` (tech design 5.1, 5.3): validates the request, checks it against the model, estimates its
+ * `POST /api/jobs` (tech design 5.1, 5.3, 5.5): validates the request, checks it against the model, estimates its
  * points, reserves them with the limits in one transaction, and queues the job. Answers 202 with the job ID. An
- * edit must start from a version of the caller's own image, and costs one image at the chosen quality.
+ * edit must start from a version of the caller's own image, and costs one image at the chosen quality. An image
+ * tool runs on a version of the caller's own image, on the model that runs the tool, at the tool's price.
  */
 export async function createJob(
   deps: JobsDeps,
@@ -146,41 +155,56 @@ export async function createJob(
     request = routed;
   }
 
-  // The Mock model is offered to the testers group only; for anyone else it doesn't exist.
-  const model = modelsForGroups(await deps.models(), session.groups).find(
-    (candidate) => candidate.id === request.modelId,
-  );
-  if (!model) {
-    return apiError('unknown_model', "That model isn't available. Pick another model.");
-  }
-  if (!model.enabled || !deps.hasQueue(model.provider)) {
-    return apiError(
-      'model_disabled',
-      `${model.displayName} is switched off right now. Pick another model.`,
-    );
-  }
+  let model: ModelConfig;
   let points: number;
-  if (request.type === 'edit') {
-    const unsupported = unsupportedEditOption(model, request);
-    if (unsupported) return apiError('unsupported_option', unsupported);
-    const aspect = await editAspect(deps, session, request, model);
-    if (!aspect) return apiError('not_found', 'Image not found.');
-    points = estimatePoints(model, request.quality, aspect, 1);
+  if (request.type === 'tool') {
+    const resolved = await resolveTool(deps, session, request);
+    if ('status' in resolved) return resolved;
+    ({ model, points } = resolved);
   } else {
-    const unsupported = unsupportedOption(model, request);
-    if (unsupported) return apiError('unsupported_option', unsupported);
-    points = deliveryPoints(
-      estimatePoints(model, request.quality, request.aspect, request.count),
-      request.delivery,
+    const { modelId } = request;
+    // The Mock model is offered to the testers group only; for anyone else it doesn't exist.
+    const found = modelsForGroups(await deps.models(), session.groups).find(
+      (candidate) => candidate.id === modelId,
     );
+    if (!found) {
+      return apiError('unknown_model', "That model isn't available. Pick another model.");
+    }
+    model = found;
+    if (!model.enabled || !deps.hasQueue(model.provider)) {
+      return apiError(
+        'model_disabled',
+        `${model.displayName} is switched off right now. Pick another model.`,
+      );
+    }
+    if (request.type === 'edit') {
+      const unsupported = unsupportedEditOption(model, request);
+      if (unsupported) return apiError('unsupported_option', unsupported);
+      const aspect = await editAspect(deps, session, request, model);
+      if (!aspect) return apiError('not_found', 'Image not found.');
+      points = estimatePoints(model, request.quality, aspect, 1);
+    } else {
+      const unsupported = unsupportedOption(model, request);
+      if (unsupported) return apiError('unsupported_option', unsupported);
+      points = deliveryPoints(
+        estimatePoints(model, request.quality, request.aspect, request.count),
+        request.delivery,
+      );
+    }
   }
   // A batch job waits for the batch submitter instead of a provider queue (tech design 5.4).
   const batch = request.type === 'generate' && request.delivery === 'batch';
 
   const now = deps.now();
-  if (pausedQuality(request.quality)) {
+  // Image tools have no draft quality, so a premium pause stops them all (tech design 5.5).
+  if (request.type === 'tool' || pausedQuality(request.quality)) {
     const pause = await readPremiumPause(deps.client, deps.tableName, deps.spendCapCents, now);
-    if (pause) return apiError('premium_paused', premiumPausedMessage(pause));
+    if (pause) {
+      return apiError(
+        'premium_paused',
+        request.type === 'tool' ? toolsPausedMessage(pause) : premiumPausedMessage(pause),
+      );
+    }
   }
   const profile = await ensureProfile(deps.client, deps.tableName, session, now);
   const blocked = profileRefusal(profile, now);
@@ -314,6 +338,49 @@ async function routeAuto(
     ...(avoid !== undefined && model.capabilities.negativePrompt ? { avoid } : {}),
     ...(seed !== undefined && model.capabilities.seed ? { seed } : {}),
   };
+}
+
+/**
+ * Resolves an image tool request (tech design 5.5): the model that runs the tool for this user (`pickToolModel`,
+ * among the enabled models with a queue), and its price. The source version, and an erase's mask upload, must
+ * be the caller's own (404 otherwise, so image IDs can't be probed); a version the tool can't take, too small
+ * or too narrow, is refused with the reason.
+ */
+async function resolveTool(
+  deps: JobsDeps,
+  session: Session,
+  request: ToolJobRequest,
+): Promise<{ model: ModelConfig; points: number } | ApiResult> {
+  const toolId = toolIdFor(request);
+  const name = TOOL_NAMES[toolId];
+  const available = modelsForGroups(await deps.models(), session.groups).filter(
+    (candidate) => candidate.enabled && deps.hasQueue(candidate.provider),
+  );
+  const model = pickToolModel(available, toolId, session.groups);
+  const points = model && toolCostPoints(model, toolId);
+  if (!model || points === undefined) {
+    return apiError('model_disabled', `${name} is switched off right now. Please try again later.`);
+  }
+  const source = await readVersion(deps, session.sub, request.imageId, request.version);
+  if (!source) return apiError('not_found', 'Image not found.');
+  if (request.tool === 'erase') {
+    const mask = parseReferenceKey(request.params.maskKey);
+    if (mask?.kind !== 'upload' || mask.sub !== session.sub) {
+      return apiError('not_found', 'Image not found.');
+    }
+    const size = await deps.objectSize(request.params.maskKey);
+    if (size === undefined || size > MAX_UPLOAD_BYTES) {
+      return apiError('not_found', 'Image not found.');
+    }
+  }
+  const fit = fitToolInput(toolId, source);
+  if (!fit.ok) return apiError('unsupported_option', fit.problem);
+  return { model, points };
+}
+
+/** The user-facing message while image tools are paused with the premium qualities. */
+export function toolsPausedMessage(pause: PremiumPause): string {
+  return toolsPausedText(pause.until.toISOString());
 }
 
 /** Why the model can't take this request, in words for the user; undefined when it can. */

@@ -732,7 +732,7 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Data 1`] = `
       "DeletionPolicy": "Delete",
       "Properties": {
         "GitSha": "local",
-        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"stable-image-core","provider":"bedrock","providerModelId":"stability.stable-image-core-v1:1","displayName":"Stable Image Core","strengths":["Fast","Low cost"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":4}},"defaultFor":[]},{"id":"sd3.5-large","provider":"bedrock","providerModelId":"stability.sd3-5-large-v1:0","displayName":"SD 3.5 Large","strengths":["Balanced","Broad styles","Negative prompts"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{},"costPoints":8}},"defaultFor":[]},{"id":"stable-image-ultra","provider":"bedrock","providerModelId":"stability.stable-image-ultra-v1:1","displayName":"Stable Image Ultra","strengths":["Photorealistic detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"high":{"providerParams":{},"costPoints":14}},"defaultFor":[]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"defaultFor":[]}]",
+        "Seed": "[{"id":"gpt-image-2","provider":"openai","providerModelId":"gpt-image-2","displayName":"GPT Image 2","strengths":["Follows prompts closely","Readable text in images","Precise edits"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1},"standard":{"providerParams":{"quality":"medium"},"costPoints":6},"high":{"providerParams":{"quality":"high"},"costPoints":22}},"defaultFor":["line-art","none"]},{"id":"gpt-image-1-mini","provider":"openai","providerModelId":"gpt-image-1-mini","displayName":"GPT Image 1 Mini","strengths":["Very cheap drafts","Quick previews","Transparent backgrounds"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"quality":"low"},"costPoints":1}},"defaultFor":[]},{"id":"gemini-3.1-flash-image","provider":"gemini","providerModelId":"gemini-3.1-flash-image","displayName":"Gemini 3.1 Flash Image","strengths":["Fast","Conversational editing","Consistent characters","Artistic styles"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"1K"},"costPoints":7},"high":{"providerParams":{"imageSize":"2K"},"costPoints":11}},"defaultFor":["digital-art","anime","watercolour","oil-painting","3d-render"]},{"id":"gemini-3.1-flash-lite-image","provider":"gemini","providerModelId":"gemini-3.1-flash-lite-image","displayName":"Gemini 3.1 Flash Lite Image","strengths":["Cheapest Gemini option","Budget generation"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{"imageSize":"1K"},"costPoints":4}},"defaultFor":[]},{"id":"gemini-3-pro-image","provider":"gemini","providerModelId":"gemini-3-pro-image","displayName":"Gemini 3 Pro Image","strengths":["Highest-fidelity Gemini","Photorealism","Complex scenes","Up to 4K"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":true,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"standard":{"providerParams":{"imageSize":"2K"},"costPoints":14},"high":{"providerParams":{"imageSize":"4K"},"costPoints":24}},"defaultFor":["photorealistic","cinematic"]},{"id":"stable-image-core","provider":"bedrock","providerModelId":"stability.stable-image-core-v1:1","displayName":"Stable Image Core","strengths":["Fast","Low cost"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"draft":{"providerParams":{},"costPoints":4}},"defaultFor":[]},{"id":"sd3.5-large","provider":"bedrock","providerModelId":"stability.sd3-5-large-v1:0","displayName":"SD 3.5 Large","strengths":["Balanced","Broad styles","Negative prompts"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"standard":{"providerParams":{},"costPoints":8}},"defaultFor":[]},{"id":"stable-image-ultra","provider":"bedrock","providerModelId":"stability.stable-image-ultra-v1:1","displayName":"Stable Image Ultra","strengths":["Photorealistic detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":true,"edit":false,"transparentBackground":false,"negativePrompt":true,"seed":true,"referenceImages":0,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"]},"qualities":{"high":{"providerParams":{},"costPoints":14}},"defaultFor":[]},{"id":"stable-fast-upscale","provider":"bedrock","providerModelId":"stability.stable-fast-upscale-v1:0","inferenceProfileId":"us.stability.stable-fast-upscale-v1:0","displayName":"Stable Fast Upscale","strengths":["Fast","4x upscale"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"upscale-fast":{"costPoints":3}},"defaultFor":[]},{"id":"stable-conservative-upscale","provider":"bedrock","providerModelId":"stability.stable-conservative-upscale-v1:0","inferenceProfileId":"us.stability.stable-conservative-upscale-v1:0","displayName":"Stable Conservative Upscale","strengths":["Up to 4K","Keeps details"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"upscale-conservative":{"costPoints":40}},"defaultFor":[]},{"id":"stable-creative-upscale","provider":"bedrock","providerModelId":"stability.stable-creative-upscale-v1:0","inferenceProfileId":"us.stability.stable-creative-upscale-v1:0","displayName":"Stable Creative Upscale","strengths":["Up to 4K","Adds detail"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"upscale-creative":{"costPoints":60}},"defaultFor":[]},{"id":"stable-image-remove-background","provider":"bedrock","providerModelId":"stability.stable-image-remove-background-v1:0","inferenceProfileId":"us.stability.stable-image-remove-background-v1:0","displayName":"Stable Image Remove Background","strengths":["Transparent PNG"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"remove-background":{"costPoints":7}},"defaultFor":[]},{"id":"stable-image-erase-object","provider":"bedrock","providerModelId":"stability.stable-image-erase-object-v1:0","inferenceProfileId":"us.stability.stable-image-erase-object-v1:0","displayName":"Stable Image Erase Object","strengths":["Removes masked objects"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"erase":{"costPoints":7}},"defaultFor":[]},{"id":"stable-outpaint","provider":"bedrock","providerModelId":"stability.stable-outpaint-v1:0","inferenceProfileId":"us.stability.stable-outpaint-v1:0","displayName":"Stable Outpaint","strengths":["Extends the canvas"],"enabled":true,"environments":["dev","prod"],"capabilities":{"generate":false,"edit":false,"transparentBackground":false,"negativePrompt":false,"seed":false,"referenceImages":0,"aspects":[]},"qualities":{},"tools":{"outpaint":{"costPoints":6}},"defaultFor":[]},{"id":"mock","provider":"mock","providerModelId":"mock","displayName":"Mock (dev only)","strengths":["No provider spend","For tests"],"enabled":true,"environments":["dev"],"capabilities":{"generate":true,"edit":true,"transparentBackground":true,"negativePrompt":true,"seed":true,"referenceImages":3,"aspects":["1:1","4:5","3:2","2:3","16:9","9:16"],"batch":true},"qualities":{"draft":{"providerParams":{},"costPoints":1},"standard":{"providerParams":{},"costPoints":2},"high":{"providerParams":{},"costPoints":3}},"tools":{"upscale-fast":{"costPoints":1},"upscale-conservative":{"costPoints":1},"upscale-creative":{"costPoints":1},"remove-background":{"costPoints":1},"erase":{"costPoints":1},"outpaint":{"costPoints":1}},"defaultFor":[]}]",
         "ServiceToken": {
           "Fn::GetAtt": [
             "RegistrySeedProviderframeworkonEventFBCF8235",
@@ -3480,9 +3480,99 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               "Action": "bedrock:InvokeModel",
               "Effect": "Allow",
               "Resource": [
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-conservative-upscale-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-creative-upscale-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-fast-upscale-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-erase-object-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-remove-background-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-outpaint-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-conservative-upscale-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-creative-upscale-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-fast-upscale-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-image-erase-object-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-image-remove-background-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-outpaint-v1:0",
                 "arn:aws:bedrock:us-west-2::foundation-model/stability.sd3-5-large-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-conservative-upscale-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-creative-upscale-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-fast-upscale-v1:0",
                 "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-core-v1:1",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-erase-object-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-remove-background-v1:0",
                 "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-ultra-v1:1",
+                "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-outpaint-v1:0",
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-conservative-upscale-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-creative-upscale-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-fast-upscale-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-image-erase-object-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-image-remove-background-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-west-2:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.stability.stable-outpaint-v1:0",
+                    ],
+                  ],
+                },
               ],
             },
             {

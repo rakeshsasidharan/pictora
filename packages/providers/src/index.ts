@@ -3,9 +3,10 @@ export {
   BedrockProvider,
   STABILITY_MAX_SEED,
   stabilityRequestBody,
+  stabilityToolBody,
   toBedrockError,
 } from './bedrock.js';
-export type { BedrockProviderOptions, StabilityRequestBody } from './bedrock.js';
+export type { BedrockProviderOptions, StabilityRequestBody, StabilityToolBody } from './bedrock.js';
 export {
   ProviderError,
   ProviderRateLimitError,
@@ -42,7 +43,10 @@ export {
   moderationCopy,
   normalisePng,
   NotAnImageError,
+  prepareMask,
+  prepareToolImage,
   prepareUpload,
+  ToolInputError,
   thumbnail,
   THUMBNAIL_MAX_PX,
   THUMBNAIL_WEBP_QUALITY,
@@ -57,6 +61,7 @@ export {
   MOCK_DEFAULT_DELAY_MS,
   MOCK_FAIL_KEYWORD,
   MOCK_TIMEOUT_KEYWORD,
+  MOCK_UPSCALE_MAX_PX,
   MockProvider,
 } from './mock.js';
 export type { MockProviderOptions } from './mock.js';
@@ -110,4 +115,6 @@ export type {
   ImageProvider,
   ImageRequest,
   ImageResult,
+  OutpaintSides,
+  ToolRequest,
 } from './types.js';
