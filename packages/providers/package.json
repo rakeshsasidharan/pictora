@@ -34,15 +34,15 @@
     "aws-sdk-client-mock": "^4.1.0",
     "msw": "^3.0.3",
     "tsx": "^4.23.15",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock": "^3.1160.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.1160.0",
-    "@aws-sdk/client-secrets-manager": "^3.1160.0",
+    "@aws-sdk/client-bedrock": "^3.1163.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1163.0",
+    "@aws-sdk/client-secrets-manager": "^3.1163.0",
     "@google/genai": "^2.32.0",
     "@pictora/core": "^0.0.0",
-    "openai": "^7.45.1",
+    "openai": "^7.52.0",
     "sharp": "^0.35.5"
   }
 }
