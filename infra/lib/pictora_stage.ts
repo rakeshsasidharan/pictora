@@ -41,6 +41,7 @@ export class PictoraStage extends Stage {
       this.certificate = new CertificateStack(this, 'Certificate', {
         env: { account: this.account, region: CERTIFICATE_REGION },
         crossRegionReferences: true,
+        envName: config.envName,
         domain: config.domain,
         hostedZoneId: config.hostedZoneId,
       });

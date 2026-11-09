@@ -119,6 +119,7 @@ jobs:
   deploy-dev:        # environment: dev; needs resolve
                      # OIDC → pictora-gh-deploy → cdk deploy 'PictoraDev/*'
                      #   -c appImageDigest=… -c workerImageDigest=… -c gitSha=…
+                     # then prunes dev's unused retained certificates
   e2e-dev:           # environment: dev; Playwright against the dev URL
   deploy-prod:       # environment: production (required reviewer); needs e2e-dev
                      # same digests from resolve outputs
@@ -131,7 +132,8 @@ jobs:
 - **Build cache:** `docker/build-push-action` with `cache-from/cache-to: type=gha,scope=<image>`, which keeps rebuilds to about 1–2 minutes.
 - **CDK:** stages `PictoraDev` and `PictoraProd`. Deploy command: `npx cdk deploy '<Stage>/*' --require-approval never --concurrency 3 --outputs-file cdk-outputs.json`. The outputs file gives `e2e-dev` the site URL.
 - **Promotion:** `deploy-prod` uses `needs.resolve.outputs`. Tags are immutable, so the digests `resolve` reads for the commit are exactly the images `build-images` pushed, and one lookup serves both the pipeline and manual runs (a matrix job can't reliably output a value per leg). Nothing is rebuilt, so prod runs exactly what passed e2e in dev.
-- **Scripts:** `.github/scripts/resolve_images.sh` (digest lookup), `deploy_stage.sh` (extract static files from the app image, `cdk deploy`, read `SiteUrl` from the outputs) and `smoke_test.sh` (`/api/health` returns `status: ok` and the expected `sha`, with retries). Deploy jobs check out the commit being deployed, and take the scripts from the workflow's own commit.
+- **Scripts:** `.github/scripts/resolve_images.sh` (digest lookup), `deploy_stage.sh` (extract static files from the app image, `cdk deploy`, read `SiteUrl` from the outputs, then run the certificate cleanup), `prune_certificates.sh` (the certificate cleanup below) and `smoke_test.sh` (`/api/health` returns `status: ok` and the expected `sha`, with retries). Deploy jobs check out the commit being deployed, and take the scripts from the workflow's own commit.
+- **Certificate cleanup:** the `Certificate` stack retains a replaced certificate (tech design 14), so after `cdk deploy` has moved CloudFront to the current one, `deploy_stage.sh` runs `prune_certificates.sh <dev|prod> <CertificateArn output>`. In us-east-1 it deletes only certificates tagged `Project=pictora` and `Stage=<stage being deployed>` whose `InUseBy` is empty and which are not the stage's current certificate. It never touches untagged certificates or other projects' certificates, logs each deletion, and turns every failure (list, describe, delete) into a workflow warning, so it never fails a deploy. A stage without a domain has no `CertificateArn` output, and the cleanup is skipped.
 - **e2e:** `e2e-dev` runs `npm run e2e --workspace=@pictora/e2e` with `E2E_BASE_URL`, `E2E_USER_EMAIL` and `E2E_USER_PASSWORD`, and uploads `e2e/test-results` and `e2e/playwright-report` on failure, kept for 7 days because traces hold the test user's session cookies. It skips with a notice while the workspace has no `e2e` script. The suite refuses to start unless the URL is the dev domain or `localhost`, so it can never run against prod (see `e2e/README.md`). `deploy-dev` also runs the smoke test, so a dev rollback is checked even without e2e.
 - **Approval:** the `production` environment has you as the required reviewer. The run pauses with a "Review deployments" button. Prod waits until you approve, and an unapproved run expires after 30 days.
 - **Version check:** CDK passes `GIT_SHA` to the app Lambda. `/api/health` returns `{ status: 'ok', sha }`, and the smoke test checks it.
@@ -182,9 +184,11 @@ A small CDK stack, `PictoraCicd`, holds everything CI needs. **You deploy it onc
 | --- | --- | --- |
 | `pictora-gh-diff` | `repo:rakeshsasidharan@16108001/pictora@1409752771:pull_request` | Assume the CDK bootstrap **lookup** role (read-only), for `cdk diff` |
 | `pictora-gh-build` | `repo:rakeshsasidharan@16108001/pictora@1409752771:ref:refs/heads/main` | Push and read on `pictora-app` and `pictora-worker` ECR repos only |
-| `pictora-gh-deploy` | `repo:rakeshsasidharan@16108001/pictora@1409752771:environment:dev` or `…:environment:production` | Assume the CDK bootstrap deploy, file-publishing, image-publishing and lookup roles in us-west-2 and us-east-1; read ECR images |
+| `pictora-gh-deploy` | `repo:rakeshsasidharan@16108001/pictora@1409752771:environment:dev` or `…:environment:production` | Assume the CDK bootstrap deploy, file-publishing, image-publishing and lookup roles in us-west-2 and us-east-1; read ECR images; for the certificate cleanup, `acm:ListCertificates` (`*`, the only resource IAM accepts for it), `acm:DescribeCertificate` and `acm:ListTagsForCertificate` on us-east-1 certificates, and `acm:DeleteCertificate` on us-east-1 certificates only when `aws:ResourceTag/Project` is `pictora` |
 
 The repository uses GitHub's immutable OIDC subjects, so `sub` names the owner and repository by their numeric IDs (`owner@id/repo@id`). A renamed or re-created repository with the same name can't assume the roles.
+
+ACM supports the `aws:ResourceTag` condition on certificates, so IAM itself stops the deploy role from deleting any certificate not tagged `Project=pictora`; the cleanup script's stage tag, `InUseBy` and current-certificate checks narrow it further. A change to these permissions takes effect only after `PictoraCicd` is deployed by hand.
 
 All roles require `aud = sts.amazonaws.com`, a 1-hour maximum session, and no inline admin rights. The deploy role is trusted **only from GitHub environments**, and environments accept only `main`, so a feature branch can never deploy.
 

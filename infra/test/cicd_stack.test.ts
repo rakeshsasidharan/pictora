@@ -171,7 +171,11 @@ describe('PictoraCicd stack', () => {
       expect(arn).toMatch(new RegExp(`^arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-`));
     }
 
-    const ecr = statements.filter((statement) => !actions(statement).includes('sts:AssumeRole'));
+    const ecr = statements.filter(
+      (statement) =>
+        !actions(statement).includes('sts:AssumeRole') &&
+        !actions(statement).some((action) => action.startsWith('acm:')),
+    );
     const writes = [
       'ecr:PutImage',
       'ecr:InitiateLayerUpload',
@@ -185,6 +189,35 @@ describe('PictoraCicd stack', () => {
     expect(ecr.flatMap(actions)).toEqual(
       expect.arrayContaining(['ecr:BatchGetImage', 'ecr:DescribeImages']),
     );
+  });
+
+  it('lets the deploy role list and read certificates, and delete only Pictora-tagged ones (#180)', () => {
+    const acm = policyStatements('pictora-gh-deploy').filter((statement) =>
+      actions(statement).some((action) => action.startsWith('acm:')),
+    );
+    const certificates = `arn:aws:acm:us-east-1:${ACCOUNT}:certificate/*`;
+    expect(acm).toEqual([
+      { Effect: 'Allow', Action: 'acm:ListCertificates', Resource: '*' },
+      {
+        Effect: 'Allow',
+        Action: ['acm:DescribeCertificate', 'acm:ListTagsForCertificate'],
+        Resource: certificates,
+      },
+      {
+        Effect: 'Allow',
+        Action: 'acm:DeleteCertificate',
+        Resource: certificates,
+        Condition: { StringEquals: { 'aws:ResourceTag/Project': 'pictora' } },
+      },
+    ]);
+    // No other role touches ACM.
+    for (const roleName of ['pictora-gh-diff', 'pictora-gh-build']) {
+      expect(
+        policyStatements(roleName)
+          .flatMap(actions)
+          .some((action) => action.startsWith('acm:')),
+      ).toBe(false);
+    }
   });
 
   it('gives no role wildcard actions or managed admin policies', () => {
