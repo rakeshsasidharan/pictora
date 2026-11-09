@@ -67,6 +67,8 @@ export function edit(imageId: string, overrides: Partial<EditJobRequest> = {}): 
 
 export interface SeedOptions {
   request?: CreateJobRequest;
+  /** The model the job runs on; a tool request carries none, so it defaults to the Mock. */
+  modelId?: string;
   pointsReserved?: number;
   usageDate?: string;
   createdAt?: string;
@@ -92,7 +94,8 @@ export async function seedJob(
   options: SeedOptions = {},
 ): Promise<JobItem> {
   const request = options.request ?? generate();
-  const pointsReserved = options.pointsReserved ?? (request.type === 'edit' ? 1 : request.count);
+  const pointsReserved =
+    options.pointsReserved ?? (request.type === 'generate' ? request.count : 1);
   const usageDate = options.usageDate ?? '2026-10-15';
   const createdAt = options.createdAt ?? '2026-10-15T12:00:00.000Z';
   const status = options.status ?? 'queued';
@@ -105,7 +108,7 @@ export async function seedJob(
     type: request.type,
     status,
     request,
-    modelId: request.modelId,
+    modelId: options.modelId ?? ('modelId' in request ? request.modelId : 'mock'),
     provider: options.provider ?? 'mock',
     pointsReserved,
     usageDate,

@@ -3,7 +3,7 @@ import { BedrockProvider } from './bedrock.js';
 import { ProviderError, toProviderError } from './errors.js';
 import { MockProvider } from './mock.js';
 import { withRetry, type RetryOptions } from './retry.js';
-import type { ImageProvider, ImageRequest, ImageResult } from './types.js';
+import type { ImageProvider, ImageResult } from './types.js';
 
 /** Builds the adapter for one provider. */
 export type AdapterFactory = () => ImageProvider;
@@ -26,6 +26,7 @@ export interface ProviderFactoryOptions {
 /**
  * Returns a function that picks the adapter for a model from `ModelConfig.provider`. Each adapter is built
  * once, and wrapped so every call is retried once on transient errors and throws only typed provider errors.
+ * The wrapped adapter always has `tool`, which fails with a `ProviderError` for an adapter that runs none.
  */
 export function createProviderFactory(
   options: ProviderFactoryOptions = {},
@@ -54,7 +55,10 @@ export function guardProvider(
   adapter: ImageProvider,
   retry: Omit<RetryOptions, 'signal'> = {},
 ): ImageProvider {
-  const call = async (run: () => Promise<ImageResult>, req: ImageRequest): Promise<ImageResult> => {
+  const call = async (
+    run: () => Promise<ImageResult>,
+    req: { signal: AbortSignal },
+  ): Promise<ImageResult> => {
     try {
       return await withRetry(run, { ...retry, signal: req.signal });
     } catch (error) {
@@ -64,5 +68,16 @@ export function guardProvider(
   return {
     generate: (model, req) => call(() => adapter.generate(model, req), req),
     edit: (model, req) => call(() => adapter.edit(model, req), req),
+    tool: (model, req) => {
+      const run = adapter.tool?.bind(adapter);
+      if (!run) {
+        return Promise.reject(
+          new ProviderError(`Provider ${model.provider} runs no image tools (model ${model.id})`, {
+            userMessage: 'This tool is not available right now. Your points have been refunded.',
+          }),
+        );
+      }
+      return call(() => run(model, req), req);
+    },
   };
 }

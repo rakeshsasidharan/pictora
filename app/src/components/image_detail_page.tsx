@@ -6,15 +6,18 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import type { ImageDetailBody } from '../lib/images';
 import { GALLERY_PATH } from '../lib/site';
+import type { ToolCatalog } from '../lib/tool_catalog';
 import { ImageDetail } from './image_detail';
 
 /** The detail view as its own page (GAL-2), which goes back to the gallery once the image is deleted. */
 export function ImageDetailPage({
   detail,
   modelNames,
+  tools,
 }: {
   detail: ImageDetailBody;
   modelNames: Readonly<Record<string, string>>;
+  tools?: ToolCatalog;
 }) {
   const router = useRouter();
   return (
@@ -29,6 +32,7 @@ export function ImageDetailPage({
         imageId={detail.image.imageId}
         initial={detail}
         modelNames={modelNames}
+        tools={tools}
         headingLevel={1}
         onDeleted={() => router.push(GALLERY_PATH)}
       />

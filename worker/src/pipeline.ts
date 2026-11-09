@@ -1,11 +1,14 @@
 import { PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import {
   PROVIDER_REFUSAL_CATEGORY,
+  TOOL_NAMES,
   applyStyle,
   imageKey,
   jobError,
   settleJobPoints,
   thumbnailKey,
+  toolCostPoints,
+  toolIdFor,
   type Aspect,
   type BlockStage,
   type EditJobRequest,
@@ -13,14 +16,17 @@ import {
   type JobErrorCode,
   type JobItem,
   type ModelConfig,
+  type ToolJobRequest,
 } from '@pictora/core';
 import {
   normalisePng,
   PROVIDER_TIMEOUT_MS,
+  ProviderError,
   ProviderSafetyError,
   ProviderTimeoutError,
   providerSignal,
   thumbnail,
+  ToolInputError,
   type ImageProvider,
   type ImageRequest,
   type ImageResult,
@@ -30,6 +36,7 @@ import { applyCooldown } from '@pictora/core/block-store';
 import { recordGeneration } from '@pictora/core/metrics-store';
 import { ulid } from 'ulid';
 import { EditSourceError, loadEditInputs, type EditInputs } from './edit.js';
+import { loadToolInputs, toolResultAspect, type ToolInputs } from './tool.js';
 import {
   claimJob,
   claimVersion,
@@ -51,11 +58,14 @@ import { reportMonthlySpend, type SpendReporting } from './spend.js';
 export type ModerationVerdict =
   { flagged: false } | { flagged: true; category: string; stage?: Exclude<BlockStage, 'provider'> };
 
+/** What moderation checks: the prompt (none for most tools) and the images sent with it. */
+export type ModerationSubject = Pick<ImageRequest, 'prompt' | 'inputImage' | 'referenceImages'>;
+
 /** The moderation hook: checks the final prompt (and any input image) before the paid provider call. */
 export type ModerateRequest = (input: {
   job: JobItem;
   model: ModelConfig;
-  request: ImageRequest;
+  request: ModerationSubject;
 }) => Promise<ModerationVerdict>;
 
 /** What the pipeline needs, so tests can swap DynamoDB, S3, the providers and the clock. */
@@ -85,7 +95,7 @@ export type JobOutcome = 'succeeded' | 'failed' | 'blocked' | 'skipped';
 export const MAX_TITLE_LENGTH = 80;
 
 /**
- * Runs one generate or edit job (tech design 5.1, 5.3): claims it exactly once, calls the provider with a 120 s
+ * Runs one generate, edit or tool job (tech design 5.1, 5.3, 5.5): claims it exactly once, calls the provider with a 120 s
  * deadline, stores each image as a PNG and a WebP thumbnail, and records the result with the points settled. An
  * edit loads its parent version and references first, and its result becomes the image's next version. A failed,
  * timed-out or refused call fails or blocks the job with a full refund. A job that isn't queued (a redelivered
@@ -125,6 +135,7 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
 
   const signal = providerSignal(undefined, deps.providerTimeoutMs ?? PROVIDER_TIMEOUT_MS);
   const request = job.request;
+  if (request.type === 'tool') return runTool(deps, job, request, model, signal, fields);
   let imageRequest: ImageRequest;
   let edit: EditInputs | undefined;
   if (request.type === 'edit') {
@@ -268,6 +279,144 @@ export async function processJob(deps: PipelineDeps, jobId: string): Promise<Job
 }
 
 /**
+ * Runs an image tool job (tech design 5.5): loads the source version (and an erase's mask), moderates the prompt
+ * and the image, calls the tool once, and stores the result as the image's next version with the tool recorded
+ * (EDIT-3). A source or mask that has gone fails the job with `source_missing`, an image the tool can't take with
+ * `unsupported_image`, and a provider failure as for any job, each with a full refund.
+ */
+async function runTool(
+  deps: PipelineDeps,
+  job: JobItem,
+  request: ToolJobRequest,
+  model: ModelConfig,
+  signal: AbortSignal,
+  fields: Record<string, unknown>,
+): Promise<JobOutcome> {
+  const toolId = toolIdFor(request);
+  if (toolCostPoints(model, toolId) === undefined) {
+    log('ERROR', 'Model does not run the tool', { ...fields, tool: toolId });
+    return fail(deps, job, 'provider_error');
+  }
+  let inputs: ToolInputs;
+  try {
+    inputs = await loadToolInputs(deps, job.userId, request);
+  } catch (error) {
+    const code =
+      error instanceof EditSourceError
+        ? 'source_missing'
+        : error instanceof ToolInputError
+          ? 'unsupported_image'
+          : 'provider_error';
+    log(code === 'provider_error' ? 'ERROR' : 'WARN', 'Tool inputs could not be loaded', {
+      ...fields,
+      tool: toolId,
+      error,
+    });
+    return fail(deps, job, code);
+  }
+
+  if (deps.moderate) {
+    let verdict: ModerationVerdict;
+    try {
+      verdict = await deps.moderate({
+        job,
+        model,
+        request: { prompt: inputs.prompt, inputImage: inputs.image.png },
+      });
+    } catch (error) {
+      log('ERROR', 'Moderation failed', { ...fields, error });
+      return fail(deps, job, 'provider_error');
+    }
+    if (verdict.flagged) {
+      const stage = verdict.stage ?? 'prompt';
+      log('INFO', 'Tool request blocked by moderation', {
+        ...fields,
+        stage,
+        category: verdict.category,
+      });
+      return fail(deps, job, 'blocked', {
+        block: { stage, category: verdict.category, prompt: inputs.prompt || TOOL_NAMES[toolId] },
+      });
+    }
+  }
+
+  const started = Date.now();
+  let result: ImageResult;
+  try {
+    const adapter = deps.provider(model);
+    if (!adapter.tool) throw new ProviderError(`Provider ${model.provider} runs no image tools`);
+    result = await adapter.tool(model, { ...inputs.request, signal });
+  } catch (error) {
+    const code = errorCode(error);
+    const latencyMs = Date.now() - started;
+    deps.metrics?.([providerLatency(job, latencyMs)]);
+    log(code === 'blocked' ? 'INFO' : 'ERROR', 'Provider call failed', {
+      ...fields,
+      tool: toolId,
+      outcome: code,
+      latencyMs,
+      error,
+    });
+    return fail(deps, job, code, {
+      ...(code === 'blocked'
+        ? {
+            block: {
+              stage: 'provider',
+              category: PROVIDER_REFUSAL_CATEGORY,
+              prompt: inputs.prompt || TOOL_NAMES[toolId],
+            },
+          }
+        : {}),
+    });
+  }
+  const latencyMs = Date.now() - started;
+  deps.metrics?.([providerLatency(job, latencyMs)]);
+  const providerCostCents = result.providerCostCents;
+  const [image] = result.images;
+  if (!image) {
+    log('ERROR', 'Provider returned no image', { ...fields, tool: toolId, providerCostCents });
+    return fail(deps, job, 'provider_error', { providerCostCents });
+  }
+
+  const settlement = settleJobPoints(job.pointsReserved, 1, 1, providerCostCents);
+  let recorded: 'completed' | 'swept' | 'image_gone';
+  try {
+    recorded = await recordEdit(deps, job, request, toolResultAspect(image), image, {
+      settlement,
+      providerCostCents,
+    });
+  } catch (error) {
+    log('ERROR', 'Storing the result failed', { ...fields, error });
+    return fail(deps, job, 'provider_error', { providerCostCents });
+  }
+  if (recorded === 'image_gone') {
+    log('WARN', 'Image deleted while its tool ran', fields);
+    return fail(deps, job, 'source_missing', { providerCostCents });
+  }
+  if (recorded === 'swept') {
+    log('WARN', 'Job was failed by the sweeper before it could be recorded', fields);
+    return 'skipped';
+  }
+  deps.metrics?.([
+    { name: 'JobsSucceeded', value: 1, unit: 'Count' },
+    { name: 'ProviderCostCents', value: providerCostCents, unit: 'Count' },
+  ]);
+  if (deps.spend && providerCostCents > 0) await reportMonthlySpend(deps, deps.spend, deps.now());
+  await recordSuccessMetrics(deps, job, fields);
+  log('INFO', 'Job succeeded', {
+    ...fields,
+    tool: toolId,
+    outcome: 'succeeded',
+    images: 1,
+    requested: 1,
+    pointsCharged: settlement.chargedPoints,
+    costCents: providerCostCents,
+    latencyMs,
+  });
+  return 'succeeded';
+}
+
+/**
  * Records the success metrics that depend on the user (tech design 11.1): active today, and a first-session or
  * returning generation. The job's own counts were written with its final status. A failure here is logged, never
  * thrown: the job has already succeeded.
@@ -285,13 +434,13 @@ async function recordSuccessMetrics(
 }
 
 /**
- * Stores an edit's result as the image's next version (EDIT-3): claims the version number, writes
- * `v<n>.png` and its thumbnail, and records the version with its parent and instruction.
+ * Stores an edit's or a tool's result as the image's next version (EDIT-3): claims the version number, writes
+ * `v<n>.png` and its thumbnail, and records the version with its parent and instruction or tool.
  */
 async function recordEdit(
   deps: PipelineDeps,
   job: JobItem,
-  request: EditJobRequest,
+  request: EditJobRequest | ToolJobRequest,
   aspect: Aspect,
   image: ImageResult['images'][number],
   charge: { settlement: ReturnType<typeof settleJobPoints>; providerCostCents: number },

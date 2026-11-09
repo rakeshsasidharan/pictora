@@ -45,6 +45,14 @@ vi.mock('../src/lib/registry', () => ({
 }));
 
 vi.mock('../src/lib/images_deps', () => ({ imagesDeps: () => ({}) }));
+vi.mock('../src/lib/jobs_deps', () => ({ jobsDeps: () => ({}) }));
+vi.mock('../src/lib/tool_catalog', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/tool_catalog')>();
+  return {
+    ...original,
+    toolCatalog: async () => original.toolsFor(loadSeedRegistry(), [], () => true),
+  };
+});
 vi.mock('../src/lib/images', () => ({ getImageDetail: async () => detail.current }));
 
 const { default: GalleryPage } = await import('../src/app/(app)/gallery/page');
@@ -101,6 +109,8 @@ describe('gallery pages', () => {
     render(await imagePage());
     expect(screen.getByRole('heading', { level: 1, name: 'A fox' })).toBeTruthy();
     expect(screen.getByText('Gemini 3.1 Flash Image')).toBeTruthy();
+    // The image tools are offered on the page (tech design 5.5).
+    expect(screen.getByRole('button', { name: 'Tools' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Back to your images' }).getAttribute('href')).toBe(
       '/gallery',
     );

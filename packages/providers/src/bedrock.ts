@@ -1,5 +1,12 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT, mapAspect, type ModelConfig } from '@pictora/core';
+import {
+  MAX_IMAGE_COUNT,
+  MIN_IMAGE_COUNT,
+  mapAspect,
+  toolCostPoints,
+  type ModelConfig,
+  type ToolId,
+} from '@pictora/core';
 import {
   ProviderError,
   ProviderRateLimitError,
@@ -7,7 +14,13 @@ import {
   toProviderError,
 } from './errors.js';
 import { normalisePng } from './image.js';
-import type { GeneratedImage, ImageProvider, ImageRequest, ImageResult } from './types.js';
+import type {
+  GeneratedImage,
+  ImageProvider,
+  ImageRequest,
+  ImageResult,
+  ToolRequest,
+} from './types.js';
 
 /** Bedrock image models run on demand in us-west-2 only (PRD registry rules). */
 export const BEDROCK_REGION = 'us-west-2';
@@ -24,6 +37,22 @@ export interface StabilityRequestBody {
   output_format: 'png';
   negative_prompt?: string;
   seed?: number;
+}
+
+/**
+ * The JSON body of a Stability Image Services call on Bedrock (P1 Image tools): the image as base64, PNG out,
+ * and each tool's own fields. The conservative and creative upscales require a prompt, which may be empty.
+ */
+export interface StabilityToolBody {
+  image: string;
+  output_format: 'png';
+  prompt?: string;
+  mask?: string;
+  grow_mask?: number;
+  left?: number;
+  right?: number;
+  up?: number;
+  down?: number;
 }
 
 /** The JSON body Stability models return: one base64 image per call. */
@@ -53,7 +82,8 @@ export interface BedrockProviderOptions {
  * Stability AI's Stable Image Core, SD 3.5 Large and Stable Image Ultra on Amazon Bedrock (P1). Calls
  * `InvokeModel` in us-west-2 with the worker's IAM role, so there is no key. Each call returns one image, so
  * `count` images are generated in parallel calls; when only some succeed, only those are returned and charged.
- * These models only generate; editing on Bedrock goes through the image tools (#35).
+ * These models only generate; editing on Bedrock goes through the image tools (`tool`): the Stability edit
+ * models, invoked through their `us.` cross-region inference profiles.
  */
 export class BedrockProvider implements ImageProvider {
   private readonly client: BedrockRuntimeClient;
@@ -112,14 +142,39 @@ export class BedrockProvider implements ImageProvider {
     );
   }
 
+  /**
+   * Runs one image tool (P1 Image tools): one call to the tool's Stability model through its inference profile,
+   * charged at the tool's list price. Remove background answers a PNG with transparency, which is kept.
+   */
+  async tool(model: ModelConfig, req: ToolRequest): Promise<ImageResult> {
+    const costPoints = toolCostPoints(model, req.tool);
+    if (costPoints === undefined) {
+      throw new ProviderError(`Model ${model.id} does not run ${req.tool}`);
+    }
+    try {
+      const { image, requestId } = await this.invoke(
+        model,
+        stabilityToolBody(req.tool, req),
+        req.signal,
+      );
+      return {
+        images: [image],
+        ...(requestId ? { providerRequestId: requestId } : {}),
+        providerCostCents: costPoints,
+      };
+    } catch (error) {
+      throw toBedrockError(error);
+    }
+  }
+
   private async invoke(
     model: ModelConfig,
-    body: StabilityRequestBody,
+    body: StabilityRequestBody | StabilityToolBody,
     signal: AbortSignal,
   ): Promise<{ image: GeneratedImage; requestId?: string }> {
     const response = await this.client.send(
       new InvokeModelCommand({
-        modelId: model.providerModelId,
+        modelId: model.inferenceProfileId ?? model.providerModelId,
         contentType: 'application/json',
         accept: 'application/json',
         body: JSON.stringify(body),
@@ -128,7 +183,13 @@ export class BedrockProvider implements ImageProvider {
     );
     const parsed = parseResponse(response.body);
     const reason = filterReason(parsed);
-    if (reason) throw new ProviderSafetyError(`Stability content filter: ${reason}`);
+    if (reason) {
+      // `Filter reason: …` is a content filter; `Inference error` and the like are the model failing.
+      if (/^filter reason/i.test(reason) || CONTENT_FILTER_PATTERN.test(reason)) {
+        throw new ProviderSafetyError(`Stability content filter: ${reason}`);
+      }
+      throw new ProviderError(`Stability finish reason: ${reason}`, { retryable: true });
+    }
     const [encoded] = Array.isArray(parsed.images) ? parsed.images : [];
     if (typeof encoded !== 'string' || encoded === '') {
       throw new ProviderError(`Model ${model.id} returned no image`);
@@ -167,6 +228,50 @@ export function stabilityRequestBody(
     body.seed = (req.seed + index) % (STABILITY_MAX_SEED + 1);
   }
   return body;
+}
+
+/**
+ * The request body for one tool call. The conservative and creative upscales always send a prompt (Stability
+ * requires one; it may be empty), outpaint sends one only when the user wrote one, and the other tools take none.
+ */
+export function stabilityToolBody(
+  tool: ToolId,
+  req: Omit<ToolRequest, 'signal'>,
+): StabilityToolBody {
+  const body: StabilityToolBody = {
+    image: Buffer.from(req.image).toString('base64'),
+    output_format: 'png',
+  };
+  const prompt = req.prompt?.trim() ?? '';
+  switch (tool) {
+    case 'upscale-fast':
+    case 'remove-background':
+      return body;
+    case 'upscale-conservative':
+    case 'upscale-creative':
+      return { ...body, prompt };
+    case 'erase':
+      if (!req.mask) throw new ProviderError('Erase needs a mask');
+      return {
+        ...body,
+        mask: Buffer.from(req.mask).toString('base64'),
+        ...(req.growMask !== undefined ? { grow_mask: req.growMask } : {}),
+      };
+    case 'outpaint': {
+      const sides = req.outpaint;
+      if (!sides || sides.left + sides.right + sides.up + sides.down <= 0) {
+        throw new ProviderError('Outpaint needs at least one side to extend');
+      }
+      return {
+        ...body,
+        left: sides.left,
+        right: sides.right,
+        up: sides.up,
+        down: sides.down,
+        ...(prompt ? { prompt } : {}),
+      };
+    }
+  }
 }
 
 function parseResponse(body: Uint8Array | undefined): StabilityResponseBody {

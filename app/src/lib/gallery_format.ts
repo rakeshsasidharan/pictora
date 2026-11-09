@@ -1,4 +1,4 @@
-import { STYLE_PRESETS, type StyleId } from '@pictora/core';
+import { STYLE_PRESETS, TOOL_NAMES, type StyleId } from '@pictora/core';
 import { QUALITY_LABELS } from './generate_options';
 import type { ActiveJobBody, ImageVersionBody } from './images';
 
@@ -36,8 +36,8 @@ export interface DetailField {
 }
 
 /**
- * What the detail view lists for a version (GAL-2): how it was made (prompt, enhanced prompt, or the edit
- * instruction), then the model, style, size, quality, seed and date, each only when the version has it.
+ * What the detail view lists for a version (GAL-2): how it was made (prompt, enhanced prompt, the edit
+ * instruction, or the image tool), then the model, style, size, quality, seed and date, each only when the version has it.
  */
 export function versionFields(
   version: ImageVersionBody,
@@ -48,7 +48,11 @@ export function versionFields(
     if (value !== undefined && value !== '')
       fields.push({ label, value, ...(scroll && { scroll }) });
   };
-  if (version.editInstruction) {
+  if (version.tool) {
+    add('Tool', TOOL_NAMES[version.tool]);
+    add('Tool prompt', version.toolPrompt, true);
+    if (version.parentVersion !== undefined) add('Made from', `Version ${version.parentVersion}`);
+  } else if (version.editInstruction) {
     add('Edit', version.editInstruction, true);
     if (version.parentVersion !== undefined) {
       add('Edited from', `Version ${version.parentVersion}`);
@@ -90,11 +94,11 @@ export function placeholderText(job: ActiveJobBody): string {
       ? 'Scheduled'
       : job.status === 'queued'
         ? 'Queued'
-        : job.type === 'edit'
-          ? 'Editing'
-          : 'Generating';
+        : job.type === 'generate'
+          ? 'Generating'
+          : 'Editing';
   const images =
-    job.type === 'edit' ? '' : ` · ${job.count} ${job.count === 1 ? 'image' : 'images'}`;
+    job.type === 'generate' ? ` · ${job.count} ${job.count === 1 ? 'image' : 'images'}` : '';
   return `${state}${images}`;
 }
 

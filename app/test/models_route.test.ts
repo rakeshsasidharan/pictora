@@ -1,4 +1,4 @@
-import { loadSeedRegistry, TESTERS_GROUP, type ModelConfig } from '@pictora/core';
+import { isToolOnlyModel, loadSeedRegistry, TESTERS_GROUP, type ModelConfig } from '@pictora/core';
 import { createRegistryLoader } from '@pictora/core/registry-store';
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +60,10 @@ describe('GET /api/models', () => {
     expect(response.headers.get('cache-control')).toBe('private, max-age=60');
 
     const body = await response.json();
-    expect(body.models.map((m: { id: string }) => m.id)).toEqual(seed.map((m) => m.id));
+    // Models that only run image tools are offered in the image view instead (tech design 5.5).
+    expect(body.models.map((m: { id: string }) => m.id)).toEqual(
+      seed.filter((m) => !isToolOnlyModel(m)).map((m) => m.id),
+    );
     expect(body.models[0]).toEqual({
       id: 'gpt-image-2',
       provider: 'openai',
@@ -133,7 +136,7 @@ describe('GET /api/models', () => {
     for (const groups of [[], ['admins']] as const) {
       const body = await (await GET(modelsRequest([...groups]))).json();
       expect(ids(body)).not.toContain('mock');
-      expect(ids(body)).toHaveLength(seed.length - 1);
+      expect(ids(body)).toHaveLength(seed.filter((m) => !isToolOnlyModel(m)).length - 1);
     }
   });
 

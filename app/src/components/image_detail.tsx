@@ -24,7 +24,9 @@ import { urlsMayHaveExpired, versionFields } from '../lib/gallery_format';
 import type { ImageDetailBody } from '../lib/images';
 import { notifyImagesChanged } from '../lib/images_changed';
 import { downloadPath, editImagePath, rerunPath } from '../lib/site';
+import type { ToolCatalog } from '../lib/tool_catalog';
 import { AltTextEditor } from './alt_text_editor';
+import { ImageTools } from './image_tools';
 import { ReportImage } from './report_image';
 import { VersionCarousel } from './version_carousel';
 
@@ -41,6 +43,8 @@ export interface ImageDetailProps {
    * settings card scrolls when the window is short, so the view is the same size whatever the prompt.
    */
   fill?: boolean;
+  /** The image tools the user can run on a version (tech design 5.5); no Tools menu without it. */
+  tools?: ToolCatalog;
   /** Called once the image is deleted. */
   onDeleted: (imageId: string) => void;
 }
@@ -53,7 +57,7 @@ type Load =
 /**
  * The detail view of a gallery image (GAL-2, GAL-3): the selected version with its prompt, enhanced prompt, edit
  * instruction, model, style, size, seed and date; the version history, as a row of thumbnails under the
- * picture (#125); and a toolbar to download the original PNG, rerun, edit, report and delete (after a
+ * picture (#125); and a toolbar to download the original PNG, rerun, edit, run an image tool, report and delete (after a
  * confirmation in an alert dialog); and the version's alt text, which the user can rewrite (#30). Presigned URLs that expired are fetched again when an image fails to load
  * (GAL-4). Long text (the prompt, enhanced prompt, what to avoid, the edit instruction) sits in a capped box that
  * scrolls, so it never pushes the picture or the actions out of view (#145).
@@ -64,6 +68,7 @@ export function ImageDetail({
   modelNames,
   headingLevel = 2,
   fill = false,
+  tools,
   onDeleted,
 }: ImageDetailProps) {
   const [load, setLoad] = useState<Load>(() =>
@@ -257,6 +262,17 @@ export function ImageDetail({
                 Edit
               </Link>
             </Button>
+            {tools && (
+              <ImageTools
+                imageId={imageId}
+                version={current}
+                catalog={tools}
+                onCreated={(version) => {
+                  setSelected(version);
+                  fetchAgain();
+                }}
+              />
+            )}
             <ReportImage imageId={imageId} version={current.version} />
             <AlertDialog
               open={confirming}

@@ -18,7 +18,8 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 /** States a job never leaves. */
 export const TERMINAL_JOB_STATUSES: readonly JobStatus[] = ['succeeded', 'failed', 'blocked'];
 
-export const JOB_TYPES = ['generate', 'edit'] as const;
+/** `tool` is an image tool run on a version (P1 Image tools, tech design 5.5). */
+export const JOB_TYPES = ['generate', 'edit', 'tool'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 /** Per-user limits (LIM-3). */
@@ -61,6 +62,7 @@ export const JOB_ERROR_CODES = [
   'stuck',
   'source_missing',
   'batch_expired',
+  'unsupported_image',
 ] as const;
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
@@ -77,6 +79,8 @@ export const JOB_ERROR_MESSAGES: Readonly<Record<JobErrorCode, string>> = {
     'The image you were editing, or one of its reference images, is no longer available. Your points have been refunded.',
   batch_expired:
     "Your scheduled images weren't ready within 24 hours. Your points have been refunded. Please try again.",
+  unsupported_image:
+    "This image can't be used with that tool: it is too small or too narrow. Your points have been refunded.",
 };
 
 export interface JobError {

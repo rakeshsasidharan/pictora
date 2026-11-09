@@ -30,16 +30,50 @@ export type SecretProvider = (typeof SECRET_PROVIDERS)[number];
 /** Bedrock image models run on demand in us-west-2 only (PRD registry rules). */
 export const BEDROCK_REGION = 'us-west-2';
 
-/** The `providerModelId` of every Bedrock model in `models.json`, which the worker may invoke. */
+/**
+ * What the worker invokes for every Bedrock model in `models.json`: the `providerModelId`, or for a model that
+ * runs only through an inference profile (the Stability image tools, #35), its `inferenceProfileId`.
+ */
 export function bedrockModelIds(modelsJsonPath: string = MODELS_JSON_PATH): string[] {
   const models = JSON.parse(readFileSync(modelsJsonPath, 'utf8')) as {
     provider: string;
     providerModelId: string;
+    inferenceProfileId?: string;
   }[];
   return models
     .filter((model) => model.provider === 'bedrock')
-    .map((model) => model.providerModelId)
+    .map((model) => model.inferenceProfileId ?? model.providerModelId)
     .sort();
+}
+
+/** Regions a `us.` cross-region inference profile routes to (Bedrock docs, model card). */
+export const US_INFERENCE_REGIONS = ['us-east-1', 'us-east-2', 'us-west-2'] as const;
+
+/**
+ * The ARNs `bedrock:InvokeModel` needs for a model ID, called from us-west-2: the foundation model itself, or for
+ * a `us.` or `global.` inference profile, the profile and the model in the regions the profile routes to.
+ */
+export function bedrockModelArns(stack: Stack, modelId: string): string[] {
+  const profile = /^(us|global)\.(.+)$/.exec(modelId);
+  const foundationModel = (region: string, id: string) =>
+    stack.formatArn({
+      service: 'bedrock',
+      region,
+      account: '',
+      resource: 'foundation-model',
+      resourceName: id,
+    });
+  if (!profile?.[1] || !profile[2]) return [foundationModel(BEDROCK_REGION, modelId)];
+  const regions = profile[1] === 'us' ? [...US_INFERENCE_REGIONS] : ['*'];
+  return [
+    stack.formatArn({
+      service: 'bedrock',
+      region: BEDROCK_REGION,
+      resource: 'inference-profile',
+      resourceName: modelId,
+    }),
+    ...regions.map((region) => foundationModel(region, profile[2] as string)),
+  ];
 }
 
 /** Worker Lambda settings (tech design 3.2). */
@@ -216,19 +250,12 @@ export class JobsStack extends Stack {
     for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.workerFunction);
     }
-    // Bedrock is called with the worker's role, on the registry's Bedrock models only.
+    // Bedrock is called with the worker's role, on the registry's Bedrock models only: the generate models on
+    // demand, and the image tools through their inference profiles and the models those route to.
     this.workerFunction.addToRolePolicy(
       new PolicyStatement({
         actions: ['bedrock:InvokeModel'],
-        resources: bedrockModelIds().map((modelId) =>
-          this.formatArn({
-            service: 'bedrock',
-            region: BEDROCK_REGION,
-            account: '',
-            resource: 'foundation-model',
-            resourceName: modelId,
-          }),
-        ),
+        resources: bedrockModelIds().flatMap((modelId) => bedrockModelArns(this, modelId)),
       }),
     );
     this.sweeperFunction = new DockerImageFunction(this, 'SweeperFunction', {

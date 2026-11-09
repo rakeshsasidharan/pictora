@@ -2,10 +2,12 @@ import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { BatchWriteCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   MAX_ALT_TEXT_OVERRIDE_LENGTH,
+  TOOL_NAMES,
   activeJobsGsiPk,
   altTextRequestSchema,
   imageSk,
   rateLimitPerMinute,
+  toolIdFor,
   userPk,
   versionSk,
   type ActiveJobStatus,
@@ -14,6 +16,7 @@ import {
   type JobType,
   type Quality,
   type StyleId,
+  type ToolId,
 } from '@pictora/core';
 import { recordDiscarded, recordDownload } from '@pictora/core/metrics-store';
 import { takeRateSlot } from './enhance';
@@ -49,6 +52,10 @@ export interface ImageVersionBody {
   parentVersion?: number;
   /** The words the version was edited with. */
   editInstruction?: string;
+  /** The image tool the version was made with, from its parent (tech design 5.5). */
+  tool?: ToolId;
+  /** The prompt the tool was given, for an upscale or outpaint. */
+  toolPrompt?: string;
   /** The user's prompt, for a generated version 1. */
   prompt?: string;
   enhancedPrompt?: string;
@@ -111,6 +118,9 @@ interface VersionItem {
   height: number;
   parentVersion?: number;
   editInstruction?: string;
+  /** The image tool that made it (tech design 5.5), and the prompt it was given. */
+  tool?: ToolId;
+  toolPrompt?: string;
   prompt?: string;
   enhancedPrompt?: string;
   avoid?: string;
@@ -161,6 +171,8 @@ export async function getImageDetail(
           version: item.version,
           ...optional('parentVersion', item.parentVersion),
           ...optional('editInstruction', item.editInstruction),
+          ...optional('tool', item.tool),
+          ...optional('toolPrompt', item.toolPrompt),
           ...optional('prompt', item.prompt),
           ...optional('enhancedPrompt', item.enhancedPrompt),
           ...optional('avoid', item.avoid),
@@ -217,11 +229,11 @@ export interface ActiveJobBody {
   type: JobType;
   status: ActiveJobStatus;
   createdAt: string;
-  /** The prompt of a generate job, or the instruction of an edit. */
+  /** The prompt of a generate job, the instruction of an edit, or the name of an image tool. */
   text: string;
   /** How many images the job makes. */
   count: number;
-  /** The image an edit adds a version to. */
+  /** The image an edit or a tool adds a version to. */
   imageId?: string;
   /** `batch` for a job delivered later through a provider batch. */
   delivery?: 'batch';
@@ -327,11 +339,13 @@ async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[
         createdAt: job.createdAt,
         ...(request.type === 'edit'
           ? { text: request.instruction, count: 1, imageId: request.imageId }
-          : {
-              text: request.prompt,
-              count: request.count,
-              ...(request.delivery === 'batch' ? { delivery: 'batch' as const } : {}),
-            }),
+          : request.type === 'tool'
+            ? { text: TOOL_NAMES[toolIdFor(request)], count: 1, imageId: request.imageId }
+            : {
+                text: request.prompt,
+                count: request.count,
+                ...(request.delivery === 'batch' ? { delivery: 'batch' as const } : {}),
+              }),
       };
     });
 }

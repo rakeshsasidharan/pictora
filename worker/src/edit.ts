@@ -82,7 +82,11 @@ async function loadReference(deps: EditSourceDeps, sub: string, key: string): Pr
   }
 }
 
-async function readObject(deps: EditSourceDeps, key: string): Promise<Uint8Array | undefined> {
+/** An object in the images bucket, or undefined when it is gone. */
+export async function readObject(
+  deps: EditSourceDeps,
+  key: string,
+): Promise<Uint8Array | undefined> {
   try {
     const object = await deps.s3.send(new GetObjectCommand({ Bucket: deps.bucket, Key: key }));
     return object.Body ? await object.Body.transformToByteArray() : undefined;

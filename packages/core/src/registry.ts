@@ -3,6 +3,7 @@ import seedModels from '../models.json' with { type: 'json' };
 import { TESTERS_GROUP } from './admin.js';
 import { mapAspect } from './size_mapping.js';
 import { STYLE_IDS, type StyleId } from './styles.js';
+import { TOOL_IDS, TOOL_PROVIDERS, type ToolId } from './tools.js';
 
 export const QUALITIES = ['draft', 'standard', 'high'] as const;
 export type Quality = (typeof QUALITIES)[number];
@@ -33,6 +34,12 @@ export interface QualityConfig {
   costPoints: number;
 }
 
+/** What one run of an image tool costs on a model (P1 Image tools). */
+export interface ToolConfig {
+  /** Points per run: provider list price in cents, rounded up. */
+  costPoints: number;
+}
+
 /** One model registry entry (tech design section 6.1). */
 export interface ModelConfig {
   /** Stable Pictora id. */
@@ -54,11 +61,20 @@ export interface ModelConfig {
     seed: boolean;
     /** Most reference images accepted. */
     referenceImages: number;
+    /** The aspects the model generates or edits at; empty for a model that only runs tools. */
     aspects: Aspect[];
     /** Takes batch jobs through the provider's batch API (P1); false when absent. */
     batch?: boolean;
   };
   qualities: Partial<Record<Quality, QualityConfig>>;
+  /** The image tools the model runs (P1 Image tools, tech design 5.5), with the price of each; absent for none. */
+  tools?: Partial<Record<ToolId, ToolConfig>>;
+  /**
+   * The Bedrock inference profile to invoke instead of `providerModelId`, for models that run only through one,
+   * such as the Stability edit models (`us.` cross-region profiles). `providerModelId` stays the foundation
+   * model, which the model health check looks up.
+   */
+  inferenceProfileId?: string;
   /** Style presets this model is the default for. */
   defaultFor: StyleId[];
   /** ISO date; alert 60 days before (PRD risk table). */
@@ -87,10 +103,17 @@ export const modelConfigSchema = z.strictObject({
     negativePrompt: z.boolean(),
     seed: z.boolean(),
     referenceImages: z.int().min(0).max(MAX_REFERENCE_IMAGES),
-    aspects: z.array(z.enum(ASPECTS)).min(1),
+    aspects: z.array(z.enum(ASPECTS)),
     batch: z.boolean().optional(),
   }),
   qualities: z.partialRecord(z.enum(QUALITIES), qualityConfigSchema),
+  tools: z
+    .partialRecord(z.enum(TOOL_IDS), z.strictObject({ costPoints: z.int().positive() }))
+    .optional(),
+  inferenceProfileId: z
+    .string()
+    .regex(/^us\.[a-z0-9.:-]+$/)
+    .optional(),
   defaultFor: z.array(z.enum(STYLE_IDS)),
   eolDate: z.iso.date().optional(),
 }) satisfies z.ZodType<ModelConfig>;
@@ -198,9 +221,23 @@ function checkModel(model: ModelConfig): string[] {
   const label = `Model ${model.id}`;
   const qualities = QUALITIES.filter((quality) => model.qualities[quality] !== undefined);
 
-  if (qualities.length === 0) errors.push(`${label}: has no qualities with a cost`);
-  if (!model.capabilities.generate && !model.capabilities.edit) {
-    errors.push(`${label}: supports neither generate nor edit`);
+  const makesImages = model.capabilities.generate || model.capabilities.edit;
+  const tools = Object.keys(model.tools ?? {});
+  if (!makesImages && tools.length === 0) {
+    errors.push(`${label}: supports neither generate, edit nor any tool`);
+  }
+  if (makesImages && qualities.length === 0) errors.push(`${label}: has no qualities with a cost`);
+  if (makesImages && model.capabilities.aspects.length === 0) {
+    errors.push(`${label}: lists no aspects`);
+  }
+  if (!makesImages && (qualities.length > 0 || model.defaultFor.length > 0)) {
+    errors.push(`${label}: only runs tools, so it takes no qualities or style defaults`);
+  }
+  if (tools.length > 0 && !TOOL_PROVIDERS.includes(model.provider)) {
+    errors.push(`${label}: ${model.provider} runs no image tools`);
+  }
+  if (model.inferenceProfileId !== undefined && model.provider !== 'bedrock') {
+    errors.push(`${label}: only Bedrock models have inference profiles`);
   }
   if (new Set(model.capabilities.aspects).size !== model.capabilities.aspects.length) {
     errors.push(`${label}: lists an aspect more than once`);

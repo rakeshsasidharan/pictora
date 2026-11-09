@@ -5,6 +5,12 @@ import { MAX_IMAGE_COUNT, MIN_IMAGE_COUNT } from './points.js';
 import { ASPECTS, MAX_REFERENCE_IMAGES, MODEL_ID_PATTERN, QUALITIES } from './registry.js';
 import { AUTO_MODEL_ID } from './routing.js';
 import { STYLE_IDS } from './styles.js';
+import {
+  MAX_GROW_MASK,
+  MAX_OUTPAINT_PIXELS,
+  MAX_TOOL_PROMPT_LENGTH,
+  UPSCALE_MODES,
+} from './tools.js';
 
 /** Input limits (GEN-1, tech design section 12). */
 export const MAX_PROMPT_LENGTH = 2000;
@@ -83,9 +89,72 @@ export const editJobRequestSchema = z.strictObject({
     .optional(),
 });
 
+/** An upscale or outpaint prompt: optional, and empty when the user wrote none. */
+const toolPromptSchema = z.string().trim().max(MAX_TOOL_PROMPT_LENGTH);
+const outpaintPixelsSchema = z.int().min(0).max(MAX_OUTPAINT_PIXELS);
+
+/** The upload an erase mask was sent to: `uploads/<sub>/<ulid>`, never completed, like a reference upload. */
+const maskKeySchema = z
+  .string()
+  .refine((key) => parseReferenceKey(key)?.kind === 'upload', 'Not an upload key');
+
+const toolJobBase = {
+  type: z.literal('tool'),
+  imageId: ulidSchema,
+  /** The version the tool runs on; the result is the image's next version (EDIT-3). */
+  version: z.int().min(1),
+};
+
+/**
+ * `POST /api/jobs` with type `tool` (P1 Image tools, tech design 5.5): one image tool on one version of the
+ * caller's image, with the tool's own parameters.
+ */
+export const toolJobRequestSchema = z.discriminatedUnion('tool', [
+  z.strictObject({
+    ...toolJobBase,
+    tool: z.literal('upscale'),
+    params: z.strictObject({
+      mode: z.enum(UPSCALE_MODES),
+      /** What the image shows; the conservative and creative upscales are guided by it. */
+      prompt: toolPromptSchema.optional(),
+    }),
+  }),
+  z.strictObject({
+    ...toolJobBase,
+    tool: z.literal('remove-background'),
+    params: z.strictObject({}),
+  }),
+  z.strictObject({
+    ...toolJobBase,
+    tool: z.literal('erase'),
+    params: z.strictObject({
+      /** The mask the user drew, uploaded as a PNG: white is erased, black is kept. */
+      maskKey: maskKeySchema,
+      growMask: z.int().min(0).max(MAX_GROW_MASK).optional(),
+    }),
+  }),
+  z.strictObject({
+    ...toolJobBase,
+    tool: z.literal('outpaint'),
+    params: z
+      .strictObject({
+        left: outpaintPixelsSchema,
+        right: outpaintPixelsSchema,
+        up: outpaintPixelsSchema,
+        down: outpaintPixelsSchema,
+        prompt: toolPromptSchema.optional(),
+      })
+      .refine(
+        (params) => params.left + params.right + params.up + params.down > 0,
+        'Extend the image in at least one direction',
+      ),
+  }),
+]);
+
 export const createJobRequestSchema = z.discriminatedUnion('type', [
   generateJobRequestSchema,
   editJobRequestSchema,
+  toolJobRequestSchema,
 ]);
 
 /** `POST /api/enhance` (ENH-1). */
@@ -161,6 +230,7 @@ export const APP_GENERATE_DEFAULTS: Readonly<GenerateDefaults> = Object.freeze({
 
 export type GenerateJobRequest = z.infer<typeof generateJobRequestSchema>;
 export type EditJobRequest = z.infer<typeof editJobRequestSchema>;
+export type ToolJobRequest = z.infer<typeof toolJobRequestSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
 export type UploadRequest = z.infer<typeof uploadRequestSchema>;

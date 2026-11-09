@@ -48,8 +48,8 @@ import {
   type AuthStack,
 } from './auth_stack.js';
 import {
-  BEDROCK_REGION,
   QUEUE_PROVIDERS,
+  bedrockModelArns,
   providerSecretName,
   type QueueProvider,
   type SecretProvider,
@@ -386,32 +386,12 @@ export class WebStack extends Stack {
   }
 }
 
-/** Regions a `us.` cross-region inference profile routes to (Bedrock docs, model card). */
-export const US_INFERENCE_REGIONS = ['us-east-1', 'us-east-2', 'us-west-2'] as const;
+export { US_INFERENCE_REGIONS } from './jobs_stack.js';
 
 /**
  * What the app may invoke for a Bedrock enhancer, called from us-west-2: the model itself, or for a `us.` or
  * `global.` inference profile, the profile and the model in the regions the profile routes to.
  */
 export function enhancerModelArns(stack: Stack, modelId: string): string[] {
-  const profile = /^(us|global)\.(.+)$/.exec(modelId);
-  const foundationModel = (region: string, id: string) =>
-    stack.formatArn({
-      service: 'bedrock',
-      region,
-      account: '',
-      resource: 'foundation-model',
-      resourceName: id,
-    });
-  if (!profile?.[1] || !profile[2]) return [foundationModel(BEDROCK_REGION, modelId)];
-  const regions = profile[1] === 'us' ? [...US_INFERENCE_REGIONS] : ['*'];
-  return [
-    stack.formatArn({
-      service: 'bedrock',
-      region: BEDROCK_REGION,
-      resource: 'inference-profile',
-      resourceName: modelId,
-    }),
-    ...regions.map((region) => foundationModel(region, profile[2] as string)),
-  ];
+  return bedrockModelArns(stack, modelId);
 }
