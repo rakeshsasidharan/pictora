@@ -20,19 +20,19 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.1160.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1163.0",
     "@types/aws-lambda": "^8.10.164",
     "aws-sdk-client-mock": "^4.1.0",
     "esbuild": "^0.28.2",
-    "msw": "^3.0.3",
-    "vitest": "^5.0.5"
+    "msw": "^3.0.4",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.1160.0",
-    "@aws-sdk/client-dynamodb": "^3.1160.0",
-    "@aws-sdk/client-s3": "^3.1160.0",
-    "@aws-sdk/client-sqs": "^3.1160.0",
-    "@aws-sdk/lib-dynamodb": "^3.1160.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1163.0",
+    "@aws-sdk/client-dynamodb": "^3.1163.0",
+    "@aws-sdk/client-s3": "^3.1163.0",
+    "@aws-sdk/client-sqs": "^3.1163.0",
+    "@aws-sdk/lib-dynamodb": "^3.1163.0",
     "@pictora/core": "^0.0.0",
     "@pictora/providers": "^0.0.0",
     "sharp": "^0.35.5",
