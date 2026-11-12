@@ -47,6 +47,8 @@ function detail(versions: ImageVersionBody[], fields: Partial<ImageDetailBody['i
       title: 'A lighthouse at dusk',
       latestVersion: versions.at(-1)?.version ?? 1,
       versionCount: versions.length,
+      tags: [],
+      autoTags: [],
       ...fields,
     },
     versions,

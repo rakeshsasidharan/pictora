@@ -85,7 +85,14 @@ function body(): ImageDetailBody {
     ...(n > 1 ? { parentVersion: n - 1, editInstruction: `Edit ${n}` } : { prompt: 'A fox' }),
   });
   return {
-    image: { imageId: IMAGE_ID, title: 'A fox', latestVersion: 2, versionCount: 2 },
+    image: {
+      imageId: IMAGE_ID,
+      title: 'A fox',
+      latestVersion: 2,
+      versionCount: 2,
+      tags: [],
+      autoTags: [],
+    },
     versions: [version(1), version(2)],
   };
 }

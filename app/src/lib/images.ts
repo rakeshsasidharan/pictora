@@ -1,17 +1,38 @@
-import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { BatchWriteCommand, GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  ConditionalCheckFailedException,
+  TransactionCanceledException,
+} from '@aws-sdk/client-dynamodb';
+import {
+  BatchWriteCommand,
+  DeleteCommand,
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 import {
   MAX_ALT_TEXT_OVERRIDE_LENGTH,
+  SEARCH_INDEX_VERSION,
   TOOL_NAMES,
   activeJobsGsiPk,
   altTextRequestSchema,
+  autoTags,
+  collectionGsiPk,
+  collectionSk,
   imageSk,
+  matchesTag,
+  normaliseTag,
   rateLimitPerMinute,
+  searchScore,
+  searchTerms,
+  searchWords,
+  tagSk,
   toolIdFor,
   userPk,
   versionSk,
   type ActiveJobStatus,
   type Aspect,
+  type GalleryFilter,
   type JobItem,
   type JobType,
   type Quality,
@@ -23,8 +44,16 @@ import { takeRateSlot } from './enhance';
 import { apiError, imageFileName, logError, type ApiResult, type JobsDeps } from './jobs';
 import type { Session } from './session';
 
-/** What reading images needs: the table and presigned URLs, as the job API has them. */
-export type ImagesDeps = Pick<JobsDeps, 'client' | 'tableName' | 'presign'>;
+/**
+ * What reading images needs: the table and presigned URLs, as the job API has them, and the registry's model
+ * names, which automatic tags use (tech design 4.2).
+ */
+export type ImagesDeps = ImageReadDeps & {
+  modelNames: () => Promise<Readonly<Record<string, string>>>;
+};
+
+/** What reading one version needs: the table and presigned URLs. */
+export type ImageReadDeps = Pick<JobsDeps, 'client' | 'tableName' | 'presign'>;
 
 /** What deleting an image needs on top: removing every object under an S3 prefix. */
 export interface ImageDeleteDeps extends ImagesDeps {
@@ -92,12 +121,19 @@ export interface ImageDetailBody {
     style?: StyleId;
     modelId?: string;
     createdAt?: string;
+    /** The user's tags, in alphabetical order. */
+    tags: string[];
+    /** Tags from the style and model, which can't be removed (tech design 4.2). */
+    autoTags: string[];
+    /** The collection the image is in. */
+    collection?: { collectionId: string; name: string };
   };
   /** Every version, oldest first. */
   versions: ImageVersionBody[];
 }
 
-interface ImageItem {
+/** An `IMG#<imageId>` item. */
+export interface ImageItem {
   imageId: string;
   title: string;
   latestVersion: number;
@@ -108,6 +144,19 @@ interface ImageItem {
   createdAt?: string;
   /** The latest version's thumbnail. */
   thumbKey?: string;
+  /** The user's tags, a string set (tech design 4.2). */
+  tags?: Set<string>;
+  /** The search words of the image's prompt, edits and tool prompts, a string set. */
+  words?: Set<string>;
+  /** `SEARCH_INDEX_VERSION` once `words` is up to date. */
+  searchVersion?: number;
+  /** The collection the image is in, mirrored in `GSI1PK` for the collection view. */
+  collectionId?: string;
+}
+
+/** The user's tags of an image item, in alphabetical order. */
+export function imageTags(item: Pick<ImageItem, 'tags'>): string[] {
+  return [...(item.tags ?? [])].sort();
 }
 
 interface VersionItem {
@@ -154,7 +203,11 @@ export async function getImageDetail(
   const image = await readImage(deps, pk, imageId);
   if (!image) return notFound;
 
-  const items = await queryVersions(deps, pk, imageId);
+  const [items, names, collection] = await Promise.all([
+    queryVersions(deps, pk, imageId),
+    deps.modelNames(),
+    image.collectionId ? readCollection(deps, pk, image.collectionId) : undefined,
+  ]);
 
   // Only the owner's own objects are ever presigned.
   const prefix = `users/${session.sub}/`;
@@ -203,10 +256,36 @@ export async function getImageDetail(
       ...optional('style', image.style),
       ...optional('modelId', image.modelId),
       ...optional('createdAt', image.createdAt),
+      tags: imageTags(image),
+      autoTags: autoTags(image, names),
+      ...(collection
+        ? { collection: { collectionId: collection.collectionId, name: collection.name } }
+        : {}),
     },
     versions,
   };
   return { status: 200, body: { ...body } };
+}
+
+/** A `COL#<collectionId>` item. */
+export interface CollectionItem {
+  collectionId: string;
+  name: string;
+  imageCount?: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** The caller's collection, or undefined when they have none with that ID. */
+export async function readCollection(
+  deps: Pick<ImagesDeps, 'client' | 'tableName'>,
+  pk: string,
+  collectionId: string,
+): Promise<CollectionItem | undefined> {
+  const result = await deps.client.send(
+    new GetCommand({ TableName: deps.tableName, Key: { PK: pk, SK: collectionSk(collectionId) } }),
+  );
+  return result.Item as CollectionItem | undefined;
 }
 
 /** One image in the gallery grid (GAL-1): its latest version's thumbnail as a presigned URL. */
@@ -218,6 +297,10 @@ export interface GalleryImageBody {
   source?: 'upload';
   createdAt?: string;
   thumbUrl: string;
+  /** The user's tags, in alphabetical order (tech design 4.2). */
+  tags: string[];
+  /** The collection the image is in. */
+  collectionId?: string;
 }
 
 /**
@@ -241,47 +324,115 @@ export interface ActiveJobBody {
 
 /** The `GET /api/images` body. */
 export interface GalleryPageBody {
-  /** Newest first. */
+  /** Newest first; best match first for a search. */
   images: GalleryImageBody[];
   /** Pass as `?cursor=` for the next page; absent on the last page. */
   nextCursor?: string;
-  /** The caller's queued and running jobs, newest first; on the first page only. */
+  /** The caller's queued and running jobs, newest first; on the first page of the whole gallery only. */
   jobs?: ActiveJobBody[];
+  /** How many images match, for a search or a tag filter. */
+  total?: number;
 }
 
+// A search or tag filter pages by position in the ranked results.
+const OFFSET_PATTERN = /^(0|[1-9][0-9]{0,5})$/;
+
+/** Images whose search words are rebuilt at once, when a search finds images made before search existed. */
+const INDEX_CONCURRENCY = 8;
+
 /**
- * `GET /api/images?cursor=&limit=` (GAL-1, GEN-8): a page of the caller's images, newest first, each with a
- * presigned thumbnail. A page holds `limit` images (24 unless the caller asks for 1 to 50; the route checks
- * the range). The cursor is the ID of the last image on the previous page. The first page also lists the
- * caller's jobs that are still queued or running.
+ * `GET /api/images?cursor=&limit=&q=&tag=&collection=` (GAL-1, GEN-8, tech design 4.2): a page of the caller's
+ * images, each with a presigned thumbnail. A page holds `limit` images (24 unless the caller asks for 1 to 50;
+ * the route checks the range and the filters).
+ *
+ * - Without filters, the whole gallery, newest first; the cursor is the ID of the last image on the previous
+ *   page, and the first page also lists the caller's jobs that are still queued or running.
+ * - With only `collection`, that collection's images, newest first, read from GSI1 with the same cursor.
+ * - With `q` or `tag`, every candidate (the collection's images, or the whole gallery) is read and matched here:
+ *   `tag` must be one of the image's tags or automatic tags, and every word of `q` must match. Results are
+ *   ranked (`searchScore`), newest first among equals, and the cursor is the position of the next page.
+ *
+ * A collection the caller doesn't have answers 404.
  */
 export async function listImages(
   deps: ImagesDeps,
   session: Session,
   cursor?: string | null,
   limit: number = GALLERY_PAGE_SIZE,
+  filter: GalleryFilter = {},
 ): Promise<ApiResult> {
-  if (cursor && !ULID_PATTERN.test(cursor)) {
+  const terms = filter.q ? searchTerms(filter.q) : [];
+  const tag = filter.tag ? normaliseTag(filter.tag) : '';
+  const matching = terms.length > 0 || tag !== '';
+  if (cursor && !(matching ? OFFSET_PATTERN : ULID_PATTERN).test(cursor)) {
     return apiError('invalid_request', 'That page of the gallery is not valid.');
   }
   const pk = userPk(session.sub);
-  const [page, jobs] = await Promise.all([
-    deps.client.send(
-      new QueryCommand({
+  if (filter.collection && !(await readCollection(deps, pk, filter.collection))) {
+    return apiError('not_found', 'Collection not found.');
+  }
+  if (matching) {
+    return matchImages(
+      deps,
+      session,
+      { terms, tag, collectionId: filter.collection },
+      cursor,
+      limit,
+    );
+  }
+
+  const query = filter.collection
+    ? new QueryCommand({
+        TableName: deps.tableName,
+        IndexName: 'GSI1',
+        KeyConditionExpression: 'GSI1PK = :collection',
+        ExpressionAttributeValues: {
+          ':collection': collectionGsiPk(session.sub, filter.collection),
+        },
+        ScanIndexForward: false,
+        Limit: limit,
+        ...(cursor
+          ? {
+              ExclusiveStartKey: {
+                GSI1PK: collectionGsiPk(session.sub, filter.collection),
+                GSI1SK: cursor,
+                PK: pk,
+                SK: imageSk(cursor),
+              },
+            }
+          : {}),
+      })
+    : new QueryCommand({
         TableName: deps.tableName,
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
         ExpressionAttributeValues: { ':pk': pk, ':prefix': 'IMG#' },
         ScanIndexForward: false,
         Limit: limit,
         ...(cursor ? { ExclusiveStartKey: { PK: pk, SK: imageSk(cursor) } } : {}),
-      }),
-    ),
-    cursor ? Promise.resolve(undefined) : activeJobs(deps, session.sub),
+      });
+  const showJobs = !cursor && !filter.collection;
+  const [page, jobs] = await Promise.all([
+    deps.client.send(query),
+    showJobs ? activeJobs(deps, session.sub) : Promise.resolve(undefined),
   ]);
   const items = (page.Items ?? []) as ImageItem[];
-  // Only the owner's own objects are ever presigned.
+  const last = items.at(-1);
+  const body: GalleryPageBody = {
+    images: await galleryImages(deps, session, items),
+    ...(page.LastEvaluatedKey && last ? { nextCursor: last.imageId } : {}),
+    ...(jobs ? { jobs } : {}),
+  };
+  return { status: 200, body: { ...body } };
+}
+
+/** The grid tiles of image items; only the owner's own objects are ever presigned. */
+async function galleryImages(
+  deps: ImagesDeps,
+  session: Session,
+  items: ImageItem[],
+): Promise<GalleryImageBody[]> {
   const prefix = `users/${session.sub}/`;
-  const images = await Promise.all(
+  return Promise.all(
     items
       .filter((item) => item.thumbKey?.startsWith(prefix))
       .map(async (item): Promise<GalleryImageBody> => ({
@@ -292,15 +443,140 @@ export async function listImages(
         ...optional('source', item.source),
         ...optional('createdAt', item.createdAt),
         thumbUrl: await deps.presign(item.thumbKey!),
+        tags: imageTags(item),
+        ...optional('collectionId', item.collectionId),
       })),
   );
-  const last = items.at(-1);
+}
+
+/** A search or tag filter of `listImages`. */
+interface Match {
+  terms: string[];
+  /** A normalised tag, or empty for none. */
+  tag: string;
+  collectionId?: string;
+}
+
+/** The ranked results of a search or tag filter, one page of them at a time. */
+async function matchImages(
+  deps: ImagesDeps,
+  session: Session,
+  match: Match,
+  cursor: string | null | undefined,
+  limit: number,
+): Promise<ApiResult> {
+  const pk = userPk(session.sub);
+  const [candidates, names] = await Promise.all([
+    match.collectionId
+      ? queryAll(deps, {
+          IndexName: 'GSI1',
+          KeyConditionExpression: 'GSI1PK = :collection',
+          ExpressionAttributeValues: {
+            ':collection': collectionGsiPk(session.sub, match.collectionId),
+          },
+        })
+      : queryAll(deps, {
+          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+          ExpressionAttributeValues: { ':pk': pk, ':prefix': 'IMG#' },
+        }),
+    deps.modelNames(),
+  ]);
+  const items = candidates as unknown as ImageItem[];
+  if (match.terms.length > 0) await indexImages(deps, pk, items);
+
+  const ranked = items
+    .flatMap((item) => {
+      const tags = imageTags(item);
+      const auto = autoTags(item, names);
+      if (match.tag && !matchesTag(match.tag, tags, auto)) return [];
+      const score = searchScore(match.terms, {
+        words: [...(item.words ?? [])],
+        tags,
+        autoTags: auto,
+      });
+      return score === undefined ? [] : [{ item, score }];
+    })
+    .sort((a, b) => b.score - a.score || (a.item.imageId < b.item.imageId ? 1 : -1));
+
+  const offset = cursor ? Number(cursor) : 0;
+  const next = offset + limit;
   const body: GalleryPageBody = {
-    images,
-    ...(page.LastEvaluatedKey && last ? { nextCursor: last.imageId } : {}),
-    ...(jobs ? { jobs } : {}),
+    images: await galleryImages(
+      deps,
+      session,
+      ranked.slice(offset, next).map(({ item }) => item),
+    ),
+    ...(next < ranked.length ? { nextCursor: String(next) } : {}),
+    total: ranked.length,
   };
   return { status: 200, body: { ...body } };
+}
+
+/** Every item a query finds, across all its pages. */
+export async function queryAll(
+  deps: Pick<ImagesDeps, 'client' | 'tableName'>,
+  input: Omit<ConstructorParameters<typeof QueryCommand>[0], 'TableName' | 'ExclusiveStartKey'>,
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await deps.client.send(
+      new QueryCommand({
+        ...input,
+        TableName: deps.tableName,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    items.push(...(page.Items ?? []));
+    exclusiveStartKey = page.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return items;
+}
+
+/**
+ * Builds the search words of images made before search existed (no `searchVersion`, or an older one) from their
+ * versions, and stores them. The write is conditional on the version count read, so an edit that finished in
+ * between isn't lost: that image is indexed again by a later search. The words are used for this search either
+ * way. A failed write is logged, never thrown.
+ */
+async function indexImages(deps: ImagesDeps, pk: string, items: ImageItem[]): Promise<void> {
+  const stale = items.filter((item) => item.searchVersion !== SEARCH_INDEX_VERSION);
+  for (let start = 0; start < stale.length; start += INDEX_CONCURRENCY) {
+    await Promise.all(
+      stale.slice(start, start + INDEX_CONCURRENCY).map(async (item) => {
+        const versions = await queryVersions(deps, pk, item.imageId);
+        const words = searchWords(
+          ...versions.flatMap((version) => [
+            version.prompt,
+            version.editInstruction,
+            version.toolPrompt,
+          ]),
+        );
+        item.words = new Set(words);
+        try {
+          await deps.client.send(
+            new UpdateCommand({
+              TableName: deps.tableName,
+              Key: { PK: pk, SK: imageSk(item.imageId) },
+              UpdateExpression:
+                words.length > 0
+                  ? 'SET searchVersion = :version, words = :words'
+                  : 'SET searchVersion = :version REMOVE words',
+              ConditionExpression: 'attribute_exists(PK) AND versionCount = :count',
+              ExpressionAttributeValues: {
+                ':version': SEARCH_INDEX_VERSION,
+                ':count': item.versionCount,
+                ...(words.length > 0 ? { ':words': item.words } : {}),
+              },
+            }),
+          );
+        } catch (error) {
+          if (error instanceof ConditionalCheckFailedException) return;
+          logError('Indexing an image for search failed', { imageId: item.imageId, error });
+        }
+      }),
+    );
+  }
 }
 
 /**
@@ -356,7 +632,7 @@ async function activeJobs(deps: ImagesDeps, sub: string): Promise<ActiveJobBody[
  * of a generated version counts as `image_downloaded` for the keep rate (tech design 11.1).
  */
 export async function versionDownloadUrl(
-  deps: ImagesDeps,
+  deps: ImageReadDeps,
   session: Session,
   imageId: string,
   version: string,
@@ -395,7 +671,7 @@ export interface VersionAltTextBody {
  * with jobs (429). Another user's version answers 404, the same as one that doesn't exist.
  */
 export async function setVersionAltText(
-  deps: ImagesDeps,
+  deps: ImageReadDeps,
   session: Session,
   imageId: string,
   version: string,
@@ -444,8 +720,8 @@ export async function setVersionAltText(
 
 /**
  * `DELETE /api/images/:id` (GAL-3): deletes every object of the image (all its versions and thumbnails, gaps in
- * the numbering included), then its `IMG#` and `VER#` items. Objects go first, so a failure leaves the image in
- * the gallery to delete again. The objects are swept once more at the end, in case an edit that was running
+ * the numbering included), then its `IMG#` item (with one less image in its collection and on each tag, tech
+ * design 4.2) and its `VER#` items. Objects go first, so a failure leaves the image in the gallery to delete again. The objects are swept once more at the end, in case an edit that was running
  * stored its result in between; that edit then fails with a refund, because the image is gone (tech design 5.3).
  * Another user's image answers 404. Generated versions deleted unkept count against the keep rate.
  */
@@ -464,20 +740,131 @@ export async function deleteImage(
   try {
     await deps.removePrefix(prefix);
     const versions = await queryVersions(deps, pk, imageId);
-    const keys = [
-      { PK: pk, SK: imageSk(imageId) },
-      ...versions.map((item) => ({ PK: pk, SK: versionSk(imageId, item.version) })),
-    ];
+    await deleteImageItem(deps, pk, image);
+    const keys = versions.map((item) => ({ PK: pk, SK: versionSk(imageId, item.version) }));
     for (let start = 0; start < keys.length; start += DELETE_BATCH) {
       await deleteBatch(deps, keys.slice(start, start + DELETE_BATCH));
     }
     await deps.removePrefix(prefix);
+    await removeUnusedTags(deps, pk, imageTags(image));
     await countDiscarded(deps, imageId, versions);
   } catch (error) {
     logError('Deleting an image failed', { imageId, error });
     return apiError('deletion_failed', "We couldn't delete your image. Please try again.");
   }
   return { status: 200, body: { imageId, deleted: true } };
+}
+
+/** One item of a `TransactWriteItems` call. */
+export type TransactItem = NonNullable<
+  ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
+>[number];
+
+/**
+ * Runs a transaction whose `counters` items (a collection's or tag's image count) are each conditional on the
+ * item existing. A counter whose item has gone, because its collection was deleted in the meantime, is dropped
+ * and the rest tried again, so a count never brings back a deleted item and never blocks the change it counts.
+ * A failed condition on one of the `required` items is thrown as `TransactionCanceledException`.
+ */
+export async function transactWithCounters(
+  deps: Pick<ImagesDeps, 'client'>,
+  required: TransactItem[],
+  counters: TransactItem[],
+): Promise<void> {
+  let optional = counters;
+  for (;;) {
+    try {
+      await deps.client.send(
+        new TransactWriteCommand({ TransactItems: [...required, ...optional] }),
+      );
+      return;
+    } catch (error) {
+      if (!(error instanceof TransactionCanceledException)) throw error;
+      const reasons = error.CancellationReasons ?? [];
+      const failed = (index: number) => reasons[index]?.Code === 'ConditionalCheckFailed';
+      if (required.some((_, index) => failed(index))) throw error;
+      const kept = optional.filter((_, index) => !failed(required.length + index));
+      if (kept.length === optional.length) throw error;
+      optional = kept;
+    }
+  }
+}
+
+/** Adds `delta` to a collection's or tag's `imageCount`, only while its item exists. */
+export function counterUpdate(
+  tableName: string,
+  key: { PK: string; SK: string },
+  delta: number,
+): TransactItem {
+  return {
+    Update: {
+      TableName: tableName,
+      Key: key,
+      UpdateExpression: 'ADD imageCount :delta',
+      ConditionExpression: 'attribute_exists(PK)',
+      ExpressionAttributeValues: { ':delta': delta },
+    },
+  };
+}
+
+/**
+ * Deletes the `IMG#` item, with one less image in its collection and on each of its tags (tech design 4.2). An
+ * image already gone counts as deleted.
+ */
+async function deleteImageItem(deps: ImagesDeps, pk: string, image: ImageItem): Promise<void> {
+  const counters = [
+    ...(image.collectionId
+      ? [counterUpdate(deps.tableName, { PK: pk, SK: collectionSk(image.collectionId) }, -1)]
+      : []),
+    ...imageTags(image).map((tag) => counterUpdate(deps.tableName, { PK: pk, SK: tagSk(tag) }, -1)),
+  ];
+  try {
+    await transactWithCounters(
+      deps,
+      [
+        {
+          Delete: {
+            TableName: deps.tableName,
+            Key: { PK: pk, SK: imageSk(image.imageId) },
+            ConditionExpression: 'attribute_exists(PK)',
+          },
+        },
+      ],
+      counters,
+    );
+  } catch (error) {
+    // Deleted at the same time by another request, which counted it.
+    if (error instanceof TransactionCanceledException) return;
+    throw error;
+  }
+}
+
+/**
+ * Deletes the `TAG#` items of these tags that no image uses any more, so suggestions and the tag filter only
+ * offer tags in use. Logged, never thrown: the change that freed them is already made.
+ */
+export async function removeUnusedTags(
+  deps: Pick<ImagesDeps, 'client' | 'tableName'>,
+  pk: string,
+  tags: string[],
+): Promise<void> {
+  await Promise.all(
+    tags.map(async (tag) => {
+      try {
+        await deps.client.send(
+          new DeleteCommand({
+            TableName: deps.tableName,
+            Key: { PK: pk, SK: tagSk(tag) },
+            ConditionExpression: 'imageCount <= :zero',
+            ExpressionAttributeValues: { ':zero': 0 },
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ConditionalCheckFailedException) return;
+        logError('Removing an unused tag failed', { tag, error });
+      }
+    }),
+  );
 }
 
 /**
@@ -528,7 +915,7 @@ export interface RerunSettings {
  * uploaded image, which has no prompt, and for an image the caller doesn't have.
  */
 export async function rerunSettings(
-  deps: ImagesDeps,
+  deps: ImageReadDeps,
   session: Session,
   imageId: string,
 ): Promise<RerunSettings | undefined> {
@@ -555,7 +942,7 @@ export async function rerunSettings(
   };
 }
 
-async function readImage(
+export async function readImage(
   deps: ImagesDeps,
   pk: string,
   imageId: string,

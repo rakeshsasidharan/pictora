@@ -5,6 +5,8 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   JOB_SK,
   PROFILE_SK,
+  collectionNameSk,
+  collectionSk,
   TESTERS_GROUP,
   TOS_VERSION,
   imageKey,
@@ -58,6 +60,7 @@ const OWNER_IMAGE = '01JAAAAAAAAAAAAAAAAAAAAAAA';
 const OWNER_JOB = '01JBBBBBBBBBBBBBBBBBBBBBBB';
 const OWNER_UPLOAD = '01JCCCCCCCCCCCCCCCCCCCCCCC';
 const MODLOG_ID = '01JDDDDDDDDDDDDDDDDDDDDDDD';
+const OWNER_COLLECTION = '01JGGGGGGGGGGGGGGGGGGGGGGG';
 
 interface Route {
   method: Method;
@@ -212,7 +215,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
       now,
       newJobId: () => '01JEEEEEEEEEEEEEEEEEEEEEEE',
     };
-    local.images = { client, tableName, presign, removePrefix };
+    local.images = { client, tableName, presign, removePrefix, modelNames: async () => ({}) };
     local.uploads = {
       client,
       tableName,
@@ -255,6 +258,19 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
       height: 1024,
     });
     await put({
+      PK: userPk(owner.sub),
+      SK: collectionSk(OWNER_COLLECTION),
+      collectionId: OWNER_COLLECTION,
+      name: 'Logos',
+      imageCount: 0,
+      createdAt: '2026-10-22T11:00:00.000Z',
+    });
+    await put({
+      PK: userPk(owner.sub),
+      SK: collectionNameSk('Logos'),
+      collectionId: OWNER_COLLECTION,
+    });
+    await put({
       PK: jobPk(OWNER_JOB),
       SK: JOB_SK,
       jobId: OWNER_JOB,
@@ -282,6 +298,24 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
         'PATCH',
         '/api/images/:id/versions/:n',
         { body: { altText: 'Not mine' } },
+      ],
+      [
+        'renames their collection',
+        'PATCH',
+        '/api/collections/:id',
+        { params: { id: OWNER_COLLECTION }, body: { name: 'Mine' } },
+      ],
+      [
+        'deletes their collection',
+        'DELETE',
+        '/api/collections/:id',
+        { params: { id: OWNER_COLLECTION } },
+      ],
+      [
+        'moves their own image into their collection',
+        'POST',
+        '/api/images/bulk',
+        { body: { action: 'move', imageIds: [OWNER_IMAGE], collectionId: OWNER_COLLECTION } },
       ],
       [
         'reports their image',
@@ -333,6 +367,31 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
     expect(response.status).toBe(404);
   });
 
+  it.each([
+    ['tags', { action: 'addTag', imageIds: [OWNER_IMAGE], tag: 'mine' }],
+    ['untags', { action: 'removeTag', imageIds: [OWNER_IMAGE], tag: 'mine' }],
+    ['moves', { action: 'move', imageIds: [OWNER_IMAGE], collectionId: null }],
+    ['deletes', { action: 'delete', imageIds: [OWNER_IMAGE] }],
+  ])('reports their image as not found when a user %s it in bulk', async (_name, body) => {
+    const response = await call(route('POST', '/api/images/bulk'), {
+      body,
+      headers: headersFor(other),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      results: [{ imageId: OWNER_IMAGE, ok: false, code: 'not_found', error: 'Image not found.' }],
+    });
+  });
+
+  it('lists none of their collections or tags', async () => {
+    for (const path of ['/api/collections', '/api/tags']) {
+      const response = await call(route('GET', path), { headers: headersFor(other) });
+      expect(await response.json()).toEqual(
+        path.endsWith('tags') ? { tags: [] } : { collections: [] },
+      );
+    }
+  });
+
   it('answers the owner, so the 404s above come from the ownership checks', async () => {
     const image = await call(route('GET', '/api/images/:id'), { headers: headersFor(owner) });
     expect(image.status).toBe(200);
@@ -353,6 +412,14 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('another user’s resources', () => {
       }),
     );
     expect(image.Item).toBeDefined();
+    expect(image.Item).not.toHaveProperty('tags');
+    const collection = await client.send(
+      new GetCommand({
+        TableName: tableName,
+        Key: { PK: userPk(owner.sub), SK: collectionSk(OWNER_COLLECTION) },
+      }),
+    );
+    expect(collection.Item).toMatchObject({ name: 'Logos' });
   });
 
   it.each([

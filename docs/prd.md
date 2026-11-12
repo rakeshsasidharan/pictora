@@ -83,7 +83,7 @@ P0 ships OpenAI and Gemini with four features: generate, edit with prompt, promp
 | P1 | Batch mode | Slower, half-price generation through provider batch APIs |
 | Later | Monetisation | Credits or subscription for premium models and higher limits |
 | Later | Sharing | Share links, then an opt-in public gallery |
-| Later | Collections | Folders, tags and search across the gallery |
+| P2 | Collections | Folders, tags and search across the gallery, with bulk actions |
 
 ## Functional requirements
 
@@ -131,6 +131,13 @@ Each requirement has an ID for tickets and test cases; all are P0 unless marked.
 - GAL-2: The detail view shows the prompt, enhanced prompt, model, style, size, seed (where available), date and version history.
 - GAL-3: Actions: download PNG, rerun with the same settings, edit, delete.
 - GAL-4: Images are served only through short-lived signed URLs; no image is public.
+
+**Collections, tags and search (COL, P2)**
+
+- COL-1: Users create, rename and delete collections. An image is in at most one collection, like a folder; deleting a collection keeps its images in the gallery.
+- COL-2: Users add their own tags to an image (free text, up to 20), with their earlier tags suggested. Each image also has automatic tags from its style and model.
+- COL-3: The gallery searches the words of the prompts and edits and the tags, and filters by collection and tag; results show in the gallery grid, best match first.
+- COL-4: In select mode, users move images to a collection, add or remove a tag, or delete them, many at a time.
 
 **Limits (LIM)**
 

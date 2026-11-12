@@ -62,7 +62,14 @@ const IMAGE_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
 
 function body(): ImageDetailBody {
   return {
-    image: { imageId: IMAGE_ID, title: 'A fox', latestVersion: 1, versionCount: 1 },
+    image: {
+      imageId: IMAGE_ID,
+      title: 'A fox',
+      latestVersion: 1,
+      versionCount: 1,
+      tags: [],
+      autoTags: [],
+    },
     versions: [
       {
         version: 1,
@@ -100,7 +107,7 @@ describe('gallery pages', () => {
   });
 
   it('shows the gallery grid', async () => {
-    render(await GalleryPage());
+    render(await GalleryPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getByRole('heading', { level: 1, name: 'Your images' })).toBeTruthy();
     expect(await screen.findByRole('link', { name: 'Create your first image' })).toBeTruthy();
   });
@@ -126,10 +133,14 @@ describe('gallery pages', () => {
 
   it('sends signed-out visitors home and new users to onboarding', async () => {
     onboarded.current = false;
-    await expect(GalleryPage()).rejects.toMatchObject({ url: '/onboarding' });
+    await expect(GalleryPage({ searchParams: Promise.resolve({}) })).rejects.toMatchObject({
+      url: '/onboarding',
+    });
     await expect(imagePage()).rejects.toMatchObject({ url: '/onboarding' });
     requestHeaders.current = new Headers();
-    await expect(GalleryPage()).rejects.toMatchObject({ url: '/' });
+    await expect(GalleryPage({ searchParams: Promise.resolve({}) })).rejects.toMatchObject({
+      url: '/',
+    });
     await expect(imagePage()).rejects.toMatchObject({ url: '/' });
   });
 });

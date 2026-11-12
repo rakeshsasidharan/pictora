@@ -188,6 +188,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('edit jobs', () => {
       versionCount: 2,
       thumbKey: thumbnailKey(sub, imageId, 2),
       title: 'A lighthouse at dusk',
+      // The edit's words join the image's search words (tech design 4.2).
+      words: new Set(['make', 'night']),
     });
     expect(objects.has(imageKey(sub, imageId, 2))).toBe(true);
     expect(objects.has(thumbnailKey(sub, imageId, 2))).toBe(true);
@@ -219,6 +221,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('edit jobs', () => {
     expect(await item(userPk(sub), imageSk(imageId))).toMatchObject({
       latestVersion: 4,
       versionCount: 4,
+      words: new Set(['make', 'night', 'add', 'stars', 'snow']),
     });
     // EDIT-3: the original is never overwritten.
     expect(await item(userPk(sub), versionSk(imageId, 1))).toEqual(versionOne);

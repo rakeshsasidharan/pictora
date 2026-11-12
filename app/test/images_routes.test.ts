@@ -66,7 +66,35 @@ describe('image routes', () => {
       expect.objectContaining({ sub: 'user-sub' }),
       IMAGE_ID,
       undefined,
+      {},
     );
+  });
+
+  it('GET /api/images passes the search and filters', async () => {
+    images.listImages.mockResolvedValue({ status: 200, body: { images: [], total: 0 } });
+    const collection = '01JCCCCCCCCCCCCCCCCCCCCCCC';
+    const response = await list(
+      new NextRequest(`${base}?q=red%20fox&tag=Logos&collection=${collection}`, {
+        headers: signedIn,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(images.listImages).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sub: 'user-sub' }),
+      null,
+      undefined,
+      { q: 'red fox', tag: 'Logos', collection },
+    );
+  });
+
+  it('GET /api/images rejects a collection that is not an ID, or a search that is too long', async () => {
+    for (const query of ['collection=../x', `q=${'a'.repeat(201)}`, `tag=${'t'.repeat(65)}`]) {
+      const response = await list(new NextRequest(`${base}?${query}`, { headers: signedIn }));
+      expect(response.status, query).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'invalid_request' });
+    }
+    expect(images.listImages).not.toHaveBeenCalled();
   });
 
   it('GET /api/images passes a limit from 1 to 50', async () => {
@@ -79,6 +107,7 @@ describe('image routes', () => {
         expect.objectContaining({ sub: 'user-sub' }),
         null,
         limit,
+        {},
       );
     }
   });

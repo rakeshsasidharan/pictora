@@ -104,6 +104,8 @@ export const API_ERROR_STATUS = {
   not_found: 404,
   terms_changed: 409,
   invalid_state: 409,
+  name_taken: 409,
+  limit_reached: 409,
   rate_limited: 429,
   too_many_jobs: 429,
   enqueue_failed: 503,

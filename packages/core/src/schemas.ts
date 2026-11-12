@@ -46,7 +46,8 @@ export function parseReferenceKey(key: string): ReferenceKey | undefined {
 
 const promptSchema = z.string().trim().min(1).max(MAX_PROMPT_LENGTH);
 const modelIdSchema = z.string().max(64).regex(MODEL_ID_PATTERN);
-const ulidSchema = z.string().regex(ULID_PATTERN);
+/** An ID the app made: an image, job, upload or collection. */
+export const ulidSchema = z.string().regex(ULID_PATTERN);
 
 export const qualitySchema = z.enum(QUALITIES);
 export const aspectSchema = z.enum(ASPECTS);

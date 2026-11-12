@@ -15,6 +15,7 @@ import {
   MODLOG_TTL_DAYS,
   PLATFORM_PK,
   PROFILE_SK,
+  SEARCH_INDEX_VERSION,
   SECONDS_PER_DAY,
   STATS_TTL_DAYS,
   activeJobsGsiPk,
@@ -24,6 +25,7 @@ import {
   jobPk,
   modlogPk,
   promptExcerpt,
+  searchWords,
   spendSk,
   statsModelSk,
   statsPk,
@@ -169,6 +171,8 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
     s3Key,
   }));
 
+  // The words gallery search finds the image by (tech design 4.2).
+  const words = searchWords(request.prompt);
   const imageItems = images.flatMap((image) => [
     {
       Put: {
@@ -184,6 +188,8 @@ export async function completeJob(ctx: TableContext, input: CompleteInput): Prom
           modelId: job.modelId,
           createdAt: at,
           thumbKey: image.thumbKey,
+          ...(words.length > 0 ? { words: new Set(words) } : {}),
+          searchVersion: SEARCH_INDEX_VERSION,
         },
         ConditionExpression: 'attribute_not_exists(PK)',
       },
@@ -373,6 +379,7 @@ export async function completeEditJob(
   const jobImages: JobImage[] = [
     { imageId: image.imageId, version: image.version, s3Key: image.s3Key },
   ];
+  const source = versionSource(request);
   const common: TransactItem[] = [
     {
       Update: {
@@ -422,7 +429,7 @@ export async function completeEditJob(
           thumbKey: image.thumbKey,
           width: image.width,
           height: image.height,
-          ...versionSource(request),
+          ...source,
           modelId: job.modelId,
           aspect: input.aspect,
           jobId: job.jobId,
@@ -434,13 +441,25 @@ export async function completeEditJob(
     },
   ];
   const imageKeyAttrs = { PK: pk, SK: imageSk(image.imageId) };
+  // The edit's words join the image's search words (tech design 4.2).
+  const words = searchWords(
+    source.editInstruction as string | undefined,
+    source.toolPrompt as string | undefined,
+  );
+  const addWords = words.length > 0 ? ', words :words' : '';
+  const wordValues = words.length > 0 ? { ':words': new Set(words) } : {};
   const asLatest: TransactItem = {
     Update: {
       TableName: ctx.tableName,
       Key: imageKeyAttrs,
-      UpdateExpression: 'ADD versionCount :one SET latestVersion = :n, thumbKey = :thumb',
+      UpdateExpression: `ADD versionCount :one${addWords} SET latestVersion = :n, thumbKey = :thumb`,
       ConditionExpression: 'attribute_exists(PK) AND latestVersion < :n',
-      ExpressionAttributeValues: { ':one': 1, ':n': image.version, ':thumb': image.thumbKey },
+      ExpressionAttributeValues: {
+        ':one': 1,
+        ':n': image.version,
+        ':thumb': image.thumbKey,
+        ...wordValues,
+      },
     },
   };
   // A later-numbered edit of the same image finished first: count this version without making it the latest.
@@ -448,9 +467,9 @@ export async function completeEditJob(
     Update: {
       TableName: ctx.tableName,
       Key: imageKeyAttrs,
-      UpdateExpression: 'ADD versionCount :one',
+      UpdateExpression: `ADD versionCount :one${addWords}`,
       ConditionExpression: 'attribute_exists(PK)',
-      ExpressionAttributeValues: { ':one': 1 },
+      ExpressionAttributeValues: { ':one': 1, ...wordValues },
     },
   };
 
