@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { EditPanel } from '../../../../components/edit_panel';
 import { documentClient, tableName } from '../../../../lib/dynamodb';
+import { modelNames } from '../../../../lib/gallery_models';
 import { getImageDetail, type ImageDetailBody } from '../../../../lib/images';
 import { getMe, type MeBody } from '../../../../lib/jobs';
 import { jobsDeps } from '../../../../lib/jobs_deps';
@@ -36,7 +37,7 @@ export default async function EditImagePage({
   const { imageId } = await params;
   const { version } = await searchParams;
   const deps = jobsDeps();
-  const detail = await getImageDetail(deps, session, imageId);
+  const detail = await getImageDetail({ ...deps, modelNames }, session, imageId);
   if (detail.status !== 200) notFound();
 
   const [enabled, me, pause] = await Promise.all([

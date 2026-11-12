@@ -32,6 +32,8 @@ function detail(versions: ImageVersionBody[]): ImageDetailBody {
       title: 'A lighthouse at dusk',
       latestVersion: versions.at(-1)?.version ?? 1,
       versionCount: versions.length,
+      tags: [],
+      autoTags: [],
     },
     versions,
   };

@@ -8,6 +8,7 @@ import {
   BLOCK_TTL_SECONDS,
   MAX_UPLOAD_BYTES,
   MODLOG_TTL_DAYS,
+  SEARCH_INDEX_VERSION,
   SECONDS_PER_DAY,
   UPLOAD_CONTENT_TYPES,
   UPLOAD_POST_EXPIRY_SECONDS,
@@ -271,6 +272,8 @@ async function storeUploadedImage(
                 source: 'upload',
                 createdAt: at,
                 thumbKey,
+                // An upload has no prompt to search by; marked indexed so search never rebuilds it.
+                searchVersion: SEARCH_INDEX_VERSION,
               },
               ConditionExpression: 'attribute_not_exists(PK)',
             },

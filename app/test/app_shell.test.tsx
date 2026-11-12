@@ -23,6 +23,7 @@ function image(n: number): GalleryImageBody {
     versionCount: 1,
     createdAt: new Date(Date.now() - n * 60 * 60 * 1000).toISOString(),
     thumbUrl: `https://signed.example/${n}_thumb.webp`,
+    tags: [],
   };
 }
 

@@ -26,6 +26,7 @@ describe('getImageDetail', () => {
         send: () => Promise.reject(new Error('DynamoDB should not be called')),
       } as unknown as ImagesDeps['client'],
       tableName: 'unused',
+      modelNames: async () => ({}),
       presign: async (key) => key,
     };
     const session: Session = { sub: 'sub', email: 'a@example.com', groups: [] };
@@ -39,6 +40,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('getImageDetail against DynamoDB Local', () 
   const deps: ImagesDeps = {
     client,
     tableName,
+    modelNames: async () => ({}),
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
   };
@@ -94,6 +96,8 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('getImageDetail against DynamoDB Local', () 
       latestVersion: 10,
       versionCount: 3,
       createdAt: '2026-10-15T12:00:00.000Z',
+      tags: [],
+      autoTags: [],
     });
     expect(body.versions.map((version) => version.version)).toEqual([1, 2, 10]);
     expect(body.versions[0]).toMatchObject({
@@ -160,6 +164,7 @@ describe('image API input checks', () => {
       send: () => Promise.reject(new Error('DynamoDB should not be called')),
     } as unknown as ImagesDeps['client'],
     tableName: 'unused',
+    modelNames: async () => ({}),
     presign: async (key) => key,
     removePrefix: () => Promise.reject(new Error('S3 should not be called')),
   };
@@ -204,6 +209,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('gallery API against DynamoDB Local', () => 
   const deps: ImageDeleteDeps = {
     client,
     tableName,
+    modelNames: async () => ({}),
     presign: async (key, downloadName) =>
       `https://signed.example/${key}${downloadName ? `?download=${downloadName}` : ''}`,
     removePrefix: async (prefix) => {
@@ -304,6 +310,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('gallery API against DynamoDB Local', () => 
       versionCount: 1,
       createdAt: '2026-10-15T12:00:00.000Z',
       thumbUrl: `https://signed.example/${thumbnailKey(owner.sub, imageIdOf(30), 1)}`,
+      tags: [],
     });
     expect(first.images.at(-1)?.imageId).toBe(imageIdOf(7));
     expect(first.nextCursor).toBe(imageIdOf(7));

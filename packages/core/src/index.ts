@@ -42,6 +42,41 @@ export {
   isBetaRejection,
 } from './beta.js';
 export type { BetaAllowlistAdd, BetaAllowlistItem } from './beta.js';
+export {
+  MAX_BULK_IMAGES,
+  MAX_COLLECTIONS,
+  MAX_COLLECTION_NAME_LENGTH,
+  MAX_SEARCH_LENGTH,
+  MAX_SEARCH_TERMS,
+  MAX_TAGS_PER_IMAGE,
+  MAX_TAG_LENGTH,
+  MAX_WORD_LENGTH,
+  SEARCH_INDEX_VERSION,
+  autoTags,
+  bulkRequestSchema,
+  collectionGsiPk,
+  collectionNameKey,
+  collectionNameSchema,
+  collectionNameSk,
+  collectionRequestSchema,
+  collectionSk,
+  galleryFilterSchema,
+  matchesTag,
+  normaliseTag,
+  searchScore,
+  searchTerms,
+  searchWords,
+  tagSchema,
+  tagSk,
+} from './collections.js';
+export type {
+  AutoTagSource,
+  BulkAction,
+  BulkRequest,
+  CollectionRequest,
+  GalleryFilter,
+  Searchable,
+} from './collections.js';
 export { DELETE_CONFIRMATION, parsePurgeMessage, userObjectPrefixes } from './account.js';
 export type { PurgeMessage } from './account.js';
 export {
@@ -251,6 +286,7 @@ export {
   reportRequestSchema,
   styleIdSchema,
   toolJobRequestSchema,
+  ulidSchema,
   uploadRequestSchema,
 } from './schemas.js';
 export type {

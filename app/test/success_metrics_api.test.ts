@@ -148,6 +148,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('success metric events against DynamoDB Loca
     const deps: ImageDeleteDeps = {
       client,
       tableName,
+      modelNames: async () => ({}),
       presign: async (key) => `https://signed.example/${key}`,
       removePrefix,
     };

@@ -23,6 +23,7 @@ function tile(n: number, fields: Partial<GalleryImageBody> = {}): GalleryImageBo
     latestVersion: 1,
     versionCount: 1,
     thumbUrl: `https://signed.example/${n}_thumb.webp`,
+    tags: [],
     ...fields,
   };
 }
@@ -242,7 +243,14 @@ describe('Gallery', () => {
   it('opens the detail as a modal on wide screens and removes a deleted image', async () => {
     setWideScreen(true);
     const detail: ImageDetailBody = {
-      image: { imageId: idOf(2), title: 'Image 2', latestVersion: 1, versionCount: 1 },
+      image: {
+        imageId: idOf(2),
+        title: 'Image 2',
+        latestVersion: 1,
+        versionCount: 1,
+        tags: [],
+        autoTags: [],
+      },
       versions: [
         {
           version: 1,

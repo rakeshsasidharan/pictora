@@ -4,6 +4,7 @@ import {
   JOB_SK,
   PLATFORM_PK,
   PROFILE_SK,
+  SEARCH_INDEX_VERSION,
   imageSk,
   jobPk,
   statsModelSk,
@@ -207,6 +208,9 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('processJob', () => {
         modelId: 'mock',
         createdAt: '2026-10-15T12:00:30.000Z',
         thumbKey: `users/${sub}/${image.imageId}/v1_thumb.webp`,
+        // Gallery search finds it by the prompt's words (tech design 4.2).
+        words: new Set(['lighthouse', 'dusk']),
+        searchVersion: SEARCH_INDEX_VERSION,
       });
       expect(await item(userPk(sub), versionSk(image.imageId, 1))).toMatchObject({
         version: 1,
