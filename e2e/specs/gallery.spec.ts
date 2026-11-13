@@ -27,7 +27,13 @@ test.describe('gallery', () => {
     await tile.click();
     const dialog = page.getByRole('dialog', { name: 'Image details' });
     await expect(dialog.getByRole('heading', { name: prompt })).toBeVisible();
-    await expect(dialog.getByText('Mock (dev only)')).toBeVisible();
+    await expect(
+      dialog.getByRole('definition').filter({ hasText: 'Mock (dev only)' }),
+    ).toBeVisible();
+    // The model also shows as an automatic tag that filters the gallery (tech design 4.2).
+    await expect(
+      dialog.getByRole('link', { name: 'Mock (dev only), automatic tag' }),
+    ).toHaveAttribute('href', '/gallery?tag=Mock+%28dev+only%29');
     await expect(dialog.getByText('Draft', { exact: true })).toBeVisible();
     await expect(dialog.getByText('Seed', { exact: true })).toBeVisible();
 
