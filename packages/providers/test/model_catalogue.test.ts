@@ -1,4 +1,8 @@
-import { BedrockClient, ListFoundationModelsCommand } from '@aws-sdk/client-bedrock';
+import {
+  BedrockClient,
+  ListFoundationModelsCommand,
+  ListInferenceProfilesCommand,
+} from '@aws-sdk/client-bedrock';
 import { mockClient } from 'aws-sdk-client-mock';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -113,10 +117,59 @@ describe('bedrockModelCatalogue', () => {
         },
       ],
     });
+    bedrock.on(ListInferenceProfilesCommand).resolves({ inferenceProfileSummaries: [] });
     const catalogue = await bedrockModelCatalogue(new BedrockClient({ region: 'us-west-2' }));
     expect(Object.fromEntries(catalogue)).toEqual({
       'stability.stable-image-core-v1:1': { legacy: false },
       'stability.sd3-5-large-v1:0': { legacy: true, endOfLife: '2026-12-01' },
     });
+  });
+
+  it('adds the active system-defined Stability inference profiles, across pages', async () => {
+    const profile = (id: string, model: string, status: 'ACTIVE' | string = 'ACTIVE') => ({
+      inferenceProfileId: id,
+      inferenceProfileName: id,
+      inferenceProfileArn: `arn:aws:bedrock:us-west-2:111111111111:inference-profile/${id}`,
+      type: 'SYSTEM_DEFINED' as const,
+      status: status as 'ACTIVE',
+      models: [
+        { modelArn: `arn:aws:bedrock:us-west-2::foundation-model/${model}` },
+        { modelArn: `arn:aws:bedrock:us-east-1::foundation-model/${model}` },
+      ],
+    });
+    bedrock.on(ListFoundationModelsCommand).resolves({ modelSummaries: [] });
+    bedrock
+      .on(ListInferenceProfilesCommand, { typeEquals: 'SYSTEM_DEFINED', nextToken: undefined })
+      .resolves({
+        inferenceProfileSummaries: [
+          profile('us.stability.stable-fast-upscale-v1:0', 'stability.stable-fast-upscale-v1:0'),
+          profile('us.anthropic.claude-model-v1:0', 'anthropic.claude-model-v1:0'),
+        ],
+        nextToken: 'page-2',
+      })
+      .on(ListInferenceProfilesCommand, { typeEquals: 'SYSTEM_DEFINED', nextToken: 'page-2' })
+      .resolves({
+        inferenceProfileSummaries: [
+          profile('us.stability.stable-outpaint-v1:0', 'stability.stable-outpaint-v1:0'),
+          profile(
+            'us.stability.stable-image-old-v1:0',
+            'stability.stable-image-old-v1:0',
+            'INACTIVE',
+          ),
+        ],
+      });
+    const catalogue = await bedrockModelCatalogue(new BedrockClient({ region: 'us-west-2' }));
+    expect(Object.fromEntries(catalogue)).toEqual({
+      'us.stability.stable-fast-upscale-v1:0': { legacy: false },
+      'us.stability.stable-outpaint-v1:0': { legacy: false },
+    });
+  });
+
+  it('fails when the inference profiles cannot be listed, so no model is flagged', async () => {
+    bedrock.on(ListFoundationModelsCommand).resolves({ modelSummaries: [] });
+    bedrock.on(ListInferenceProfilesCommand).rejects(new Error('AccessDeniedException'));
+    await expect(bedrockModelCatalogue(new BedrockClient({ region: 'us-west-2' }))).rejects.toThrow(
+      'AccessDeniedException',
+    );
   });
 });

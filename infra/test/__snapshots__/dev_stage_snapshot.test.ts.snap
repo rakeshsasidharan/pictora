@@ -2236,7 +2236,10 @@ exports[`PictoraDev stage > matches the snapshot > PictoraDev-Jobs 1`] = `
               ],
             },
             {
-              "Action": "bedrock:ListFoundationModels",
+              "Action": [
+                "bedrock:ListFoundationModels",
+                "bedrock:ListInferenceProfiles",
+              ],
               "Effect": "Allow",
               "Resource": "*",
             },

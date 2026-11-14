@@ -1,4 +1,8 @@
-import { BedrockClient, ListFoundationModelsCommand } from '@aws-sdk/client-bedrock';
+import {
+  BedrockClient,
+  ListFoundationModelsCommand,
+  paginateListInferenceProfiles,
+} from '@aws-sdk/client-bedrock';
 import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import { BEDROCK_REGION } from './bedrock.js';
@@ -61,7 +65,9 @@ export async function geminiModelCatalogue(options: {
 
 /**
  * Bedrock's `ListFoundationModels` for Stability AI in us-west-2, with each model's lifecycle: `LEGACY` counts
- * as a deprecation notice, and its end of life as the retirement date.
+ * as a deprecation notice, and its end of life as the retirement date. The system-defined inference profiles
+ * that route to a Stability model are listed too, by profile ID: the image tools' models are reachable only
+ * through one, so `ListFoundationModels` doesn't return them. A profile reports no lifecycle.
  */
 export async function bedrockModelCatalogue(
   client: BedrockClient = new BedrockClient({ region: BEDROCK_REGION }),
@@ -77,6 +83,17 @@ export async function bedrockModelCatalogue(
       legacy: model.modelLifecycle?.status === 'LEGACY',
       ...(endOfLife ? { endOfLife: endOfLife.toISOString().slice(0, 10) } : {}),
     });
+  }
+  const stabilityModel = `:foundation-model/${BEDROCK_MODEL_PROVIDER}.`;
+  for await (const page of paginateListInferenceProfiles(
+    { client },
+    { typeEquals: 'SYSTEM_DEFINED' },
+  )) {
+    for (const profile of page.inferenceProfileSummaries ?? []) {
+      if (!profile.inferenceProfileId || profile.status !== 'ACTIVE') continue;
+      if (!profile.models?.some((model) => model.modelArn?.includes(stabilityModel))) continue;
+      catalogue.set(profile.inferenceProfileId, { legacy: false });
+    }
   }
   return catalogue;
 }
