@@ -24,6 +24,8 @@ export interface ModelProblem {
   modelId: string;
   provider: Provider;
   providerModelId: string;
+  /** For a Bedrock model reached through an inference profile: the profile that was looked up. */
+  inferenceProfileId?: string;
   reason: ModelProblemReason;
   /** For `retiring`: the end-of-life date, `yyyy-mm-dd`. */
   eolDate?: string;
@@ -40,7 +42,8 @@ export interface ModelHealthReport {
 export type Catalogues = Partial<Record<Provider, () => Promise<ModelCatalogue>>>;
 
 /**
- * Checks each enabled model against its provider's models list (tech design 3.2): it must still be listed,
+ * Checks each enabled model against its provider's models list (tech design 3.2), by its inference profile ID
+ * when it has one, else its provider model ID: it must still be listed,
  * not marked legacy, and not retire within 60 days, by the registry's `eolDate` or the provider's own date.
  * A provider whose list can't be read is reported as unavailable and none of its models are flagged, so an
  * outage doesn't raise a false alarm.
@@ -77,8 +80,10 @@ export async function checkModelHealth(
       modelId: model.id,
       provider: model.provider,
       providerModelId: model.providerModelId,
+      ...(model.inferenceProfileId ? { inferenceProfileId: model.inferenceProfileId } : {}),
     };
-    const entry = catalogue.get(model.providerModelId);
+    // The ID the adapter invokes: a model reached through an inference profile is listed by the profile.
+    const entry = catalogue.get(model.inferenceProfileId ?? model.providerModelId);
     if (!entry) {
       report.problems.push({ ...base, reason: 'missing' });
       continue;

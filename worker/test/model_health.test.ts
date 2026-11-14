@@ -15,13 +15,16 @@ vi.mock('../src/log.js', () => ({ log: vi.fn() }));
 const NOW = new Date('2026-10-19T06:00:00.000Z');
 const seed = loadSeedRegistry();
 
+/** The ID a provider lists a model by: its inference profile when it has one. */
+const listedId = (model: ModelConfig) => model.inferenceProfileId ?? model.providerModelId;
+
 /** Each provider lists every seed model of its own, as a healthy provider does. */
 function healthyCatalogues(models: readonly ModelConfig[] = seed): Catalogues {
   const listFor = (provider: string): ModelCatalogue =>
     new Map(
       models
         .filter((model) => model.provider === provider)
-        .map((model) => [model.providerModelId, { legacy: false }]),
+        .map((model) => [listedId(model), { legacy: false }]),
     );
   return {
     openai: async () => listFor('openai'),
@@ -52,6 +55,35 @@ describe('checkModelHealth', () => {
         reason: 'missing',
       },
     ]);
+  });
+
+  it('checks a model reached through an inference profile by its profile ID', async () => {
+    const tool = seed.find((model) => model.inferenceProfileId !== undefined);
+    expect(tool).toBeDefined();
+    const catalogues = healthyCatalogues();
+    // Bedrock lists the tool only as a profile, not under its foundation model ID.
+    const report = await checkModelHealth(seed, catalogues, NOW);
+    expect(report.problems).toEqual([]);
+    expect(report.checked).toContain(tool!.id);
+
+    // Listed under its foundation model ID but without its profile, it can't be invoked.
+    catalogues.bedrock = async () =>
+      new Map(
+        seed
+          .filter((model) => model.provider === 'bedrock')
+          .map((model) => [model.providerModelId, { legacy: false }]),
+      );
+    const missing = await checkModelHealth(seed, catalogues, NOW);
+    expect(missing.problems).toContainEqual({
+      modelId: tool!.id,
+      provider: 'bedrock',
+      providerModelId: tool!.providerModelId,
+      inferenceProfileId: tool!.inferenceProfileId,
+      reason: 'missing',
+    });
+    expect(missing.problems.every((problem) => problem.inferenceProfileId !== undefined)).toBe(
+      true,
+    );
   });
 
   it('flags a model whose registry eolDate is within 60 days, and not one further out', async () => {
@@ -94,7 +126,7 @@ describe('checkModelHealth', () => {
     // The image tools' Stability models are listed too, and healthy.
     const healthy = seed
       .filter((model) => model.provider === 'bedrock')
-      .map((model) => [model.providerModelId, { legacy: false }] as const);
+      .map((model) => [listedId(model), { legacy: false }] as const);
     catalogues.bedrock = async () =>
       new Map<string, { legacy: boolean; endOfLife?: string }>([
         ...healthy,

@@ -304,13 +304,17 @@ export class JobsStack extends Stack {
         ...geminiEnvironment(config),
       },
     });
-    // Reads the registry and the provider keys, and lists Bedrock's models, which has no resource-level scope.
+    // Reads the registry and the provider keys, and lists Bedrock's models and inference profiles, which have
+    // no resource-level scope.
     props.table.grantReadData(this.modelHealthFunction);
     for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.modelHealthFunction);
     }
     this.modelHealthFunction.addToRolePolicy(
-      new PolicyStatement({ actions: ['bedrock:ListFoundationModels'], resources: ['*'] }),
+      new PolicyStatement({
+        actions: ['bedrock:ListFoundationModels', 'bedrock:ListInferenceProfiles'],
+        resources: ['*'],
+      }),
     );
     new Rule(this, 'ModelHealthSchedule', {
       description: 'Checks every enabled Pictora model still exists with its provider',

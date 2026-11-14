@@ -513,10 +513,12 @@ describe('Jobs stack: model health', () => {
     });
   });
 
-  it('may read the table and the provider secrets, and list Bedrock models', () => {
+  it('may read the table and the provider secrets, and list Bedrock models and inference profiles', () => {
     const statements = policyStatements(dev, 'ModelHealthFunctionServiceRole');
     const actions = statements.flatMap((statement) => [statement.Action].flat());
-    expect(actions).toEqual(expect.arrayContaining(['bedrock:ListFoundationModels']));
+    expect(actions).toEqual(
+      expect.arrayContaining(['bedrock:ListFoundationModels', 'bedrock:ListInferenceProfiles']),
+    );
     expect(actions).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem']));
     expect(actions).not.toContain('dynamodb:PutItem');
     expect(actions).not.toContain('bedrock:InvokeModel');
