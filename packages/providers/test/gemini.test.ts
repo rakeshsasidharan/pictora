@@ -373,9 +373,10 @@ describe('Gemini backends', () => {
     );
   });
 
-  it('builds a Gemini API client from the API key', () => {
+  it('builds a Gemini API client from the API key, pinned to v1beta', () => {
     expect(geminiClientOptions(API, ' g-key\n')).toEqual({
       apiKey: 'g-key',
+      apiVersion: 'v1beta',
       httpOptions: { timeout: 120_000, retryOptions: { attempts: 1 } },
     });
   });
@@ -396,6 +397,8 @@ describe('Gemini backends', () => {
       httpOptions: { timeout: 120_000, retryOptions: { attempts: 1 } },
     });
     expect(options).not.toHaveProperty('apiKey');
+    // Vertex AI keeps the SDK's default version, v1beta1.
+    expect(options).not.toHaveProperty('apiVersion');
     expect(geminiClientOptions({ backend: 'vertex' }, serviceAccount)).toMatchObject({
       project: 'pictora-sa-project',
       location: GEMINI_DEFAULT_VERTEX_LOCATION,

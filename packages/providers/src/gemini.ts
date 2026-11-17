@@ -41,6 +41,12 @@ export const GEMINI_MAX_REFERENCE_IMAGES = 3;
 /** The Gemini API's base URL, where batch result files are downloaded from. */
 export const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
 
+/**
+ * The Gemini API version, pinned because the SDK's default changed to `v1` in `@google/genai` 3: the Batch API
+ * and the preview image models are on `v1beta`. Vertex AI keeps the SDK's default.
+ */
+export const GEMINI_API_VERSION = 'v1beta';
+
 /** Gemini batch states while the batch still runs. */
 const GEMINI_BATCH_PENDING = new Set([
   'JOB_STATE_UNSPECIFIED',
@@ -125,7 +131,9 @@ export function geminiClientOptions(
   };
   const secret = credential.trim();
   if (!secret) throw new ProviderError('The Gemini secret is empty');
-  if (config.backend === 'api') return { apiKey: secret, httpOptions };
+  if (config.backend === 'api') {
+    return { apiKey: secret, apiVersion: GEMINI_API_VERSION, httpOptions };
+  }
 
   let credentials: Record<string, unknown>;
   try {
@@ -334,10 +342,13 @@ export class GeminiProvider implements ImageProvider, BatchImageProvider {
   ): Promise<InlinedResponse[]> {
     const credential = (await this.options.credential()).trim();
     const base = this.options.baseUrl ?? GEMINI_API_BASE_URL;
-    const response = await fetch(`${base}/download/v1beta/${fileName}:download?alt=media`, {
-      headers: { 'x-goog-api-key': credential },
-      signal,
-    });
+    const response = await fetch(
+      `${base}/download/${GEMINI_API_VERSION}/${fileName}:download?alt=media`,
+      {
+        headers: { 'x-goog-api-key': credential },
+        signal,
+      },
+    );
     if (!response.ok) {
       throw toProviderError(
         Object.assign(new Error(`Gemini batch results download failed: HTTP ${response.status}`), {
