@@ -39,6 +39,18 @@ export function contextWithoutDomain(envName: 'dev' | 'prod'): Record<string, un
   return { environments };
 }
 
+/** Context with beta mode turned on for one environment, for the invite-only path (prod during the private beta). */
+export function contextWithBetaMode(envName: 'dev' | 'prod'): Record<string, unknown> {
+  const environments = structuredClone(cdkJsonContext().environments) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  const settings = environments[envName];
+  if (!settings) throw new Error(`cdk.json has no ${envName} environment`);
+  settings.betaMode = true;
+  return { environments };
+}
+
 export function testStage(name: 'PictoraDev' | 'PictoraProd', context?: Record<string, unknown>) {
   return testApp(context).node.findChild(name) as PictoraStage;
 }

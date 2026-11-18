@@ -209,6 +209,7 @@ In a real restore, the app can't switch tables by config: restore to a new table
 - **Admin access in prod:** while beta mode is on, only allowlisted emails can sign up. For the first admin, add your email to the allowlist from the CLI ([README: Private beta allowlist](../README.md#private-beta-allowlist)), sign up at https://pictora.rpillai.dev, then add yourself to the `admins` group ([README: Admin access](../README.md#admin-access)) and sign out and in again. After that, manage the allowlist at `/admin/beta`.
 - **Invite testers:** add their emails at `/admin/beta`. Removing an email doesn't touch an account already created.
 - **End of beta:** check the success metrics on `/admin` against the PRD targets. To launch, set `betaMode` to false for prod in `infra/cdk.json` and deploy. To extend, leave it on and record the decision on #33.
+- **Launched on 2026-11-17:** `betaMode` is off in prod, so anyone can sign up and the beta banner is gone. The allowlist items stay in the table and are ignored. To return to an invite-only beta, set `betaMode` to true for prod and deploy.
 
 ## Domain move (one time, #33)
 

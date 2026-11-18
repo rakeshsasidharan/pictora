@@ -9,7 +9,12 @@ import {
   LOGIN_RADIUS,
 } from '../lib/login_branding.js';
 import { US_INFERENCE_REGIONS, enhancerModelArns } from '../lib/web_stack.js';
-import { contextWithoutDomain, testStage, TEST_IMAGE_DIGEST } from './helpers.js';
+import {
+  contextWithBetaMode,
+  contextWithoutDomain,
+  testStage,
+  TEST_IMAGE_DIGEST,
+} from './helpers.js';
 
 /** AWS managed CloudFront policy IDs. */
 const CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
@@ -25,6 +30,8 @@ const dev = Template.fromStack(devStage.web);
 const prod = Template.fromStack(testStage('PictoraProd').web);
 /** An environment served on its CloudFront domain, as prod was before it had pictora.rpillai.dev. */
 const noDomain = Template.fromStack(testStage('PictoraProd', contextWithoutDomain('prod')).web);
+/** Prod with beta mode on, as during the private beta. */
+const prodInBeta = Template.fromStack(testStage('PictoraProd', contextWithBetaMode('prod')).web);
 
 function distributionConfig(template: Template) {
   const [distribution] = Object.values(template.findResources('AWS::CloudFront::Distribution'));
@@ -63,8 +70,9 @@ describe('Web stack: app Lambda', () => {
     });
   });
 
-  it('turns the beta banner on in prod only', () => {
-    expect(appFunction(prod).Environment.Variables.BETA_MODE).toBe('true');
+  it('turns the beta banner off in prod since launch, and on when beta mode is set', () => {
+    expect(appFunction(prod).Environment.Variables.BETA_MODE).toBe('false');
+    expect(appFunction(prodInBeta).Environment.Variables.BETA_MODE).toBe('true');
   });
 
   it('passes the enhancer model and secret names, and reads only the secrets it needs', () => {

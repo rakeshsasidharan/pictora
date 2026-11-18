@@ -152,9 +152,9 @@ describe('stageConfig', () => {
     });
   });
 
-  it('turns beta mode on in prod and off in dev, and off when unset', () => {
+  it('turns beta mode off in prod and dev after launch, off when unset, and on when set', () => {
     expect(configFor(cdkJsonContext()).betaMode).toBe(false);
-    expect(configFor(cdkJsonContext(), 'prod').betaMode).toBe(true);
+    expect(configFor(cdkJsonContext(), 'prod').betaMode).toBe(false);
     expect(configFor({ environments: { dev: devSettings } }).betaMode).toBe(false);
     expect(configFor({ environments: { dev: { ...devSettings, betaMode: true } } }).betaMode).toBe(
       true,
