@@ -60,7 +60,7 @@ describe('Pictora CDK app', () => {
       dailyPoints: 25,
       spendCapUsd: 100,
       queueConcurrency: 5,
-      betaMode: true,
+      betaMode: false,
     });
   });
 });

@@ -1,9 +1,11 @@
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { testStage } from './helpers.js';
+import { contextWithBetaMode, testStage } from './helpers.js';
 
 const dev = Template.fromStack(testStage('PictoraDev').auth);
 const prod = Template.fromStack(testStage('PictoraProd').auth);
+/** Prod with beta mode on, as during the private beta. */
+const prodInBeta = Template.fromStack(testStage('PictoraProd', contextWithBetaMode('prod')).auth);
 
 function userPool(template: Template) {
   const [pool] = Object.values(template.findResources('AWS::Cognito::UserPool'));
@@ -113,12 +115,15 @@ describe('Auth stack: pre-sign-up trigger', () => {
     });
   });
 
-  it('passes beta mode: on in prod, off in dev', () => {
+  it('passes beta mode: off in prod and dev since launch, on when beta mode is set', () => {
     expect(preSignUpFunction(prod).props).toMatchObject({
-      Environment: { Variables: { BETA_MODE: 'true' } },
+      Environment: { Variables: { BETA_MODE: 'false' } },
     });
     expect(preSignUpFunction(dev).props).toMatchObject({
       Environment: { Variables: { BETA_MODE: 'false' } },
+    });
+    expect(preSignUpFunction(prodInBeta).props).toMatchObject({
+      Environment: { Variables: { BETA_MODE: 'true' } },
     });
   });
 

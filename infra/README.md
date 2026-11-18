@@ -19,7 +19,7 @@ AWS CDK app for Pictora. It holds the `PictoraDev` and `PictoraProd` stages, and
 
 ### Settings
 
-Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `authDomainPrefix` (the Cognito managed login domain, `<prefix>.auth.us-west-2.amazoncognito.com`), `dailyPoints`, `spendCapUsd` (the monthly cap on provider spend, which the spend alarms and the AWS budget also use), `queueConcurrency`, `appReservedConcurrency` and `betaMode` (true for the private beta: only allowlisted emails can sign up, and the app shows the beta banner; on in prod, off in dev). Turning `betaMode` off at launch is this value and a deploy.
+Per-environment settings live in `cdk.json` under `context.environments`: `domain` (prod has none yet, so it is served on its CloudFront domain), `authDomainPrefix` (the Cognito managed login domain, `<prefix>.auth.us-west-2.amazoncognito.com`), `dailyPoints`, `spendCapUsd` (the monthly cap on provider spend, which the spend alarms and the AWS budget also use), `queueConcurrency`, `appReservedConcurrency` and `betaMode` (true for the private beta: only allowlisted emails can sign up, and the app shows the beta banner; off in prod and dev since launch on 2026-11-17). Turning it on or off is this value and a deploy.
 
 Account-specific and per-deploy values are passed with `-c` and have placeholders, so synth works without them:
 

@@ -59,7 +59,7 @@ The default allowance applies from the user's next request. To give one user a d
 
 ### Private beta allowlist
 
-While `betaMode` is on for an environment (`infra/cdk.json`: on in prod for the beta, off in dev), only emails on the allowlist can sign up, with email or Google; anyone else sees a "Pictora is in private beta" message. Existing accounts and admins are not affected. Admins manage the list at `/admin/beta` (add, remove, list). From the CLI, each email is an item with `PK = BETA#ALLOWLIST` and `SK` the email in lower case:
+While `betaMode` is on for an environment (`infra/cdk.json`: off in prod and dev since launch on 2026-11-17; it was on in prod for the private beta), only emails on the allowlist can sign up, with email or Google; anyone else sees a "Pictora is in private beta" message. Existing accounts and admins are not affected. Admins manage the list at `/admin/beta` (add, remove, list). From the CLI, each email is an item with `PK = BETA#ALLOWLIST` and `SK` the email in lower case:
 
 ```sh
 # Add
