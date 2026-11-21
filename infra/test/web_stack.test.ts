@@ -82,7 +82,7 @@ describe('Web stack: app Lambda', () => {
     });
     expect(appFunction(dev).Environment.Variables).not.toHaveProperty('GEMINI_SECRET_ID');
     expect(appFunction(prod).Environment.Variables).toMatchObject({
-      ENHANCER_MODEL: 'bedrock:us.openai.gpt-5.6-luna',
+      ENHANCER_MODEL: 'bedrock:us.amazon.nova-2-lite-v1:0',
       OPENAI_SECRET_ID: 'pictora/prod/openai',
     });
     const reads = (template: Template) =>
@@ -104,20 +104,20 @@ describe('Web stack: app Lambda', () => {
     expect(invoke).toHaveLength(1);
     const resources = JSON.stringify(invoke[0]?.Resource);
     expect(resources).toContain(':bedrock:us-west-2:');
-    expect(resources).toContain(':inference-profile/us.openai.gpt-5.6-luna');
+    expect(resources).toContain(':inference-profile/us.amazon.nova-2-lite-v1:0');
     for (const region of US_INFERENCE_REGIONS) {
-      expect(resources).toContain(`:bedrock:${region}::foundation-model/openai.gpt-5.6-luna`);
+      expect(resources).toContain(`:bedrock:${region}::foundation-model/amazon.nova-2-lite-v1:0`);
     }
   });
 
   it('builds the Bedrock enhancer resources for a bare model and a global profile', () => {
     const stack = devStage.web;
-    expect(JSON.stringify(enhancerModelArns(stack, 'openai.gpt-5.6-luna'))).toContain(
-      ':bedrock:us-west-2::foundation-model/openai.gpt-5.6-luna',
+    expect(JSON.stringify(enhancerModelArns(stack, 'amazon.nova-2-lite-v1:0'))).toContain(
+      ':bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0',
     );
-    const global = JSON.stringify(enhancerModelArns(stack, 'global.openai.gpt-5.6-luna'));
-    expect(global).toContain(':inference-profile/global.openai.gpt-5.6-luna');
-    expect(global).toContain(':bedrock:*::foundation-model/openai.gpt-5.6-luna');
+    const global = JSON.stringify(enhancerModelArns(stack, 'global.amazon.nova-2-lite-v1:0'));
+    expect(global).toContain(':inference-profile/global.amazon.nova-2-lite-v1:0');
+    expect(global).toContain(':bedrock:*::foundation-model/amazon.nova-2-lite-v1:0');
   });
 
   it('passes the provider queue URLs from the Jobs stack, and may send to those queues only', () => {

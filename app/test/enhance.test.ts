@@ -87,7 +87,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('enhancePrompt against DynamoDB Local', () =
     models: async () => devModels,
     moderate,
     enhance,
-    enhancerModel: 'bedrock:us.openai.gpt-5.6-luna',
+    enhancerModel: 'bedrock:us.amazon.nova-2-lite-v1:0',
     now: () => now,
     ...overrides,
   });
@@ -95,7 +95,7 @@ describe.skipIf(!DYNAMODB_ENDPOINT)('enhancePrompt against DynamoDB Local', () =
   const getItem = async (PK: string, SK: string) =>
     (await client.send(new GetCommand({ TableName: tableName, Key: { PK, SK } }))).Item;
   const stats = () =>
-    getItem(statsPk('2026-10-15'), statsEnhancerSk('bedrock:us.openai.gpt-5.6-luna'));
+    getItem(statsPk('2026-10-15'), statsEnhancerSk('bedrock:us.amazon.nova-2-lite-v1:0'));
   const setProfile = async (sub: string, fields: Record<string, unknown>) => {
     const names = Object.keys(fields);
     await client.send(

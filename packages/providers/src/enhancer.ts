@@ -30,14 +30,19 @@ export interface EnhancerTokenPrices {
 }
 
 export const ENHANCER_TOKEN_PRICES: Readonly<Record<string, EnhancerTokenPrices>> = {
-  'us.openai.gpt-5.6-luna': { input: 0.2, output: 1.2 },
-  'openai.gpt-5.6-luna': { input: 0.2, output: 1.2 },
+  // The `us.` cross-region profile costs 10% more than the model in one region.
+  'us.amazon.nova-2-lite-v1:0': { input: 0.33, output: 2.75 },
+  'amazon.nova-2-lite-v1:0': { input: 0.3, output: 2.5 },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.5 },
 };
 
-/** The two candidates the M2 test compares (PRD open question). */
+/**
+ * The candidates `compare:enhancers` runs by default. Amazon Nova 2 Lite is the prod enhancer (#194): it is
+ * first-party on Bedrock, so it needs no AWS Marketplace agreement, which GPT-5.6 Luna does and this account
+ * isn't offered.
+ */
 export const ENHANCER_CANDIDATES = [
-  'bedrock:us.openai.gpt-5.6-luna',
+  'bedrock:us.amazon.nova-2-lite-v1:0',
   'gemini:gemini-3.1-flash-lite',
 ];
 

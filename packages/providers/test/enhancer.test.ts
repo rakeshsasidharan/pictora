@@ -36,9 +36,9 @@ const ENHANCED =
 
 describe('parseEnhancerModel', () => {
   it('reads bedrock:, gemini: and mock', () => {
-    expect(parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna')).toEqual({
+    expect(parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0')).toEqual({
       backend: 'bedrock',
-      modelId: 'us.openai.gpt-5.6-luna',
+      modelId: 'us.amazon.nova-2-lite-v1:0',
     });
     expect(parseEnhancerModel(' gemini:gemini-3.1-flash-lite ')).toEqual({
       backend: 'gemini',
@@ -52,8 +52,8 @@ describe('parseEnhancerModel', () => {
   });
 
   it('names the model as written in config', () => {
-    expect(enhancerModelName(parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna'))).toBe(
-      'bedrock:us.openai.gpt-5.6-luna',
+    expect(enhancerModelName(parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0'))).toBe(
+      'bedrock:us.amazon.nova-2-lite-v1:0',
     );
     expect(enhancerModelName(parseEnhancerModel('mock'))).toBe('mock');
   });
@@ -115,10 +115,18 @@ describe('parseEnhancement', () => {
 
 describe('enhancerCostCents', () => {
   it('prices input and output tokens at the model rate', () => {
-    // 400 input tokens at $0.20/M and 150 output tokens at $1.20/M = $0.00026.
-    expect(enhancerCostCents(parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna'), 400, 150)).toBe(
-      0.03,
+    // 400 input tokens at $0.33/M and 150 output tokens at $2.75/M = $0.0005445.
+    expect(
+      enhancerCostCents(parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0'), 400, 150),
+    ).toBe(0.05);
+    // The model in one region, without the cross-region premium: $0.30/M and $2.50/M = $0.000495.
+    expect(enhancerCostCents(parseEnhancerModel('bedrock:amazon.nova-2-lite-v1:0'), 400, 150)).toBe(
+      0.05,
     );
+    // 10,000 input tokens at $0.30/M and 10,000 output tokens at $2.50/M = $0.028.
+    expect(
+      enhancerCostCents(parseEnhancerModel('bedrock:amazon.nova-2-lite-v1:0'), 10_000, 10_000),
+    ).toBe(2.8);
     // 10,000 input tokens at $0.25/M and 5,000 output tokens at $1.50/M = $0.01.
     expect(
       enhancerCostCents(parseEnhancerModel('gemini:gemini-3.1-flash-lite'), 10_000, 5_000),
@@ -142,7 +150,7 @@ describe('createEnhancer with Bedrock', () => {
     });
     let time = 0;
     const enhance = createEnhancer({
-      model: parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna'),
+      model: parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0'),
       bedrock: new BedrockRuntimeClient({ region: 'us-west-2' }),
       now: () => (time += 1200),
     });
@@ -153,16 +161,39 @@ describe('createEnhancer with Bedrock', () => {
       enhancedPrompt: ENHANCED,
       inputTokens: 400,
       outputTokens: 150,
-      costCents: 0.03,
+      costCents: 0.05,
       latencyMs: 1200,
     });
     const [call] = bedrock.commandCalls(ConverseCommand);
     expect(call?.args[0].input).toEqual({
-      modelId: 'us.openai.gpt-5.6-luna',
+      modelId: 'us.amazon.nova-2-lite-v1:0',
       system: [{ text: ENHANCER_SYSTEM_PROMPT }],
       messages: [{ role: 'user', content: [{ text: enhancerUserMessage(input) }] }],
       inferenceConfig: { maxTokens: ENHANCER_MAX_OUTPUT_TOKENS },
     });
+    bedrock.restore();
+  });
+
+  it('uses only the text blocks when the model also returns reasoning', async () => {
+    const bedrock = mockClient(BedrockRuntimeClient);
+    bedrock.on(ConverseCommand).resolves({
+      output: {
+        message: {
+          role: 'assistant',
+          content: [
+            { reasoningContent: { reasoningText: { text: 'The user wants a cat scene.' } } },
+            { text: ENHANCED },
+          ],
+        },
+      },
+      stopReason: 'end_turn',
+      usage: { inputTokens: 400, outputTokens: 150, totalTokens: 550 },
+    });
+    const enhance = createEnhancer({
+      model: parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0'),
+      bedrock: new BedrockRuntimeClient({ region: 'us-west-2' }),
+    });
+    expect((await enhance(input)).enhancedPrompt).toBe(ENHANCED);
     bedrock.restore();
   });
 
@@ -175,7 +206,7 @@ describe('createEnhancer with Bedrock', () => {
       }),
     );
     const enhance = createEnhancer({
-      model: parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna'),
+      model: parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0'),
       bedrock: new BedrockRuntimeClient({ region: 'us-west-2' }),
     });
     await expect(enhance(input)).rejects.toBeInstanceOf(ProviderRateLimitError);

@@ -78,7 +78,7 @@ describe('runComparison and formatReport', () => {
   it('runs every sample through each candidate and summarises latency, cost and failures', async () => {
     const results = await runComparison(
       [
-        { name: 'bedrock:us.openai.gpt-5.6-luna', enhance: fast },
+        { name: 'bedrock:us.amazon.nova-2-lite-v1:0', enhance: fast },
         { name: 'gemini:gemini-3.1-flash-lite', enhance: flaky },
       ],
       registry,
@@ -92,7 +92,7 @@ describe('runComparison and formatReport', () => {
     const report = formatReport(results, '2026-10-18');
     expect(report).toMatch(/^# Prompt enhancer comparison, 2026-10-18/);
     expect(report).toContain(
-      '| `bedrock:us.openai.gpt-5.6-luna` | 0.80 s | 0.80 s | 0.010¢ | 0 | 0 |',
+      '| `bedrock:us.amazon.nova-2-lite-v1:0` | 0.80 s | 0.80 s | 0.010¢ | 0 | 0 |',
     );
     expect(report).toContain('## 1. a cat on a windowsill');
     expect(report).toContain('## 20. my dog as a superhero');
