@@ -171,7 +171,7 @@ P0 launches with five image models across OpenAI and Gemini, costing about $0.00
 
 **Supporting models**
 
-- Prompt enhancer: a low-cost text LLM. Candidates are GPT-5.6 Luna on Bedrock (IAM auth, no extra key) or Gemini Flash, to be chosen by a quality and latency test.
+- Prompt enhancer: a low-cost text LLM. Amazon Nova 2 Lite on Bedrock (IAM auth, no extra key, no AWS Marketplace agreement), chosen in #194. GPT-5.6 Luna on Bedrock was the first pick but is not offered to the account; Gemini Flash stays the alternative.
 - Moderation: the OpenAI moderation endpoint for prompts and uploaded images, with gpt-oss-safeguard on Bedrock as an option for a custom policy.
 
 **Registry rules**
@@ -356,7 +356,7 @@ Public launch is November 6, 2026. The build is one developer working with codin
 - [x] Daily budget: is 25 points ($0.25) per user right, and what is the platform-wide monthly spend cap?
 - [x] Gemini through the Gemini API (simpler) or Vertex AI (enterprise terms, Google Cloud billing)?
   Decided: the Gemini API with an API key. The adapter still supports Vertex AI through config, if needed later.
-- [ ] Which prompt enhancer model wins the quality and latency test: GPT-5.6 Luna on Bedrock or Gemini Flash?
+- [x] Which prompt enhancer model to use: Amazon Nova 2 Lite on Bedrock (#194). GPT-5.6 Luna needs an AWS Marketplace agreement the account is not offered, and Nova 2 Lite gave a good rewrite in about 2 s in a test with the real system prompt.
 - [ ] Exact Gemini and OpenAI model IDs and prices, to verify against provider docs at build time.
 - [x] Launch geography: US only, or also EU/UK (affects GDPR, data region and age rules)?
   Decided: US only at launch.

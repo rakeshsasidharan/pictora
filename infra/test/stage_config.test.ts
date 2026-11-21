@@ -117,7 +117,7 @@ describe('stageConfig', () => {
   it('reads the enhancer model for each environment', () => {
     expect(configFor(cdkJsonContext()).enhancerModel).toBe('mock');
     expect(configFor(cdkJsonContext(), 'prod').enhancerModel).toBe(
-      'bedrock:us.openai.gpt-5.6-luna',
+      'bedrock:us.amazon.nova-2-lite-v1:0',
     );
     expect(
       configFor({
