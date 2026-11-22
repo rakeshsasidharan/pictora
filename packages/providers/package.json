@@ -32,17 +32,17 @@
   },
   "devDependencies": {
     "aws-sdk-client-mock": "^4.1.0",
-    "msw": "^3.0.5",
+    "msw": "^3.0.7",
     "tsx": "^4.23.15",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock": "^3.1168.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.1168.0",
-    "@aws-sdk/client-secrets-manager": "^3.1168.0",
-    "@google/genai": "^3.3.0",
+    "@aws-sdk/client-bedrock": "^3.1173.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1173.0",
+    "@aws-sdk/client-secrets-manager": "^3.1173.0",
+    "@google/genai": "^3.6.1",
     "@pictora/core": "^0.0.0",
-    "openai": "^7.56.0",
+    "openai": "^7.61.0",
     "sharp": "^0.35.5"
   }
 }
