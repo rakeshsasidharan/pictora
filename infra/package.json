@@ -19,6 +19,6 @@
   "dependencies": {
     "aws-cdk-lib": "^2.276.0",
     "constructs": "^10.8.1",
-    "disposable-email-domains-js": "^1.26.0"
+    "disposable-email-domains-js": "^2.2.0"
   }
 }
