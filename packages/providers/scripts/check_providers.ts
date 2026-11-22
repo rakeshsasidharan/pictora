@@ -1,14 +1,16 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { loadSeedRegistry } from '@pictora/core';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BEDROCK_REGION, BedrockProvider } from '../src/bedrock.js';
+import { createEnhancer, enhancerModelName } from '../src/enhancer.js';
 import { GeminiProvider, geminiConfigFromEnv } from '../src/gemini.js';
 import { OpenAiProvider } from '../src/openai.js';
 import type { ImageProvider } from '../src/types.js';
 import {
   OpenAiModerationCheck,
+  environmentEnhancer,
   formatResults,
   parseArgs,
   runChecks,
@@ -18,11 +20,16 @@ import {
   type LiveProvider,
 } from './live_check.js';
 
+/** The CDK context, for the environment's enhancer. */
+const CDK_JSON_URL = new URL('../../../infra/cdk.json', import.meta.url);
+
 /**
- * `npm run check:providers [-- --env dev|prod] [--provider openai,gemini,bedrock] [--out <dir>]`
+ * `npm run check:providers [-- --env dev|prod] [--provider openai,gemini,bedrock] [--out <dir>]
+ * [--enhancer bedrock:<id>|gemini:<id>|none]`
  *
  * Makes real, paid calls with the keys in Secrets Manager, using the caller's AWS credentials. Run by hand
- * only; it refuses to run in CI.
+ * only; it refuses to run in CI. The environment's prompt enhancer (`enhancerModel` in `infra/cdk.json`) is
+ * checked with one rewrite whatever `--provider` says, unless it is the mock or `--enhancer none` is given.
  */
 async function main(): Promise<number> {
   if (process.env.CI) {
@@ -64,9 +71,26 @@ async function main(): Promise<number> {
   }
   if (used.has('bedrock')) adapters.bedrock = new BedrockProvider();
 
+  const enhancer =
+    options.enhancer ??
+    environmentEnhancer(JSON.parse(await readFile(CDK_JSON_URL, 'utf8')).context, options.env);
+  if (enhancer === 'none' || enhancer.backend === 'mock') {
+    console.log(`Not checking the enhancer (${enhancer === 'none' ? 'none' : 'mock'}).`);
+  } else {
+    deps.enhancer = {
+      name: enhancerModelName(enhancer),
+      enhance: createEnhancer({
+        model: enhancer,
+        // The app reads the same secret for a gemini: enhancer.
+        geminiApiKey: () => readSecret('gemini'),
+      }),
+    };
+  }
+
   console.log(
     `Checking ${models.length} ${options.env} models: ${models.map((model) => model.id).join(', ')}`,
   );
+  if (deps.enhancer) console.log(`and the enhancer ${deps.enhancer.name}`);
   const results = await runChecks(models, deps);
 
   const outDir = options.outDir ?? (await mkdtemp(join(tmpdir(), 'pictora-check-')));

@@ -1,13 +1,17 @@
 import { loadSeedRegistry, type ModelConfig } from '@pictora/core';
 import sharp from 'sharp';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import type { Enhance } from '../src/enhancer.js';
 import {
+  CHECK_ENHANCER_TARGET,
   CHECK_PROMPT,
   LIVE_PROVIDERS,
   OPENAI_API_URL,
   OPENAI_MODERATION_MODEL,
   OpenAiModerationCheck,
   cheapestQuality,
+  environmentEnhancer,
   formatResults,
   parseArgs,
   runChecks,
@@ -79,8 +83,46 @@ describe('parseArgs', () => {
     [['--env', '--provider'], /--env needs a value/],
     [['--env', 'staging'], /--env must be one of dev, prod/],
     [['--provider', 'mock'], /--provider must be from openai, gemini, bedrock: mock/],
+    [['--enhancer'], /--enhancer needs a value/],
+    [['--enhancer', 'openai:gpt-5'], /ENHANCER_MODEL must be/],
   ])('rejects %j', (argv, error) => {
     expect(() => parseArgs(argv)).toThrow(error);
+  });
+
+  it('reads --enhancer as a model or none', () => {
+    expect(parseArgs(['--enhancer', 'gemini:gemini-3.1-flash-lite']).enhancer).toEqual({
+      backend: 'gemini',
+      modelId: 'gemini-3.1-flash-lite',
+    });
+    expect(parseArgs(['--enhancer', 'none']).enhancer).toBe('none');
+    expect(parseArgs([])).not.toHaveProperty('enhancer');
+  });
+});
+
+describe('environmentEnhancer', () => {
+  const cdkJson = JSON.parse(
+    readFileSync(new URL('../../../infra/cdk.json', import.meta.url), 'utf8'),
+  ) as { context: unknown };
+
+  it('reads each environment’s enhancer from infra/cdk.json', () => {
+    expect(environmentEnhancer(cdkJson.context, 'dev')).toEqual({
+      backend: 'mock',
+      modelId: 'mock',
+    });
+    expect(environmentEnhancer(cdkJson.context, 'prod')).toEqual({
+      backend: 'bedrock',
+      modelId: 'us.amazon.nova-2-lite-v1:0',
+    });
+  });
+
+  it('fails when the environment has no enhancer, or an invalid one', () => {
+    expect(() => environmentEnhancer({ environments: {} }, 'prod')).toThrow(
+      'infra/cdk.json has no enhancerModel for prod',
+    );
+    expect(() => environmentEnhancer(undefined, 'dev')).toThrow(/no enhancerModel for dev/);
+    expect(() =>
+      environmentEnhancer({ environments: { dev: { enhancerModel: 'luna' } } }, 'dev'),
+    ).toThrow(/ENHANCER_MODEL must be/);
   });
 });
 
@@ -257,6 +299,51 @@ describe('runChecks', () => {
       moderate: () => Promise.reject(new Error('OpenAI moderation HTTP 401: bad key')),
     });
     expect(broken[0]).toMatchObject({ ok: false, detail: 'OpenAI moderation HTTP 401: bad key' });
+  });
+
+  it('checks the enhancer last with one rewrite of the check prompt (#195)', async () => {
+    const enhance = vi.fn<Enhance>(async () => ({
+      enhancedPrompt: 'A glossy red apple on a rustic oak table in soft morning daylight',
+      inputTokens: 211,
+      outputTokens: 128,
+      costCents: 0.04,
+      latencyMs: 1900,
+    }));
+    const results = await runChecks([gptMini], {
+      adapters: { openai: adapter(ok) },
+      moderate: async () => false,
+      enhancer: { name: 'bedrock:us.amazon.nova-2-lite-v1:0', enhance },
+      now: clock(),
+    });
+    expect(enhance).toHaveBeenCalledWith({ prompt: CHECK_PROMPT, model: CHECK_ENHANCER_TARGET });
+    expect(results.map((result) => result.name)).toEqual([
+      'gpt-image-1-mini',
+      'gpt-image-1-mini-transparent',
+      'openai-moderation',
+      'enhancer bedrock:us.amazon.nova-2-lite-v1:0',
+    ]);
+    expect(results.at(-1)).toEqual({
+      name: 'enhancer bedrock:us.amazon.nova-2-lite-v1:0',
+      ok: true,
+      detail: '65 characters, 211 in / 128 out tokens',
+      ms: 1500,
+    });
+  });
+
+  it('fails the enhancer check with the provider error, as for a model the account is not offered', async () => {
+    const [result] = await runChecks([], {
+      adapters: {},
+      enhancer: {
+        name: 'bedrock:us.openai.gpt-5.6-luna',
+        enhance: () =>
+          Promise.reject(new Error('openai.gpt-5.6-luna is not available for this account.')),
+      },
+    });
+    expect(result).toMatchObject({
+      name: 'enhancer bedrock:us.openai.gpt-5.6-luna',
+      ok: false,
+      detail: 'openai.gpt-5.6-luna is not available for this account.',
+    });
   });
 });
 

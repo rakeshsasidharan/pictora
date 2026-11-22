@@ -497,7 +497,14 @@ describe('Jobs stack: model health', () => {
       OPENAI_SECRET_ID: 'pictora/dev/openai',
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
       GEMINI_BACKEND: 'api',
+      ENHANCER_MODEL: 'mock',
     });
+  });
+
+  it("passes the environment's prompt enhancer, the same one the app uses (#195)", () => {
+    expect(imageFunction(prod, 'model_health.handler').Environment.Variables.ENHANCER_MODEL).toBe(
+      'bedrock:us.amazon.nova-2-lite-v1:0',
+    );
   });
 
   it('runs daily at 06:00 UTC, without retrying a failed run', () => {
@@ -513,11 +520,15 @@ describe('Jobs stack: model health', () => {
     });
   });
 
-  it('may read the table and the provider secrets, and list Bedrock models and inference profiles', () => {
+  it('may read the table and the provider secrets, list Bedrock models and profiles, and read model access', () => {
     const statements = policyStatements(dev, 'ModelHealthFunctionServiceRole');
     const actions = statements.flatMap((statement) => [statement.Action].flat());
     expect(actions).toEqual(
-      expect.arrayContaining(['bedrock:ListFoundationModels', 'bedrock:ListInferenceProfiles']),
+      expect.arrayContaining([
+        'bedrock:ListFoundationModels',
+        'bedrock:ListInferenceProfiles',
+        'bedrock:GetFoundationModelAvailability',
+      ]),
     );
     expect(actions).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:GetItem']));
     expect(actions).not.toContain('dynamodb:PutItem');

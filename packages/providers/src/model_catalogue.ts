@@ -1,5 +1,6 @@
 import {
   BedrockClient,
+  GetFoundationModelAvailabilityCommand,
   ListFoundationModelsCommand,
   paginateListInferenceProfiles,
 } from '@aws-sdk/client-bedrock';
@@ -96,4 +97,55 @@ export async function bedrockModelCatalogue(
     }
   }
   return catalogue;
+}
+
+/**
+ * Whether this account may call a Bedrock model, from `GetFoundationModelAvailability`. A model can be listed
+ * and active yet not callable: a model sold through AWS Marketplace needs an agreement (`agreement`), which
+ * may not be offered to the account at all.
+ */
+export interface BedrockModelAccess {
+  /** `AVAILABLE`, `PENDING`, `NOT_AVAILABLE` or `ERROR`. */
+  agreement: string;
+  /** `AUTHORIZED` or `NOT_AUTHORIZED`. */
+  authorization: string;
+  /** `AVAILABLE` or `NOT_AVAILABLE`. */
+  entitlement: string;
+  /** `AVAILABLE` or `NOT_AVAILABLE`. */
+  region: string;
+}
+
+/** True when every part of the access says the model can be called. */
+export function bedrockModelCallable(access: BedrockModelAccess): boolean {
+  return (
+    access.agreement === 'AVAILABLE' &&
+    access.authorization === 'AUTHORIZED' &&
+    access.entitlement === 'AVAILABLE' &&
+    access.region === 'AVAILABLE'
+  );
+}
+
+/**
+ * The account's access to a Bedrock model, by foundation model ID or system-defined inference profile ID (both
+ * are accepted), or `undefined` when Bedrock doesn't know the ID. Any other failure is thrown, so an outage
+ * isn't reported as a missing model.
+ */
+export async function bedrockModelAccess(
+  modelId: string,
+  client: BedrockClient = new BedrockClient({ region: BEDROCK_REGION }),
+): Promise<BedrockModelAccess | undefined> {
+  try {
+    const result = await client.send(new GetFoundationModelAvailabilityCommand({ modelId }));
+    return {
+      agreement: result.agreementAvailability?.status ?? 'ERROR',
+      authorization: result.authorizationStatus ?? 'NOT_AUTHORIZED',
+      entitlement: result.entitlementAvailability ?? 'NOT_AVAILABLE',
+      region: result.regionAvailability ?? 'NOT_AVAILABLE',
+    };
+  } catch (error) {
+    const name = error instanceof Error ? error.name : '';
+    // An unknown ID is a ValidationException ("The provided model identifier is invalid").
+    if (name === 'ResourceNotFoundException' || name === 'ValidationException') return undefined;
+    throw error;
+  }
 }
