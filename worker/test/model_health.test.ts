@@ -1,13 +1,21 @@
 import { loadSeedRegistry, type ModelConfig } from '@pictora/core';
 import type { EmitMetrics } from '@pictora/core/observability';
-import type { ModelCatalogue } from '@pictora/providers';
+import {
+  parseEnhancerModel,
+  type BedrockModelAccess,
+  type ModelCatalogue,
+} from '@pictora/providers';
 import { describe, expect, it, vi } from 'vitest';
 import { log } from '../src/log.js';
 import {
+  checkEnhancerHealth,
   checkModelHealth,
   deployedCatalogues,
+  deployedEnhancer,
   reportModelHealth,
+  type BedrockAccessCheck,
   type Catalogues,
+  type ModelHealthReport,
 } from '../src/model_health.js';
 
 vi.mock('../src/log.js', () => ({ log: vi.fn() }));
@@ -216,5 +224,174 @@ describe('deployedCatalogues', () => {
       GEMINI_SECRET_ID: 'pictora/dev/gemini',
     });
     expect(Object.keys(catalogues)).toEqual(['openai', 'gemini', 'bedrock']);
+  });
+});
+
+describe('checkEnhancerHealth', () => {
+  const NOVA = parseEnhancerModel('bedrock:us.amazon.nova-2-lite-v1:0');
+  const CALLABLE: BedrockModelAccess = {
+    agreement: 'AVAILABLE',
+    authorization: 'AUTHORIZED',
+    entitlement: 'AVAILABLE',
+    region: 'AVAILABLE',
+  };
+  const empty = (): ModelHealthReport => ({
+    checked: ['gpt-image-2'],
+    problems: [],
+    unavailable: [],
+  });
+  const access =
+    (result: BedrockModelAccess | undefined): BedrockAccessCheck =>
+    async () =>
+      result;
+
+  it('passes a Bedrock enhancer the account can call, asking by its profile ID', async () => {
+    const bedrockAccess = vi.fn<BedrockAccessCheck>(async () => CALLABLE);
+    const report = await checkEnhancerHealth(empty(), NOVA, {
+      bedrockAccess,
+      catalogues: healthyCatalogues(),
+    });
+    expect(bedrockAccess).toHaveBeenCalledWith('us.amazon.nova-2-lite-v1:0');
+    expect(report).toEqual({
+      checked: ['gpt-image-2', 'bedrock:us.amazon.nova-2-lite-v1:0'],
+      problems: [],
+      unavailable: [],
+    });
+  });
+
+  it('flags a listed Bedrock enhancer with no Marketplace agreement as not callable (#194)', async () => {
+    const luna = parseEnhancerModel('bedrock:us.openai.gpt-5.6-luna');
+    const denied = { ...CALLABLE, agreement: 'NOT_AVAILABLE' };
+    const report = await checkEnhancerHealth(empty(), luna, {
+      bedrockAccess: access(denied),
+      catalogues: healthyCatalogues(),
+    });
+    expect(report.problems).toEqual([
+      {
+        modelId: 'bedrock:us.openai.gpt-5.6-luna',
+        provider: 'bedrock',
+        providerModelId: 'openai.gpt-5.6-luna',
+        inferenceProfileId: 'us.openai.gpt-5.6-luna',
+        reason: 'not_callable',
+        access: denied,
+      },
+    ]);
+    expect(report.checked).toContain('bedrock:us.openai.gpt-5.6-luna');
+  });
+
+  it('flags a Bedrock enhancer Bedrock does not know as missing, with no profile for a bare model', async () => {
+    const report = await checkEnhancerHealth(
+      empty(),
+      parseEnhancerModel('bedrock:amazon.retired-v1:0'),
+      { bedrockAccess: access(undefined), catalogues: healthyCatalogues() },
+    );
+    expect(report.problems).toEqual([
+      {
+        modelId: 'bedrock:amazon.retired-v1:0',
+        provider: 'bedrock',
+        providerModelId: 'amazon.retired-v1:0',
+        reason: 'missing',
+      },
+    ]);
+  });
+
+  it('marks Bedrock unavailable, without a problem, when the access check fails', async () => {
+    const report = await checkEnhancerHealth(empty(), NOVA, {
+      bedrockAccess: () => Promise.reject(new Error('ThrottlingException')),
+      catalogues: healthyCatalogues(),
+    });
+    expect(report).toEqual({ checked: ['gpt-image-2'], problems: [], unavailable: ['bedrock'] });
+    expect(log).toHaveBeenCalledWith(
+      'WARN',
+      'Enhancer check unavailable; the enhancer is not checked',
+      expect.objectContaining({ enhancerModel: 'bedrock:us.amazon.nova-2-lite-v1:0' }),
+    );
+
+    // A provider already unavailable from the image models' check is listed once.
+    const already = await checkEnhancerHealth({ ...empty(), unavailable: ['bedrock'] }, NOVA, {
+      bedrockAccess: () => Promise.reject(new Error('ThrottlingException')),
+      catalogues: healthyCatalogues(),
+    });
+    expect(already.unavailable).toEqual(['bedrock']);
+  });
+
+  it('checks a Gemini enhancer against the Gemini models list', async () => {
+    const flash = parseEnhancerModel('gemini:gemini-3.1-flash-lite');
+    const listed: Catalogues = {
+      ...healthyCatalogues(),
+      gemini: async () => new Map([['gemini-3.1-flash-lite', { legacy: false }]]),
+    };
+    const bedrockAccess = vi.fn<BedrockAccessCheck>();
+    const passed = await checkEnhancerHealth(empty(), flash, { bedrockAccess, catalogues: listed });
+    expect(passed.problems).toEqual([]);
+    expect(passed.checked).toContain('gemini:gemini-3.1-flash-lite');
+    expect(bedrockAccess).not.toHaveBeenCalled();
+
+    const missing = await checkEnhancerHealth(empty(), flash, {
+      bedrockAccess,
+      catalogues: { ...healthyCatalogues(), gemini: async () => new Map() },
+    });
+    expect(missing.problems).toEqual([
+      {
+        modelId: 'gemini:gemini-3.1-flash-lite',
+        provider: 'gemini',
+        providerModelId: 'gemini-3.1-flash-lite',
+        reason: 'missing',
+      },
+    ]);
+
+    const down = await checkEnhancerHealth(empty(), flash, {
+      bedrockAccess,
+      catalogues: {
+        ...healthyCatalogues(),
+        gemini: () => Promise.reject(new Error('HTTP 503')),
+      },
+    });
+    expect(down).toEqual({ checked: ['gpt-image-2'], problems: [], unavailable: ['gemini'] });
+  });
+
+  it('skips the mock enhancer', async () => {
+    const bedrockAccess = vi.fn<BedrockAccessCheck>();
+    const report = await checkEnhancerHealth(empty(), parseEnhancerModel('mock'), {
+      bedrockAccess,
+      catalogues: healthyCatalogues(),
+    });
+    expect(report).toEqual(empty());
+    expect(bedrockAccess).not.toHaveBeenCalled();
+  });
+
+  it('counts an enhancer problem in the published metric', async () => {
+    const report = await checkEnhancerHealth(empty(), NOVA, {
+      bedrockAccess: access({ ...CALLABLE, authorization: 'NOT_AUTHORIZED' }),
+      catalogues: healthyCatalogues(),
+    });
+    const metrics = vi.fn<EmitMetrics>();
+    reportModelHealth(report, metrics);
+    expect(metrics).toHaveBeenCalledWith([
+      { name: 'ModelHealthProblems', value: 1, unit: 'Count' },
+    ]);
+    expect(log).toHaveBeenCalledWith(
+      'ERROR',
+      'Model health problem',
+      expect.objectContaining({
+        modelId: 'bedrock:us.amazon.nova-2-lite-v1:0',
+        reason: 'not_callable',
+      }),
+    );
+  });
+});
+
+describe('deployedEnhancer', () => {
+  it('reads ENHANCER_MODEL, and fails when it is unset or invalid', () => {
+    expect(deployedEnhancer({ ENHANCER_MODEL: 'bedrock:us.amazon.nova-2-lite-v1:0' })).toEqual({
+      backend: 'bedrock',
+      modelId: 'us.amazon.nova-2-lite-v1:0',
+    });
+    expect(deployedEnhancer({ ENHANCER_MODEL: 'mock' })).toEqual({
+      backend: 'mock',
+      modelId: 'mock',
+    });
+    expect(() => deployedEnhancer({})).toThrow(/ENHANCER_MODEL must be/);
+    expect(() => deployedEnhancer({ ENHANCER_MODEL: 'luna' })).toThrow(/ENHANCER_MODEL must be/);
   });
 });

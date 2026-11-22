@@ -9,6 +9,12 @@ import {
   type Quality,
 } from '@pictora/core';
 import sharp from 'sharp';
+import {
+  parseEnhancerModel,
+  type Enhance,
+  type EnhanceInput,
+  type EnhancerModel,
+} from '../src/enhancer.js';
 import { ProviderError } from '../src/errors.js';
 import { guardProvider } from '../src/factory.js';
 import { providerSignal } from '../src/retry.js';
@@ -18,7 +24,8 @@ import type { ImageProvider } from '../src/types.js';
  * The live provider check (tech design 13): one draft image per enabled model with real credentials, run by
  * hand on a laptop before a prod release. Never run in CI. Every provider goes through its adapter, and models
  * that offer transparent backgrounds get a second check that the PNG has an alpha channel (GEN-9). OpenAI's
- * moderation endpoint is checked through the small client below.
+ * moderation endpoint is checked through the small client below, and the environment's prompt enhancer with
+ * one real rewrite (#195).
  */
 
 export const CHECK_PROMPT = 'A red apple on a wooden table, soft daylight';
@@ -33,21 +40,35 @@ export type LiveProvider = (typeof LIVE_PROVIDERS)[number];
 
 export type FetchFn = typeof fetch;
 
+/** The image model the enhancer is told it writes for in the check. */
+export const CHECK_ENHANCER_TARGET: Readonly<EnhanceInput['model']> = {
+  displayName: 'GPT Image 2',
+  strengths: ['Follows prompts closely'],
+};
+
 export interface CheckOptions {
   env: Environment;
   providers: LiveProvider[];
   /** Where the PNGs are written; a new temp folder when not given. */
   outDir?: string;
+  /**
+   * The enhancer to check instead of the environment's (`bedrock:<id>`, `gemini:<id>`), or `none` to skip it.
+   * When not given, the environment's `enhancerModel` in `infra/cdk.json` is checked.
+   */
+  enhancer?: EnhancerModel | 'none';
 }
 
-/** Parses `--env dev|prod`, `--provider openai,gemini,bedrock` and `--out <dir>`. */
+/**
+ * Parses `--env dev|prod`, `--provider openai,gemini,bedrock`, `--out <dir>` and
+ * `--enhancer bedrock:<id>|gemini:<id>|none`.
+ */
 export function parseArgs(argv: readonly string[]): CheckOptions {
   const options: CheckOptions = { env: 'dev', providers: [...LIVE_PROVIDERS] };
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (flag !== '--env' && flag !== '--provider' && flag !== '--out') {
-      throw new Error(`Unknown option ${flag}. Use --env, --provider or --out.`);
+    if (flag !== '--env' && flag !== '--provider' && flag !== '--out' && flag !== '--enhancer') {
+      throw new Error(`Unknown option ${flag}. Use --env, --provider, --out or --enhancer.`);
     }
     if (value === undefined || value.startsWith('--')) throw new Error(`${flag} needs a value`);
     index++;
@@ -64,11 +85,27 @@ export function parseArgs(argv: readonly string[]): CheckOptions {
         }
       }
       options.providers = [...new Set(names)] as LiveProvider[];
+    } else if (flag === '--enhancer') {
+      options.enhancer = value === 'none' ? 'none' : parseEnhancerModel(value);
     } else {
       options.outDir = value;
     }
   }
   return options;
+}
+
+/**
+ * The environment's prompt enhancer from the `infra/cdk.json` context (`environments.<env>.enhancerModel`),
+ * the same value the app and the model-health job get as `ENHANCER_MODEL`.
+ */
+export function environmentEnhancer(context: unknown, env: Environment): EnhancerModel {
+  const environments = (context as { environments?: Record<string, { enhancerModel?: unknown }> })
+    ?.environments;
+  const value = environments?.[env]?.enhancerModel;
+  if (typeof value !== 'string') {
+    throw new Error(`infra/cdk.json has no enhancerModel for ${env}`);
+  }
+  return parseEnhancerModel(value);
 }
 
 /** Enabled models for the environment from the chosen providers, in registry order. */
@@ -138,11 +175,14 @@ export class OpenAiModerationCheck {
 }
 
 export interface CheckResult {
-  /** A model ID, or `openai-moderation` for the moderation call. */
+  /** A model ID, `openai-moderation` for the moderation call, or `enhancer <model>` for the enhancer. */
   name: string;
   quality?: Quality;
   ok: boolean;
-  /** `1024x1024` for images, `not flagged` for moderation, or the error message. */
+  /**
+   * `1024x1024` for images, `not flagged` for moderation, the rewrite's length and tokens for the enhancer,
+   * or the error message.
+   */
   detail: string;
   ms: number;
   png?: Uint8Array;
@@ -152,10 +192,15 @@ export interface CheckDeps {
   adapters: Partial<Record<LiveProvider, ImageProvider>>;
   /** Present when OpenAI is checked: its moderation endpoint is checked too. */
   moderate?: (input: string, signal: AbortSignal) => Promise<boolean>;
+  /** Present when an enhancer is checked: one real rewrite of the check prompt. */
+  enhancer?: { name: string; enhance: Enhance };
   now?: () => number;
 }
 
-/** Runs one draft image per model, one after another, then the moderation call. Never throws. */
+/**
+ * Runs one draft image per model, one after another, then the moderation call and the enhancer call. Never
+ * throws.
+ */
 export async function runChecks(
   models: readonly ModelConfig[],
   deps: CheckDeps,
@@ -199,7 +244,31 @@ export async function runChecks(
       });
     }
   }
+  if (deps.enhancer) results.push(await checkEnhancer(deps.enhancer, now));
   return results;
+}
+
+/**
+ * One real rewrite of the check prompt. It fails on any provider error, such as a Bedrock model the account
+ * isn't offered (#194), which the enhancer API would turn into the "isn't available" notice.
+ */
+async function checkEnhancer(
+  enhancer: { name: string; enhance: Enhance },
+  now: () => number,
+): Promise<CheckResult> {
+  const name = `enhancer ${enhancer.name}`;
+  const started = now();
+  try {
+    const result = await enhancer.enhance({ prompt: CHECK_PROMPT, model: CHECK_ENHANCER_TARGET });
+    return {
+      name,
+      ok: true,
+      detail: `${result.enhancedPrompt.length} characters, ${result.inputTokens} in / ${result.outputTokens} out tokens`,
+      ms: now() - started,
+    };
+  } catch (error) {
+    return { name, ok: false, detail: message(error), ms: now() - started };
+  }
 }
 
 /**

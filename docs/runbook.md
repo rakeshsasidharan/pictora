@@ -81,6 +81,11 @@ Signs: `pictora-prod-model-health`, `pictora-prod-<provider>-p95-latency`, `pict
 3. Jobs stuck in the provider's queue are failed and refunded by the sweeper after 10 minutes queued or 5 minutes running.
 4. When the provider recovers, switch the models back on and watch the model health alarm return to OK.
 
+If the model health alarm names the enhancer (`modelId` is the `ENHANCER_MODEL` value, such as `bedrock:us.amazon.nova-2-lite-v1:0`), users see "The prompt enhancer isn't available right now" and generate from their own words. The `Model health problem` log line in the `ModelHealth` log group says why:
+
+- `not_callable`: the account may not call the model. `access` shows which part failed; an `agreement` other than `AVAILABLE` is a Marketplace model the account isn't offered (#194). Switch `enhancerModel` for the environment in `infra/cdk.json` to a model it can call and deploy. Check a candidate first with `npm run check:providers -- --env prod --provider bedrock --enhancer bedrock:<model ID>`.
+- `missing`: the provider no longer knows the model. Switch `enhancerModel` the same way.
+
 ## Redrive the dead-letter queue
 
 The `pictora-prod-dlq` alarm fires when a message failed 3 times. The DLQ `pictora-prod-dlq` holds messages from every provider queue and the purge queue for 14 days.

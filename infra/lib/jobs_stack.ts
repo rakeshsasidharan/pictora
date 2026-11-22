@@ -301,18 +301,25 @@ export class JobsStack extends Stack {
         TABLE_NAME: props.table.tableName,
         OPENAI_SECRET_ID: providerSecretName(config.envName, 'openai'),
         GEMINI_SECRET_ID: providerSecretName(config.envName, 'gemini'),
+        // The app's prompt enhancer, checked too (#195).
+        ENHANCER_MODEL: config.enhancerModel,
         ...geminiEnvironment(config),
       },
     });
-    // Reads the registry and the provider keys, and lists Bedrock's models and inference profiles, which have
-    // no resource-level scope.
+    // Reads the registry and the provider keys, lists Bedrock's models and inference profiles, and reads the
+    // account's access to the enhancer model; these Bedrock actions have no resource-level scope. It never
+    // invokes a model.
     props.table.grantReadData(this.modelHealthFunction);
     for (const provider of SECRET_PROVIDERS) {
       this.providerSecrets[provider].grantRead(this.modelHealthFunction);
     }
     this.modelHealthFunction.addToRolePolicy(
       new PolicyStatement({
-        actions: ['bedrock:ListFoundationModels', 'bedrock:ListInferenceProfiles'],
+        actions: [
+          'bedrock:ListFoundationModels',
+          'bedrock:ListInferenceProfiles',
+          'bedrock:GetFoundationModelAvailability',
+        ],
         resources: ['*'],
       }),
     );

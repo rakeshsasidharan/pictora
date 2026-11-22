@@ -1,5 +1,6 @@
 import {
   BedrockClient,
+  GetFoundationModelAvailabilityCommand,
   ListFoundationModelsCommand,
   ListInferenceProfilesCommand,
 } from '@aws-sdk/client-bedrock';
@@ -8,10 +9,16 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  bedrockModelAccess,
+  bedrockModelCallable,
   bedrockModelCatalogue,
   geminiModelCatalogue,
   openAiModelCatalogue,
 } from '../src/model_catalogue.js';
+
+/** One mock for the file: a second `mockClient` of the same class would replace this one's stubs. */
+const bedrock = mockClient(BedrockClient);
+afterEach(() => bedrock.reset());
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
@@ -99,9 +106,6 @@ describe('geminiModelCatalogue', () => {
 });
 
 describe('bedrockModelCatalogue', () => {
-  const bedrock = mockClient(BedrockClient);
-  afterEach(() => bedrock.reset());
-
   it('lists the Stability models with their lifecycle', async () => {
     bedrock.on(ListFoundationModelsCommand, { byProvider: 'stability' }).resolves({
       modelSummaries: [
@@ -171,5 +175,87 @@ describe('bedrockModelCatalogue', () => {
     await expect(bedrockModelCatalogue(new BedrockClient({ region: 'us-west-2' }))).rejects.toThrow(
       'AccessDeniedException',
     );
+  });
+});
+
+describe('bedrockModelAccess', () => {
+  const client = () => new BedrockClient({ region: 'us-west-2' });
+
+  it('reads the access to a model by its inference profile ID', async () => {
+    bedrock
+      .on(GetFoundationModelAvailabilityCommand, { modelId: 'us.amazon.nova-2-lite-v1:0' })
+      .resolves({
+        modelId: 'amazon.nova-2-lite-v1:0',
+        agreementAvailability: { status: 'AVAILABLE' },
+        authorizationStatus: 'AUTHORIZED',
+        entitlementAvailability: 'AVAILABLE',
+        regionAvailability: 'AVAILABLE',
+      });
+    const access = await bedrockModelAccess('us.amazon.nova-2-lite-v1:0', client());
+    expect(access).toEqual({
+      agreement: 'AVAILABLE',
+      authorization: 'AUTHORIZED',
+      entitlement: 'AVAILABLE',
+      region: 'AVAILABLE',
+    });
+    expect(bedrockModelCallable(access!)).toBe(true);
+  });
+
+  it('reports a Marketplace model with no agreement as not callable (#194)', async () => {
+    bedrock.on(GetFoundationModelAvailabilityCommand).resolves({
+      modelId: 'openai.gpt-5.6-luna',
+      agreementAvailability: { status: 'NOT_AVAILABLE' },
+      authorizationStatus: 'AUTHORIZED',
+      entitlementAvailability: 'AVAILABLE',
+      regionAvailability: 'AVAILABLE',
+    });
+    const access = await bedrockModelAccess('us.openai.gpt-5.6-luna', client());
+    expect(access?.agreement).toBe('NOT_AVAILABLE');
+    expect(bedrockModelCallable(access!)).toBe(false);
+  });
+
+  it('treats a missing field as not available', async () => {
+    bedrock.on(GetFoundationModelAvailabilityCommand).resolves({ modelId: 'amazon.x' });
+    const access = await bedrockModelAccess('amazon.x', client());
+    expect(access).toEqual({
+      agreement: 'ERROR',
+      authorization: 'NOT_AUTHORIZED',
+      entitlement: 'NOT_AVAILABLE',
+      region: 'NOT_AVAILABLE',
+    });
+    expect(bedrockModelCallable(access!)).toBe(false);
+  });
+
+  it.each(['ValidationException', 'ResourceNotFoundException'])(
+    'returns undefined for an ID Bedrock does not know (%s)',
+    async (name) => {
+      bedrock
+        .on(GetFoundationModelAvailabilityCommand)
+        .rejects(Object.assign(new Error('The provided model identifier is invalid.'), { name }));
+      await expect(bedrockModelAccess('amazon.nope-v1:0', client())).resolves.toBeUndefined();
+    },
+  );
+
+  it('throws on any other failure, so an outage is not a missing model', async () => {
+    bedrock
+      .on(GetFoundationModelAvailabilityCommand)
+      .rejects(Object.assign(new Error('Rate exceeded'), { name: 'ThrottlingException' }));
+    await expect(bedrockModelAccess('amazon.nova-2-lite-v1:0', client())).rejects.toThrow(
+      'Rate exceeded',
+    );
+  });
+
+  it('needs every part of the access to be available', () => {
+    const callable = {
+      agreement: 'AVAILABLE',
+      authorization: 'AUTHORIZED',
+      entitlement: 'AVAILABLE',
+      region: 'AVAILABLE',
+    };
+    expect(bedrockModelCallable(callable)).toBe(true);
+    expect(bedrockModelCallable({ ...callable, agreement: 'PENDING' })).toBe(false);
+    expect(bedrockModelCallable({ ...callable, authorization: 'NOT_AUTHORIZED' })).toBe(false);
+    expect(bedrockModelCallable({ ...callable, entitlement: 'NOT_AVAILABLE' })).toBe(false);
+    expect(bedrockModelCallable({ ...callable, region: 'NOT_AVAILABLE' })).toBe(false);
   });
 });

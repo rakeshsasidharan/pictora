@@ -2,12 +2,18 @@ import type { ModelConfig, Provider } from '@pictora/core';
 import { powertoolsMetrics, type EmitMetrics } from '@pictora/core/observability';
 import { createRegistryLoader, dynamoRegistrySource } from '@pictora/core/registry-store';
 import {
+  bedrockModelAccess,
+  bedrockModelCallable,
   bedrockModelCatalogue,
+  enhancerModelName,
   geminiModelCatalogue,
   geminiConfigFromEnv,
   openAiModelCatalogue,
+  parseEnhancerModel,
   secretApiKey,
   secretString,
+  type BedrockModelAccess,
+  type EnhancerModel,
   type ModelCatalogue,
 } from '@pictora/providers';
 import { tableContext, workerEnvironment } from './deps.js';
@@ -17,10 +23,14 @@ import { log } from './log.js';
 export const EOL_WARNING_DAYS = 60;
 const DAY_MS = 24 * 60 * 60_000;
 
-/** Why a model needs attention. */
-export type ModelProblemReason = 'missing' | 'deprecated' | 'retiring';
+/**
+ * Why a model needs attention. `not_callable` is a Bedrock enhancer the account may not call, such as a
+ * Marketplace model with no agreement (#194).
+ */
+export type ModelProblemReason = 'missing' | 'deprecated' | 'retiring' | 'not_callable';
 
 export interface ModelProblem {
+  /** The registry model ID, or for the prompt enhancer its `ENHANCER_MODEL` value. */
   modelId: string;
   provider: Provider;
   providerModelId: string;
@@ -29,6 +39,8 @@ export interface ModelProblem {
   reason: ModelProblemReason;
   /** For `retiring`: the end-of-life date, `yyyy-mm-dd`. */
   eolDate?: string;
+  /** For `not_callable`: what Bedrock says about the account's access. */
+  access?: BedrockModelAccess;
 }
 
 export interface ModelHealthReport {
@@ -100,6 +112,73 @@ export async function checkModelHealth(
   return report;
 }
 
+/** How the enhancer check asks Bedrock about the account's access to a model. */
+export type BedrockAccessCheck = (modelId: string) => Promise<BedrockModelAccess | undefined>;
+
+/**
+ * Adds the prompt enhancer (`ENHANCER_MODEL`) to the report. A Bedrock enhancer must be known to Bedrock and
+ * callable by the account: agreement, authorization, entitlement and region all available, which is what
+ * GPT-5.6 Luna failed in prod (#194) while still listed as active. A Gemini enhancer must be in the Gemini
+ * models list. The mock isn't checked. A check that can't run marks the provider unavailable, as for the
+ * image models, so an outage doesn't raise a false alarm.
+ */
+export async function checkEnhancerHealth(
+  report: ModelHealthReport,
+  enhancer: EnhancerModel,
+  deps: { bedrockAccess: BedrockAccessCheck; catalogues: Catalogues },
+): Promise<ModelHealthReport> {
+  if (enhancer.backend === 'mock') return report;
+  const name = enhancerModelName(enhancer);
+  const provider: Provider = enhancer.backend;
+  const unavailable = (error: unknown): ModelHealthReport => {
+    log('WARN', 'Enhancer check unavailable; the enhancer is not checked', {
+      enhancerModel: name,
+      error,
+    });
+    return {
+      ...report,
+      unavailable: report.unavailable.includes(provider)
+        ? report.unavailable
+        : [...report.unavailable, provider],
+    };
+  };
+  const profile = /^(us|global)\.(.+)$/.exec(enhancer.modelId);
+  const base: ModelProblem = {
+    modelId: name,
+    provider,
+    providerModelId: profile?.[2] ?? enhancer.modelId,
+    ...(profile ? { inferenceProfileId: enhancer.modelId } : {}),
+    reason: 'missing',
+  };
+
+  let problem: ModelProblem | undefined;
+  if (enhancer.backend === 'bedrock') {
+    let access: BedrockModelAccess | undefined;
+    try {
+      access = await deps.bedrockAccess(enhancer.modelId);
+    } catch (error) {
+      return unavailable(error);
+    }
+    if (!access) problem = base;
+    else if (!bedrockModelCallable(access)) problem = { ...base, reason: 'not_callable', access };
+  } else {
+    const gemini = deps.catalogues.gemini;
+    if (!gemini) return report;
+    let catalogue: ModelCatalogue;
+    try {
+      catalogue = await gemini();
+    } catch (error) {
+      return unavailable(error);
+    }
+    if (!catalogue.has(enhancer.modelId)) problem = base;
+  }
+  return {
+    ...report,
+    checked: [...report.checked, name],
+    problems: problem ? [...report.problems, problem] : report.problems,
+  };
+}
+
 /**
  * Logs the report and publishes `ModelHealthProblems` (0 when all is well), which the model health alarm
  * watches. Each problem is an error line naming the model, for the alarm email's reader to find.
@@ -137,14 +216,25 @@ export function deployedCatalogues(env: NodeJS.ProcessEnv = process.env): Catalo
   };
 }
 
-/** Runs daily from an EventBridge schedule over the environment's registry. */
+/** The deployed enhancer, from `ENHANCER_MODEL`, which the Jobs stack sets as on the app. */
+export function deployedEnhancer(env: NodeJS.ProcessEnv = process.env): EnhancerModel {
+  return parseEnhancerModel(env.ENHANCER_MODEL);
+}
+
+/** Runs daily from an EventBridge schedule over the environment's registry and its prompt enhancer. */
 export async function handler(): Promise<ModelHealthReport> {
   const table = tableContext();
   const registry = createRegistryLoader({
     source: dynamoRegistrySource(table.client, table.tableName),
     environment: workerEnvironment(),
   });
-  const report = await checkModelHealth(await registry.models(), deployedCatalogues(), new Date());
+  const enhancer = deployedEnhancer();
+  const catalogues = deployedCatalogues();
+  const models = await checkModelHealth(await registry.models(), catalogues, new Date());
+  const report = await checkEnhancerHealth(models, enhancer, {
+    bedrockAccess: (modelId) => bedrockModelAccess(modelId),
+    catalogues,
+  });
   reportModelHealth(report, powertoolsMetrics());
   return report;
 }
